@@ -1,10 +1,11 @@
 # Create 2-vpps line topology
 
 # stop vpp service (not needed if installed as a service)
-sudo service vpp stop
+#sudo service vpp stop
 
 ## create vpp1 and connect it to host
 sudo vpp unix { log /tmp/vpp1.log full-coredump cli-listen /run/vpp/cli.vpp1.sock } api-segment { prefix vpp1 } api-trace { on } plugins { plugin dpdk_plugin.so { disable } }
+sleep 1
 
 # veth interface between host and vpp1
 sudo ip link add name vpp1out type veth peer name vpp1host
@@ -20,6 +21,7 @@ sudo vppctl -s /run/vpp/cli.vpp1.sock set int ip address host-vpp1out 10.10.1.2/
 
 ## create vpp2 and connect it to vpp1
 sudo vpp unix { log /tmp/vpp2.log full-coredump cli-listen /run/vpp/cli.vpp2.sock } api-segment { prefix vpp2 } api-trace { on } plugins { plugin dpdk_plugin.so { disable } }
+sleep 1
 
 sudo ip link add name vpp1vpp2 type veth peer name vpp2vpp1
 sudo ip link set dev vpp1vpp2 up
