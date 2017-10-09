@@ -16,7 +16,7 @@
 #include <vnet/vnet.h>
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
-#include <mmb/sample.h>
+#include <mmb/mmb.h>
 
 typedef struct {
   u32 next_index;
