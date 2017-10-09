@@ -1,7 +1,10 @@
-# Create 2-vpps line topology
-
-# stop vpp service (not needed if installed as a service)
-#sudo service vpp stop
+#####
+# Simple topology: 2 vpps lined up to host
+# host - vpp1 - vpp2
+# 10.10.1.1 - 10.10.1.2|10.10.2.1 - 10.10.2.2
+#
+# 
+####
 
 ## create vpp1 and connect it to host
 sudo vpp unix { log /tmp/vpp1.log full-coredump cli-listen /run/vpp/cli.vpp1.sock } api-segment { prefix vpp1 } api-trace { on } plugins { plugin dpdk_plugin.so { disable } }
