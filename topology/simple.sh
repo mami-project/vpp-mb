@@ -17,9 +17,9 @@ sudo ip link set dev vpp1host up
 sudo ip addr add 10.10.1.1/24 dev vpp1host
 
 # host interface between host and vpp1
-sudo vppctl -s /run/vpp/cli.vpp1.sock create host-interface name vpp1out
-sudo vppctl -s /run/vpp/cli.vpp1.sock set int state host-vpp1out up
-sudo vppctl -s /run/vpp/cli.vpp1.sock set int ip address host-vpp1out 10.10.1.2/24
+sudo vppctl -s /run/vpp/cli-vpp1.sock create host-interface name vpp1out
+sudo vppctl -s /run/vpp/cli-vpp1.sock set int state host-vpp1out up
+sudo vppctl -s /run/vpp/cli-vpp1.sock set int ip address host-vpp1out 10.10.1.2/24
 
 
 ## create vpp2 and connect it to vpp1
@@ -30,15 +30,15 @@ sudo ip link add name vpp1vpp2 type veth peer name vpp2vpp1
 sudo ip link set dev vpp1vpp2 up
 sudo ip link set dev vpp2vpp1 up
 
-sudo vppctl -s /run/vpp/cli.vpp1.sock create host-interface name vpp1vpp2
-sudo vppctl -s /run/vpp/cli.vpp1.sock set int state host-vpp1vpp2 up
-sudo vppctl -s /run/vpp/cli.vpp1.sock set int ip address host-vpp1vpp2 10.10.2.1/24
+sudo vppctl -s /run/vpp/cli-vpp1.sock create host-interface name vpp1vpp2
+sudo vppctl -s /run/vpp/cli-vpp1.sock set int state host-vpp1vpp2 up
+sudo vppctl -s /run/vpp/cli-vpp1.sock set int ip address host-vpp1vpp2 10.10.2.1/24
 
-sudo vppctl -s /run/vpp/cli.vpp2.sock create host-interface name vpp2vpp1
-sudo vppctl -s /run/vpp/cli.vpp2.sock set int state host-vpp2vpp1 up
-sudo vppctl -s /run/vpp/cli.vpp2.sock set int ip address host-vpp2vpp1 10.10.2.2/24
+sudo vppctl -s /run/vpp/cli-vpp2.sock create host-interface name vpp2vpp1
+sudo vppctl -s /run/vpp/cli-vpp2.sock set int state host-vpp2vpp1 up
+sudo vppctl -s /run/vpp/cli-vpp2.sock set int ip address host-vpp2vpp1 10.10.2.2/24
 
 # route host to vpp2 via vpp1 and reciprocally
 sudo ip route add 10.10.2.0/24 via 10.10.1.2
-sudo vppctl -s /run/vpp/cli.vpp2.sock ip route add 10.10.1.0/24 via 10.10.2.1
+sudo vppctl -s /run/vpp/cli-vpp2.sock ip route add 10.10.1.0/24 via 10.10.2.1
 
