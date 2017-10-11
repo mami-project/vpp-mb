@@ -1,9 +1,9 @@
+#!/bin/bash
+
 #####
 # Simple topology: 2 vpps lined up to host
 # host - vpp1 - vpp2
 # 10.10.1.1 - 10.10.1.2|10.10.2.1 - 10.10.2.2
-#
-# 
 ####
 
 ## create vpp1 and connect it to host

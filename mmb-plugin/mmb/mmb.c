@@ -54,8 +54,8 @@
 
 /* List of message types that this plugin understands */
 
-#define foreach_sample_plugin_api_msg                           \
-_(SAMPLE_MACSWAP_ENABLE_DISABLE, sample_macswap_enable_disable)
+#define foreach_mmb_plugin_api_msg                           \
+_(MMB_MACSWAP_ENABLE_DISABLE, mmb_macswap_enable_disable)
 
 /* *INDENT-OFF* */
 VLIB_PLUGIN_REGISTER () = {
@@ -70,7 +70,7 @@ VLIB_PLUGIN_REGISTER () = {
  * Action function shared between message handler and debug CLI.
  */
 
-int sample_macswap_enable_disable (sample_main_t * sm, u32 sw_if_index,
+int mmb_macswap_enable_disable (mmb_main_t * sm, u32 sw_if_index,
                                    int enable_disable)
 {
   vnet_sw_interface_t * sw;
@@ -97,7 +97,7 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
                                    unformat_input_t * input,
                                    vlib_cli_command_t * cmd)
 {
-  sample_main_t * sm = &sample_main;
+  mmb_main_t * sm = &mmb_main;
   u32 sw_if_index = ~0;
   int enable_disable = 1;
     
@@ -116,7 +116,7 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
   if (sw_if_index == ~0)
     return clib_error_return (0, "Please specify an interface...");
     
-  rv = sample_macswap_enable_disable (sm, sw_if_index, enable_disable);
+  rv = mmb_macswap_enable_disable (sm, sw_if_index, enable_disable);
 
   switch(rv) {
   case 0:
@@ -139,7 +139,7 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
 }
 
 /**
- * @brief CLI command to enable/disable the sample macswap plugin.
+ * @brief CLI command to enable/disable the mmb macswap plugin.
  */
 VLIB_CLI_COMMAND (sr_content_command, static) = {
     .path = "mmb macswap",
@@ -151,26 +151,26 @@ VLIB_CLI_COMMAND (sr_content_command, static) = {
 /**
  * @brief Plugin API message handler.
  */
-static void vl_api_sample_macswap_enable_disable_t_handler
-(vl_api_sample_macswap_enable_disable_t * mp)
+static void vl_api_mmb_macswap_enable_disable_t_handler
+(vl_api_mmb_macswap_enable_disable_t * mp)
 {
-  vl_api_sample_macswap_enable_disable_reply_t * rmp;
-  sample_main_t * sm = &sample_main;
+  vl_api_mmb_macswap_enable_disable_reply_t * rmp;
+  mmb_main_t * sm = &mmb_main;
   int rv;
 
-  rv = sample_macswap_enable_disable (sm, ntohl(mp->sw_if_index), 
+  rv = mmb_macswap_enable_disable (sm, ntohl(mp->sw_if_index), 
                                       (int) (mp->enable_disable));
   
-  REPLY_MACRO(VL_API_SAMPLE_MACSWAP_ENABLE_DISABLE_REPLY);
+  REPLY_MACRO(VL_API_MMB_MACSWAP_ENABLE_DISABLE_REPLY);
 }
 
 /**
  * @brief Set up the API message handling tables.
  */
 static clib_error_t *
-sample_plugin_api_hookup (vlib_main_t *vm)
+mmb_plugin_api_hookup (vlib_main_t *vm)
 {
-  sample_main_t * sm = &sample_main;
+  mmb_main_t * sm = &mmb_main;
 #define _(N,n)                                                  \
     vl_msg_api_set_handlers((VL_API_##N + sm->msg_id_base),     \
                            #n,					\
@@ -179,7 +179,7 @@ sample_plugin_api_hookup (vlib_main_t *vm)
                            vl_api_##n##_t_endian,               \
                            vl_api_##n##_t_print,                \
                            sizeof(vl_api_##n##_t), 1); 
-    foreach_sample_plugin_api_msg;
+    foreach_mmb_plugin_api_msg;
 #undef _
 
     return 0;
@@ -190,20 +190,20 @@ sample_plugin_api_hookup (vlib_main_t *vm)
 #undef vl_msg_name_crc_list
 
 static void 
-setup_message_id_table (sample_main_t * sm, api_main_t *am)
+setup_message_id_table (mmb_main_t * sm, api_main_t *am)
 {
 #define _(id,n,crc) \
   vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + sm->msg_id_base);
-  foreach_vl_msg_name_crc_sample;
+  foreach_vl_msg_name_crc_mmb;
 #undef _
 }
 
 /**
- * @brief Initialize the sample plugin.
+ * @brief Initialize the mmb plugin.
  */
-static clib_error_t * sample_init (vlib_main_t * vm)
+static clib_error_t * mmb_init (vlib_main_t * vm)
 {
-  sample_main_t * sm = &sample_main;
+  mmb_main_t * sm = &mmb_main;
   clib_error_t * error = 0;
   u8 * name;
 
@@ -215,7 +215,7 @@ static clib_error_t * sample_init (vlib_main_t * vm)
   sm->msg_id_base = vl_msg_api_get_msg_ids 
       ((char *) name, VL_MSG_FIRST_AVAILABLE);
 
-  error = sample_plugin_api_hookup (vm);
+  error = mmb_plugin_api_hookup (vm);
 
   /* Add our API messages to the global name_crc hash table */
   setup_message_id_table (sm, &api_main);
@@ -225,7 +225,7 @@ static clib_error_t * sample_init (vlib_main_t * vm)
   return error;
 }
 
-VLIB_INIT_FUNCTION (sample_init);
+VLIB_INIT_FUNCTION (mmb_init);
 
 /**
  * @brief Hook the mmb plugin into the VPP graph hierarchy.

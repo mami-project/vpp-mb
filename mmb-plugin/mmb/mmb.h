@@ -1,4 +1,3 @@
-/* Hey Emacs use -*- mode: C -*- */
 /*
  * Copyright (c) 2015 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,19 +12,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#ifndef __included_mmb_h__
+#define __included_mmb_h__
 
-/* Define a simple binary API to control the feature */
+#include <vnet/vnet.h>
+#include <vnet/ip/ip.h>
+#include <vnet/ethernet/ethernet.h>
 
-autoreply define sample_macswap_enable_disable {
-    /* Client identifier, set from api_main.my_client_index */
-    u32 client_index;
+#include <vppinfra/hash.h>
+#include <vppinfra/error.h>
+#include <vppinfra/elog.h>
 
-    /* Arbitrary context, so client can match reply to request */
-    u32 context;
+typedef struct {
+    /* API message ID base */
+    u16 msg_id_base;
 
-    /* Enable / disable the feature */
-    u8 enable_disable;
+    /* convenience */
+    vnet_main_t * vnet_main;
+} mmb_main_t;
 
-    /* Interface handle */
-    u32 sw_if_index;
-};
+mmb_main_t mmb_main;
+
+extern vlib_node_registration_t mmb_node;
+
+#define MMB_PLUGIN_BUILD_VER "1.0"
+
+#endif /* __included_mmb_h__ */

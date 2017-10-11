@@ -12,8 +12,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef included_sample_msg_enum_h
-#define included_sample_msg_enum_h
+#ifndef included_mmb_msg_enum_h
+#define included_mmb_msg_enum_h
 
 #include <vppinfra/byte_order.h>
 
