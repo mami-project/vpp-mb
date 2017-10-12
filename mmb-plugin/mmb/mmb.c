@@ -54,8 +54,9 @@
 
 /* List of message types that this plugin understands */
 
-#define foreach_mmb_plugin_api_msg                           \
-_(MMB_MACSWAP_ENABLE_DISABLE, mmb_macswap_enable_disable)
+#define foreach_mmb_plugin_api_msg                                   \
+_(MMB_DUMBREWRITE_ENABLE_DISABLE, mmb_dumbrewrite_enable_disable)    \
+_(MMB_VALUEBASED_ENABLE_DISABLE, mmb_valuebased_enable_disable)
 
 /* *INDENT-OFF* */
 VLIB_PLUGIN_REGISTER () = {
@@ -65,12 +66,12 @@ VLIB_PLUGIN_REGISTER () = {
 /* *INDENT-ON* */
 
 /**
- * @brief Enable/disable the macswap plugin. 
+ * @brief Enable/disable the dumb-rewrite plugin. 
  *
  * Action function shared between message handler and debug CLI.
  */
 
-int mmb_macswap_enable_disable (mmb_main_t * sm, u32 sw_if_index,
+int mmb_dumbrewrite_enable_disable (mmb_main_t * sm, u32 sw_if_index,
                                    int enable_disable)
 {
   vnet_sw_interface_t * sw;
@@ -86,6 +87,7 @@ int mmb_macswap_enable_disable (mmb_main_t * sm, u32 sw_if_index,
   if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
     return VNET_API_ERROR_INVALID_SW_IF_INDEX;
   
+  //TODO: change value "device-input" (wrong arc-name for what we want)
   vnet_feature_enable_disable ("device-input", "mmb",
                                sw_if_index, enable_disable, 0, 0);
 
@@ -93,7 +95,7 @@ int mmb_macswap_enable_disable (mmb_main_t * sm, u32 sw_if_index,
 }
 
 static clib_error_t *
-macswap_enable_disable_command_fn (vlib_main_t * vm,
+dumbrewrite_enable_disable_command_fn (vlib_main_t * vm,
                                    unformat_input_t * input,
                                    vlib_cli_command_t * cmd)
 {
@@ -116,7 +118,7 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
   if (sw_if_index == ~0)
     return clib_error_return (0, "Please specify an interface...");
     
-  rv = mmb_macswap_enable_disable (sm, sw_if_index, enable_disable);
+  rv = mmb_dumbrewrite_enable_disable (sm, sw_if_index, enable_disable);
 
   switch(rv) {
   case 0:
@@ -132,36 +134,134 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
     break;
 
   default:
-    return clib_error_return (0, "mmb_macswap_enable_disable returned %d",
+    return clib_error_return (0, "mmb_dumbrewrite_enable_disable returned %d",
                               rv);
   }
   return 0;
 }
 
 /**
- * @brief CLI command to enable/disable the mmb macswap plugin.
+ * @brief Enable/disable the value-based plugin. 
+ *
+ * Action function shared between message handler and debug CLI.
  */
-VLIB_CLI_COMMAND (sr_content_command, static) = {
-    .path = "mmb macswap",
-    .short_help = 
-    "mmb macswap <interface-name> [disable]",
-    .function = macswap_enable_disable_command_fn,
+
+int mmb_valuebased_enable_disable (mmb_main_t * sm, u32 sw_if_index,
+                                   int enable_disable)
+{
+  vnet_sw_interface_t * sw;
+  int rv = 0;
+
+  /* Utterly wrong? */
+  if (pool_is_free_index (sm->vnet_main->interface_main.sw_interfaces, 
+                          sw_if_index))
+    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
+
+  /* Not a physical port? */
+  sw = vnet_get_sw_interface (sm->vnet_main, sw_if_index);
+  if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
+    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
+  
+  //TODO: change value "device-input" (wrong arc-name for what we want)
+  //TODO: maybe not the right way: how to distinguish this with dumb-rewrite ???
+  vnet_feature_enable_disable ("device-input", "mmb",
+                               sw_if_index, enable_disable, 0, 0);
+
+  return rv;
+}
+
+static clib_error_t *
+valuebased_enable_disable_command_fn (vlib_main_t * vm,
+                                   unformat_input_t * input,
+                                   vlib_cli_command_t * cmd)
+{
+  mmb_main_t * sm = &mmb_main;
+  u32 sw_if_index = ~0;
+  int enable_disable = 1;
+    
+  int rv;
+
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+    if (unformat (input, "disable"))
+      enable_disable = 0;
+    else if (unformat (input, "%U", unformat_vnet_sw_interface,
+                       sm->vnet_main, &sw_if_index))
+      ;
+    else
+      break;
+  }
+
+  if (sw_if_index == ~0)
+    return clib_error_return (0, "Please specify an interface...");
+    
+  rv = mmb_valuebased_enable_disable (sm, sw_if_index, enable_disable);
+
+  switch(rv) {
+  case 0:
+    break;
+
+  case VNET_API_ERROR_INVALID_SW_IF_INDEX:
+    return clib_error_return 
+      (0, "Invalid interface, only works on physical ports");
+    break;
+
+  case VNET_API_ERROR_UNIMPLEMENTED:
+    return clib_error_return (0, "Device driver doesn't support redirection");
+    break;
+
+  default:
+    return clib_error_return (0, "mmb_dumbrewrite_enable_disable returned %d",
+                              rv);
+  }
+  return 0;
+}
+
+/**
+ * @brief CLI command to enable/disable the mmb dumb-rewrite plugin.
+ */
+VLIB_CLI_COMMAND (sr_content_command1, static) = {
+    .path = "mmb dumb-rewrite",
+    .short_help = "mmb dumb-rewrite <interface-name> [disable]",
+    .function = dumbrewrite_enable_disable_command_fn,
+};
+
+
+/**
+ * @brief CLI command to enable/disable the mmb value-based plugin.
+ */
+VLIB_CLI_COMMAND (sr_content_command2, static) = {
+    .path = "mmb value-based",
+    .short_help = "mmb value-based <interface-name> [disable]", //can be "REWRITE" or "DROP" for each (group of) rule(s)
+    .function = valuebased_enable_disable_command_fn,
 };
 
 /**
  * @brief Plugin API message handler.
  */
-static void vl_api_mmb_macswap_enable_disable_t_handler
-(vl_api_mmb_macswap_enable_disable_t * mp)
+static void vl_api_mmb_dumbrewrite_enable_disable_t_handler
+(vl_api_mmb_dumbrewrite_enable_disable_t * mp)
 {
-  vl_api_mmb_macswap_enable_disable_reply_t * rmp;
+  vl_api_mmb_dumbrewrite_enable_disable_reply_t * rmp;
   mmb_main_t * sm = &mmb_main;
   int rv;
 
-  rv = mmb_macswap_enable_disable (sm, ntohl(mp->sw_if_index), 
+  rv = mmb_dumbrewrite_enable_disable (sm, ntohl(mp->sw_if_index), 
                                       (int) (mp->enable_disable));
   
-  REPLY_MACRO(VL_API_MMB_MACSWAP_ENABLE_DISABLE_REPLY);
+  REPLY_MACRO(VL_API_MMB_DUMBREWRITE_ENABLE_DISABLE_REPLY);
+}
+
+static void vl_api_mmb_valuebased_enable_disable_t_handler
+(vl_api_mmb_valuebased_enable_disable_t * mp)
+{
+  vl_api_mmb_valuebased_enable_disable_reply_t * rmp;
+  mmb_main_t * sm = &mmb_main;
+  int rv;
+
+  rv = mmb_valuebased_enable_disable (sm, ntohl(mp->sw_if_index), 
+                                      (int) (mp->enable_disable));
+  
+  REPLY_MACRO(VL_API_MMB_VALUEBASED_ENABLE_DISABLE_REPLY);
 }
 
 /**
@@ -230,6 +330,7 @@ VLIB_INIT_FUNCTION (mmb_init);
 /**
  * @brief Hook the mmb plugin into the VPP graph hierarchy.
  */
+//TODO: change values
 VNET_FEATURE_INIT (mmb, static) = 
 {
   .arc_name = "device-input",
