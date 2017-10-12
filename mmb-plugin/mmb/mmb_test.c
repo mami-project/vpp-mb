@@ -64,7 +64,8 @@ typedef struct {
 mmb_test_main_t mmb_test_main;
 
 #define foreach_standard_reply_retval_handler   \
-_(mmb_dumbrewrite_enable_disable_reply)
+_(mmb_dumbrewrite_enable_disable_reply)         \
+_(mmb_valuebased_enable_disable_reply)
 
 #define _(n)                                            \
     static void vl_api_##n##_t_handler                  \
@@ -86,8 +87,9 @@ foreach_standard_reply_retval_handler;
  * Table of message reply handlers, must include boilerplate handlers
  * we just generated
  */
-#define foreach_vpe_api_reply_msg                                       \
-_(MMB_DUMBREWRITE_ENABLE_DISABLE_REPLY, mmb_dumbrewrite_enable_disable_reply)
+#define foreach_vpe_api_reply_msg                                             \
+_(MMB_DUMBREWRITE_ENABLE_DISABLE_REPLY, mmb_dumbrewrite_enable_disable_reply) \
+_(MMB_VALUEBASED_ENABLE_DISABLE_REPLY, mmb_valuebased_enable_disable_reply)
 
 
 static int api_mmb_dumbrewrite_enable_disable (vat_main_t * vam)
@@ -128,12 +130,51 @@ static int api_mmb_dumbrewrite_enable_disable (vat_main_t * vam)
     return ret;
 }
 
+static int api_mmb_valuebased_enable_disable (vat_main_t * vam)
+{
+    unformat_input_t * i = vam->input;
+    int enable_disable = 1;
+    u32 sw_if_index = ~0;
+    vl_api_mmb_valuebased_enable_disable_t * mp;
+    int ret;
+
+    /* Parse args required to build the message */
+    while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
+        if (unformat (i, "%U", unformat_sw_if_index, vam, &sw_if_index))
+            ;
+	else if (unformat (i, "sw_if_index %d", &sw_if_index))
+	    ;
+        else if (unformat (i, "disable"))
+            enable_disable = 0;
+        else
+            break;
+    }
+    
+    if (sw_if_index == ~0) {
+        errmsg ("missing interface name / explicit sw_if_index number \n");
+        return -99;
+    }
+    
+    /* Construct the API message */
+    M(MMB_VALUEBASED_ENABLE_DISABLE, mp);
+    mp->sw_if_index = ntohl (sw_if_index);
+    mp->enable_disable = enable_disable;
+
+    /* send it... */
+    S(mp);
+
+    /* Wait for a reply... */
+    W (ret);
+    return ret;
+}
+
 /* 
  * List of messages that the api test plugin sends,
  * and that the data plane plugin processes
  */
-#define foreach_vpe_api_msg \
-_(mmb_dumbrewrite_enable_disable, "<intfc> [disable]")
+#define foreach_vpe_api_msg                              \
+_(mmb_dumbrewrite_enable_disable, "<intfc> [disable]")   \
+_(mmb_valuebased_enable_disable, "<intfc> [disable]")
 
 static void mmb_api_hookup (vat_main_t *vam)
 {
