@@ -54,4 +54,5 @@ dkms.conf
 # more
 NOTES.txt
 TODO.txt
+doc/*
 
