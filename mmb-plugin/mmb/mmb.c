@@ -93,12 +93,11 @@ VLIB_PLUGIN_REGISTER () = {
 #define BEGIN_MMB_FIELDS        30
 #define MMB_FIELD_IP_PROTO      31
 //...
-#define END_MMB_FIELDS          32
-
-#define BEGIN_MMB_OPT_FIELDS    150
-#define MMB_FIELD_TCP_MSS       151
+#define BEGIN_MMB_OPT_FIELDS    200
+#define MMB_FIELD_TCP_MSS       201
 //...
-#define END_MMB_OPT_FIELDS      152
+#define END_MMB_OPT_FIELDS      202
+#define END_MMB_FIELDS          203
 
 
 
@@ -140,6 +139,9 @@ display_rules_command_fn (vlib_main_t * vm,
 
 u8 is_value(char * str)
 {
+  if (str == NULL)
+    return 0;
+
   char* tmp = str;
 
   //TODO: if needed, include "-" (minus) for negatives, "." (dot) for floating numbers, "0x" for hex values
@@ -152,6 +154,17 @@ u8 is_value(char * str)
   }
 
   return 1;
+}
+
+u8 is_negate(char * str)
+{
+  if (str == NULL)
+    return 0;
+
+  if (*str == '!')
+    return 1;
+
+  return 0;
 }
 
 u8 get_unique_id(char* element)
@@ -210,13 +223,13 @@ u8 get_type(u8 id)
   if (id > BEGIN_MMB_TARGETS && id < END_MMB_TARGETS)
     return MMB_TYPE_TARGET;
 
-  /* Element belongs to the fields group */
-  if (id > BEGIN_MMB_FIELDS && id < END_MMB_FIELDS)
-    return MMB_TYPE_FIELD;
-
   /* Element belongs to the OPTION fields group */
   if (id > BEGIN_MMB_OPT_FIELDS && id < END_MMB_OPT_FIELDS)
     return MMB_TYPE_OPT_FIELD;
+
+  /* Element belongs to the fields group */
+  if (id > BEGIN_MMB_FIELDS && id < END_MMB_FIELDS)
+    return MMB_TYPE_FIELD;
 
   /* Element does not belong to any known group */
   return MMB_TYPE_UNKNOWN;
@@ -225,7 +238,7 @@ u8 get_type(u8 id)
 static clib_error_t *
 add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, vlib_cli_command_t * cmd)
 {
-  u8 next_id, next_type;
+  u8 next_id, next_type, negate;
 
   /* Read first element - must be an existing field */
 
@@ -233,13 +246,17 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, vlib_cli_comman
   if (!unformat(input, "%s", &field))
     return clib_error_return(0, "Missing field: use \"list fields\" command for help");
 
+  negate = is_negate(field);
+  if (negate)
+    field++;
+
   u8 id = get_unique_id(field);
   u8 type = get_type(id);
 
   if (id == MMB_UNKNOWN || type != MMB_TYPE_FIELD)
     return clib_error_return(0, "Unknown field \"%s\": use \"list fields\" command for help", field);
 
-  vlib_cli_output(vm, "Field = %s\n", field);
+  vlib_cli_output(vm, "Field = %s (negate = %s)\n", field, negate == 1 ? "true" : "false");
 
 mmb_match_field:
   /*
@@ -256,6 +273,10 @@ mmb_match_field:
   if (!unformat(input, "%s", &field_next))
     return clib_error_return(0, "Unexpected end of command line: a field must be followed by either another field, a condition, a value or a target action");
 
+  negate = is_negate(field_next);
+  if (negate)
+    field_next++;
+
   next_id = get_unique_id(field_next);
   next_type = get_type(next_id);
 
@@ -263,7 +284,7 @@ mmb_match_field:
   {
     /* next element is a field */
     case MMB_TYPE_FIELD:
-      vlib_cli_output(vm, "Next is a field = %s\n", field_next);
+      vlib_cli_output(vm, "Next is a field = %s (negate = %s)\n", field_next, negate == 1 ? "true" : "false");
       goto mmb_match_field;
 
     /* next element is a condition */
@@ -334,6 +355,10 @@ mmb_match_value:
   if (!unformat(input, "%s", &value_next))
     return clib_error_return(0, "Unexpected end of command line: a value must be followed by either a field or a target action");
 
+  negate = is_negate(value_next);
+  if (negate)
+    value_next++;
+
   next_id = get_unique_id(value_next);
   next_type = get_type(next_id);
 
@@ -341,7 +366,7 @@ mmb_match_value:
   {
     /* next element is a field */
     case MMB_TYPE_FIELD:
-      vlib_cli_output(vm, "Next is a field = %s\n", value_next);
+      vlib_cli_output(vm, "Next is a field = %s (negate %s)\n", value_next, negate == 1 ? "true" : "false");
       goto mmb_match_field;
 
     /* next element is a target */
@@ -453,13 +478,20 @@ mmb_target_strip:
    * Current element is a STRIP target (target part)
    *
    * Next element can either be:
+   *   - a negate ("!") character
    *   - a field (option field)
-   *   - "ALL" (strip all options fields defined in matching part)
+   *   - ALL (strip all options fields defined in matching part)
    */;
 
   char* target_strip_next;
   if (!unformat(input, "%s", &target_strip_next))
-    return clib_error_return(0, "Unexpected end of command line: a \"strip\" target must be followed by a either an opt-field or \"all\"");
+    return clib_error_return(0, "Unexpected end of command line: a \"strip\" target must be followed by a either a \"not\" (\"!\"), an opt-field or \"all\"");
+
+  if (!strcmp(target_strip_next, "!"))
+  {
+    vlib_cli_output(vm, "NEGATIVE strip detected\n");
+    goto mmb_target_strip_not;
+  }
 
   next_id = get_unique_id(target_strip_next);
   next_type = get_type(next_id);
@@ -479,7 +511,31 @@ mmb_target_strip:
   }
 
   /* Something unexpected */
-  return clib_error_return(0, "Unexpected element \"%s\": a \"strip\" target must be followed by either an opt-field or \"all\"", target_strip_next);
+  return clib_error_return(0, "Unexpected element \"%s\": a \"strip\" target must be followed by either a \"not\" (\"!\"), an opt-field or \"all\"", target_strip_next);
+
+mmb_target_strip_not:
+  /*
+   * Current element is a NOT in STRIP target (target part)
+   *
+   * Next element MUST be a field (option field)
+   */;
+
+  char* target_strip_not_next;
+  if (!unformat(input, "%s", &target_strip_not_next))
+    return clib_error_return(0, "Unexpected end of command line: a \"not\" (\"!\") in a \"strip\" target must be followed by an opt-field");
+
+  next_id = get_unique_id(target_strip_not_next);
+  next_type = get_type(next_id);
+
+  /* next element is an opt-field */
+  if (next_type == MMB_TYPE_OPT_FIELD)
+  {
+    vlib_cli_output(vm, "Next is an opt-field = %s\n", target_strip_not_next);
+    goto mmb_target_strip_field;
+  }
+
+  /* Something unexpected */
+  return clib_error_return(0, "Unexpected element \"%s\": a \"not\" (\"!\") in a \"strip\" target must be followed by an opt-field", target_strip_not_next);
 
 mmb_target_strip_field:
   /*
