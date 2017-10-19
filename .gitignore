@@ -55,4 +55,8 @@ dkms.conf
 NOTES.txt
 TODO.txt
 doc/*
+scripts/install.sh
+scripts/upload2vm.sh
+scripts/dev.sh
+
 
