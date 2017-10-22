@@ -95,11 +95,12 @@ static u8 parse_match(unformat_input_t * input, mmb_match_t *match);
 static u8 parse_target(unformat_input_t * input, mmb_target_t *target);
 static void print_match(vlib_main_t * vm, mmb_match_t *match);
 static void print_target(vlib_main_t * vm, mmb_target_t *target);
-static char* field_tostr(u8 field, u8 kind);
+static u8* field_tostr(u8 field, u8 kind);
 static char* condition_tostr(u8 condition);
 static char* keyword_tostr(u8 keyword);
 static uword unformat_field(unformat_input_t * input, va_list * va);
 static uword unformat_condition(unformat_input_t * input, va_list * va);
+static uword unformat_value(unformat_input_t * input, va_list * va);
 
 static clib_error_t *
 enable_command_fn (vlib_main_t * vm,
@@ -137,20 +138,6 @@ display_rules_command_fn (vlib_main_t * vm,
   return 0;
 }
 
-uword unformat_keyword(unformat_input_t * input, va_list * va)
-{
-  char *k = va_arg (*va, char *);
-  if (unformat (input, "drop"))
-    *k = MMB_TARGET_DROP;
-  else if (unformat (input, "strip"))
-    *k = MMB_TARGET_STRIP;
-  else if (unformat (input, "mod"))
-    *k = MMB_TARGET_MODIFY;
-  else
-    return 0;
-  return 1;
-}
-
 uword unformat_field(unformat_input_t * input, va_list * va)
 {
   u8 *field = va_arg (*va, u8*);
@@ -170,6 +157,7 @@ uword unformat_field(unformat_input_t * input, va_list * va)
 
   return 0;
 }
+
 uword unformat_condition(unformat_input_t * input, va_list * va)
 {
   u8 *cond = va_arg (*va, u8*);
@@ -183,32 +171,45 @@ uword unformat_condition(unformat_input_t * input, va_list * va)
   return 0;
 }
 
-char* field_tostr(u8 field, u8 kind) {
+uword unformat_value(unformat_input_t * input, va_list * va)
+{
+  
+  char **val = va_arg (*va, char**);
+  if (unformat (input, "x%s", val))
+    return 1;
+  else if (unformat (input, "%s", val))
+    return 1;
+
+  return 0;
+}
+
+u8* field_tostr(u8 field, u8 kind) 
+{
    if (field < MMB_FIELD_NET_PROTO 
     || field > MMB_FIELD_NET_PROTO+fields_len)
      return NULL;
 
    u8 field_index = field-MMB_FIELD_NET_PROTO;
-   char *field_str = clib_mem_alloc(50); 
+   u8 * field_str = format(0, "");
    if (field == MMB_FIELD_TCP_OPT && kind) {
-     if (!snprintf(field_str, 50, "%s %d", fields[field_index], kind))
-       return NULL;
-   } else if (snprintf(field_str, 50, "%s", fields[field_index]))
-     ;
-   else 
-     return NULL;
+     field_str = format(field_str, "%s %d", fields[field_index], kind);
+   } else
+     field_str = format(field_str, "%s", fields[field_index]);
 
+   vec_terminate_c_string(field_str);
    return field_str;
 }
 
-char* condition_tostr(u8 condition) {
+char* condition_tostr(u8 condition) 
+{
    if (condition < MMB_COND_EQ 
     || condition > MMB_COND_EQ+conditions_len)
      return NULL;
    return conditions[condition-MMB_COND_EQ];
 }
 
-char* keyword_tostr(u8 keyword) {
+char* keyword_tostr(u8 keyword) 
+{
    switch(keyword) {
       case MMB_TARGET_DROP:
          return "drop";
@@ -221,11 +222,8 @@ char* keyword_tostr(u8 keyword) {
    }
 }
 
-u8 parse_target(unformat_input_t * input, mmb_target_t *target) {
-   u32 value, len;
-   //mmb_match_t *match; //TODO pool
-   memset (target, 0, sizeof (mmb_target_t));
-
+u8 parse_target(unformat_input_t * input, mmb_target_t *target) 
+{
    if (unformat(input, "strip ! %U", unformat_field, 
                &target->field, &target->opt_kind)) {
      target->keyword=MMB_TARGET_STRIP;
@@ -233,11 +231,9 @@ u8 parse_target(unformat_input_t * input, mmb_target_t *target) {
    } else if (unformat(input, "strip %U", unformat_field, 
                       &target->field, &target->opt_kind)) 
      target->keyword=MMB_TARGET_STRIP;
-   else if (unformat(input, "mod %U %d", unformat_field, 
-                    &target->field, &target->opt_kind, &target->value))
-     target->keyword=MMB_TARGET_MODIFY; 
-   else if (unformat(input, "mod %U x%x", unformat_field, 
-                    &target->field, &target->opt_kind, &target->value)) 
+   else if (unformat(input, "mod %U %U", unformat_field, 
+                    &target->field, &target->opt_kind, 
+                    unformat_value, &target->value))
      target->keyword=MMB_TARGET_MODIFY; 
    else if (unformat(input, "drop"))
      target->keyword=MMB_TARGET_DROP; 
@@ -246,27 +242,18 @@ u8 parse_target(unformat_input_t * input, mmb_target_t *target) {
    return 1;
 }
 
-u8 parse_match(unformat_input_t * input, mmb_match_t *match) {
-   u32 value, len;
-   //mmb_match_t *match; //TODO pool
-   memset (match, 0, sizeof (mmb_match_t));
-
+u8 parse_match(unformat_input_t * input, mmb_match_t *match) 
+{
    if (unformat(input, "!"))
      match->reverse = 1;
 
-   if (unformat(input, "%U %U %d", unformat_field, 
-               &match->field, &match->opt_kind, unformat_condition, 
-               &match->condition, &match->value)) 
-     ;
-   else if (unformat(input, "%U %U x%x", unformat_field, 
+   if (unformat(input, "%U %U %U", unformat_field, 
                     &match->field, &match->opt_kind, unformat_condition, 
-                    &match->condition, &match->value)) 
+                    &match->condition, unformat_value, &match->value)) 
      ;
-   else if (unformat(input, "%U %d", unformat_field, 
-                    &match->field, &match->opt_kind, &match->value)) 
-     ;
-   else if (unformat(input, "%U x%x", unformat_field, 
-                    &match->field, &match->opt_kind, &match->value)) 
+   else if (unformat(input, "%U %U", unformat_field, 
+                    &match->field, &match->opt_kind, 
+                    unformat_value, &match->value)) 
      ;
    else if (unformat(input, "%U", unformat_field, 
                     &match->field, &match->opt_kind)) 
@@ -276,16 +263,61 @@ u8 parse_match(unformat_input_t * input, mmb_match_t *match) {
    return 1;
 }
 
+static clib_error_t *
+add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
+                     vlib_cli_command_t * cmd)
+{
+   /* parse matches */
+  mmb_match_t *matches = 0, match;
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
+  {
+    memset(&match, 0, sizeof (mmb_match_t));
+    if (!parse_match(input, &match)) 
+      break;
+    else vec_add1(matches, match);
+  } 
+  if (vec_len(matches) < 1)
+     return clib_error_return (0, "at least one <match> must be set");
+
+  /* parse targets */
+  mmb_target_t *targets = 0, target;
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
+  {
+    memset(&target, 0, sizeof (mmb_target_t));
+    if (!parse_target(input, &target)) 
+      break;
+    else vec_add1(targets, target);
+  }
+
+  if (vec_len(targets) < 1)
+     return clib_error_return (0, "at least one <target> must be set");
+
+  if (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+    return clib_error_return(0, "Could not parse whole input");
+  }
+
+  for (int i=0;i<vec_len(matches);i++) 
+    print_match(vm, &matches[i]);
+  vlib_cli_output(vm, "end of matching");
+  vlib_cli_output(vm, "\n");
+  for (int i=0;i<vec_len(targets);i++) 
+    print_target(vm, &targets[i]);
+  vlib_cli_output(vm, "end of targets");
+  vlib_cli_output(vm, "\n");
+
+  //TODO validate args
+  return 0;
+}
+
 void print_match(vlib_main_t * vm, mmb_match_t *match) {
   if (match->reverse)
     vlib_cli_output(vm, "! ");
-  char *field_str = field_tostr(match->field, match->opt_kind);
+  u8 *field_str = field_tostr(match->field, match->opt_kind);
   vlib_cli_output(vm, "%s ", field_str);
-  clib_mem_free(field_str);
   if (match->condition)
     vlib_cli_output(vm, "%s ", condition_tostr(match->condition)); 
   if (match->value)
-    vlib_cli_output(vm, "%d ", match->value); 
+    vlib_cli_output(vm, "%s ", match->value); 
   vlib_cli_output(vm, "\n"); 
 }
 
@@ -294,50 +326,12 @@ void print_target(vlib_main_t * vm, mmb_target_t *target) {
     vlib_cli_output(vm, "! ");
   vlib_cli_output(vm, "%s ", keyword_tostr(target->keyword));
   if (target->field) {;
-     char *field_str = field_tostr(target->field, target->opt_kind);
+     u8 *field_str = field_tostr(target->field, target->opt_kind);
      vlib_cli_output(vm, "%s ", field_str);
-     clib_mem_free(field_str);
   } 
   if (target->value)
-    vlib_cli_output(vm, "%d ", target->value); 
+    vlib_cli_output(vm, "%s ", target->value); 
   vlib_cli_output(vm, "\n"); 
-}
-
-static clib_error_t *
-add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, vlib_cli_command_t * cmd)
-{
-   /* parse matches */
-  mmb_match_t match;
-  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
-  {
-    if (!parse_match(input, &match)) 
-      break;
-    else 
-      print_match(vm, &match);
-  }
-  //TODO if no matches, error and stop
-  vlib_cli_output(vm, "end of matching");
-  vlib_cli_output(vm, "\n");
-
-  /* parse targets */
-  mmb_target_t target;
-  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
-  {
-    if (!parse_target(input, &target)) 
-      break;
-    else 
-      print_target(vm, &target);
-  }
-  //TODO if no targets, error and stop
-  vlib_cli_output(vm, "end of targets");
-  vlib_cli_output(vm, "\n");
-
-  if (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
-    return clib_error_return(0, "Could not parse whole input");
-  }
-
-  //TODO validate args
-  return 0;
 }
 
 static clib_error_t *
@@ -412,7 +406,7 @@ VLIB_CLI_COMMAND (sr_content_command_del_rule, static) = {
 static clib_error_t *
 mmb_plugin_api_hookup (vlib_main_t *vm)
 {
-  mmb_main_t * sm = &mmb_main;
+  CLIB_UNUSED(mmb_main_t) * sm = &mmb_main;
 #define _(N,n)                                                  \
     vl_msg_api_set_handlers((VL_API_##N + sm->msg_id_base),     \
                            #n,					\

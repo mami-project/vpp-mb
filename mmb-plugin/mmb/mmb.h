@@ -117,7 +117,8 @@ typedef struct {
    u8 opt_kind; //tcp-opt
 
    u8 condition;
-   u64 value;
+   char *value;
+   //u64 value;
    u8 value_len;
    u8 reverse;
 
@@ -127,7 +128,8 @@ typedef struct {
    u8 keyword;
    u8 field;
    u8 opt_kind; //tcp-opt
-   u64 value;
+   char *value;
+   //u64 value;
    u8 value_len;
    u8 reverse;
 
