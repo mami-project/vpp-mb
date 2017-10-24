@@ -64,6 +64,8 @@ VLIB_PLUGIN_REGISTER () = {
 };
 /* *INDENT-ON* */
 
+#define MMB_DEFAULT_MATCH_CONDITION MMB_COND_EQ
+
 static u8 fields_len = 58;
 static char* fields[] = {
   "net-proto", "ip-ver", "ip-ihl",
@@ -264,7 +266,7 @@ u8 parse_match(unformat_input_t * input, mmb_match_t *match)
    else if (unformat(input, "%U %U", unformat_field, 
                     &match->field, &match->opt_kind, 
                     unformat_value, &match->value)) 
-     ;
+     match->condition = MMB_DEFAULT_MATCH_CONDITION;
    else if (unformat(input, "%U", unformat_field, 
                     &match->field, &match->opt_kind)) 
      ;
