@@ -173,14 +173,24 @@ uword unformat_condition(unformat_input_t * input, va_list * va)
 
 uword unformat_value(unformat_input_t * input, va_list * va)
 {
-  
-  char **val = va_arg (*va, char**);
-  if (unformat (input, "x%s", val))
-    return 1;
-  else if (unformat (input, "%s", val))
-    return 1;
+  u8 **hex_value = va_arg (*va, u8**);
+  if (unformat (input, "0x%U", unformat_hex_string, hex_value))
+    ;
+  else if (unformat (input, "x%U", unformat_hex_string, hex_value))
+    ; 
+  else if (unformat (input, "%U", unformat_hex_string, hex_value))
+    ;
+  else {
+    /* try adding a single hex digit
+    TODO: this is a hack, fix it or secure it.
+    */
+    unformat_put_input(input);
+    input->buffer[input->index] = '0';
+    if (!unformat (input, "%U", unformat_hex_string, hex_value))
+      return 0;
+  }
 
-  return 0;
+  return 1;
 }
 
 u8* field_tostr(u8 field, u8 kind) 
@@ -311,13 +321,13 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
 void print_match(vlib_main_t * vm, mmb_match_t *match) {
   if (match->reverse)
-    vlib_cli_output(vm, "! ");
+   vlib_cli_output(vm, "! ");
   u8 *field_str = field_tostr(match->field, match->opt_kind);
   vlib_cli_output(vm, "%s ", field_str);
   if (match->condition)
     vlib_cli_output(vm, "%s ", condition_tostr(match->condition)); 
-  if (match->value)
-    vlib_cli_output(vm, "%s ", match->value); 
+    for (int i = 0; i < vec_len (match->value); i++)
+      vlib_cli_output(vm, "%02x", match->value[i]);
   vlib_cli_output(vm, "\n"); 
 }
 
@@ -329,8 +339,8 @@ void print_target(vlib_main_t * vm, mmb_target_t *target) {
      u8 *field_str = field_tostr(target->field, target->opt_kind);
      vlib_cli_output(vm, "%s ", field_str);
   } 
-  if (target->value)
-    vlib_cli_output(vm, "%s ", target->value); 
+  for (int i = 0; i < vec_len (target->value); i++)
+    vlib_cli_output(vm, "%02x", target->value[i]);
   vlib_cli_output(vm, "\n"); 
 }
 

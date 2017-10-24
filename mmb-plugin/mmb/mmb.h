@@ -113,25 +113,25 @@
 #define MMB_FIELD_ALL                167
 
 typedef struct {
-   u8 field;
-   u8 opt_kind; //tcp-opt
+   u8 field; /*! The field to match on */
+   u8 opt_kind; /*! The kind of option, if the field is one */
 
-   u8 condition;
-   char *value;
+   u8 condition; /*! The constraint condition (optional) */
+   u8 *value; /*! The constraint value (optional) */
    //u64 value;
-   u8 value_len;
-   u8 reverse;
+   u8 value_len; 
+   u8 reverse; /*! reverse matching (boolean not) */
 
 } mmb_match_t;
 
 typedef struct {
-   u8 keyword;
-   u8 field;
-   u8 opt_kind; //tcp-opt
-   char *value;
+   u8 keyword; /*! The target keyword */ 
+   u8 field;  /*! The field to modify */
+   u8 opt_kind;  /*! The kind of option, if the field is one */
+   u8 *value; /*! The value to write */
    //u64 value;
-   u8 value_len;
-   u8 reverse;
+   u8 value_len; 
+   u8 reverse; /*! whitelist (strip only) */
 
 } mmb_target_t;
 
