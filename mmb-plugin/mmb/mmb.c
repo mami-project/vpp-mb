@@ -104,16 +104,80 @@ static uword unformat_field(unformat_input_t * input, va_list * va);
 static uword unformat_condition(unformat_input_t * input, va_list * va);
 static uword unformat_value(unformat_input_t * input, va_list * va);
 
+/**
+ * @brief Enable/disable the mmb plugin. 
+ *
+ * Action function shared between message handler and debug CLI.
+ */
+
+int mmb_enable_disable (mmb_main_t * mm, u32 sw_if_index,
+                                   int enable_disable)
+{
+  vnet_sw_interface_t * sw;
+  int rv = 0;
+
+  /* Utterly wrong? */
+  if (pool_is_free_index (mm->vnet_main->interface_main.sw_interfaces, 
+                          sw_if_index))
+    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
+
+  /* Not a physical port? */
+  sw = vnet_get_sw_interface (mm->vnet_main, sw_if_index);
+  if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
+    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
+  
+  vnet_feature_enable_disable ("ip4-unicast", "mmb",
+                               sw_if_index, enable_disable, 0, 0);
+
+  return rv;
+}
+
+static clib_error_t *
+mmb_enable_disable_fn (vlib_main_t * vm,
+                   unformat_input_t * input,
+                   vlib_cli_command_t * cmd,
+                   int enable_disable)
+{
+  mmb_main_t *mm = &mmb_main;
+  u32 sw_if_index = ~0;
+    
+  int rv;
+
+  while(unformat_check_input(input) != UNFORMAT_END_OF_INPUT)
+  {
+    if (!unformat(input, "%U", unformat_vnet_sw_interface, mm->vnet_main, &sw_if_index))
+      break;
+  }
+
+  if (sw_if_index == ~0)
+    return clib_error_return(0, "Please specify an interface...");
+    
+  rv = mmb_enable_disable(mm, sw_if_index, enable_disable);
+
+  switch(rv)
+  {
+    case 0:
+      break;
+
+    case VNET_API_ERROR_INVALID_SW_IF_INDEX:
+      return clib_error_return(0, "Invalid interface, only works on physical ports");
+
+    case VNET_API_ERROR_UNIMPLEMENTED:
+      return clib_error_return(0, "Device driver doesn't support redirection");
+
+    default:
+      return clib_error_return(0, "mmb_enable_disable returned %d", rv);
+  }
+
+  return 0;
+}
+
 static clib_error_t *
 enable_command_fn (vlib_main_t * vm,
                    unformat_input_t * input,
                    vlib_cli_command_t * cmd)
 {
-  if (!unformat_is_eof(input))
-    return clib_error_return(0, "Syntax error: unexpected additional element");
-
-  //TODO: enable
-  return 0;
+  return mmb_enable_disable_fn(vm, input, cmd, /* enable */ 1);
 }
 
 static clib_error_t *
@@ -121,11 +185,7 @@ disable_command_fn (vlib_main_t * vm,
                    unformat_input_t * input,
                    vlib_cli_command_t * cmd)
 {
-  if (!unformat_is_eof(input))
-    return clib_error_return(0, "Syntax error: unexpected additional element");
-
-  //TODO: disable
-  return 0;
+  return mmb_enable_disable_fn(vm, input, cmd, /* disable */ 0);
 }
 
 static clib_error_t *
@@ -372,7 +432,7 @@ del_rule_command_fn (vlib_main_t * vm,
  */
 VLIB_CLI_COMMAND (sr_content_command_enable, static) = {
     .path = "mmb enable",
-    .short_help = "Enable the MMB plugin",
+    .short_help = "mmb enable <interface-name> (enable the MMB plugin on a given interface)",
     .function = enable_command_fn,
 };
 
@@ -381,7 +441,7 @@ VLIB_CLI_COMMAND (sr_content_command_enable, static) = {
  */
 VLIB_CLI_COMMAND (sr_content_command_disable, static) = {
     .path = "mmb disable",
-    .short_help = "Disable the MMB plugin",
+    .short_help = "mmb disable <interface-name> (disable the MMB plugin on a given interface)",
     .function = disable_command_fn,
 };
 
@@ -478,10 +538,10 @@ VLIB_INIT_FUNCTION (mmb_init);
 /**
  * @brief Hook the mmb plugin into the VPP graph hierarchy.
  */
-//TODO: change values
+//TODO: work in progress (we may need to change the node location...)
 VNET_FEATURE_INIT (mmb, static) = 
 {
-  .arc_name = "device-input",
+  .arc_name = "ip4-unicast", //ip4-output
   .node_name = "mmb",
-  .runs_before = VNET_FEATURES ("ethernet-input"),
+  .runs_before = VNET_FEATURES ("ip4-lookup"), //interface-output
 };

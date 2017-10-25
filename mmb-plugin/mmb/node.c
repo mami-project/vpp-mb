@@ -19,40 +19,25 @@
 #include <mmb/mmb.h>
 
 typedef struct {
-  u32 next_index;
-  u32 sw_if_index;
-  u8 new_src_mac[6];
-  u8 new_dst_mac[6];
+
 } mmb_trace_t;
 
-static u8 *
-format_mac_address (u8 * s, va_list * args)
-{
-  u8 *a = va_arg (*args, u8 *);
-  return format (s, "%02x:%02x:%02x:%02x:%02x:%02x",
-		 a[0], a[1], a[2], a[3], a[4], a[5]);
-}
 
 /* packet trace format function */
 static u8 * format_mmb_trace (u8 * s, va_list * args)
 {
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
-  mmb_trace_t * t = va_arg (*args, mmb_trace_t *);
+  //mmb_trace_t * t = va_arg (*args, mmb_trace_t *);
   
-  s = format (s, "MMB: sw_if_index %d, next index %d\n",
-              t->sw_if_index, t->next_index);
-  s = format (s, "  new src %U -> new dst %U",
-              format_mac_address, t->new_src_mac, 
-              format_mac_address, t->new_dst_mac);
-
+  s = format (s, "MMB\n");
   return s;
 }
 
 vlib_node_registration_t mmb_node;
 
 #define foreach_mmb_error \
-_(SWAPPED, "Mac swap packets processed")
+_(DONE, "MMB packets processed")
 
 typedef enum {
 #define _(sym,str) MMB_ERROR_##sym,
@@ -68,17 +53,10 @@ static char * mmb_error_strings[] = {
 };
 
 typedef enum {
-  MMB_NEXT_INTERFACE_OUTPUT,
+  MMB_NEXT_LOOKUP,
+  MMB_NEXT_DROP,
   MMB_N_NEXT,
 } mmb_next_t;
-
-#define foreach_mac_address_offset              \
-_(0)                                            \
-_(1)                                            \
-_(2)                                            \
-_(3)                                            \
-_(4)                                            \
-_(5)
 
 static uword
 mmb_node_fn (vlib_main_t * vm,
@@ -87,7 +65,7 @@ mmb_node_fn (vlib_main_t * vm,
 {
   u32 n_left_from, * from, * to_next;
   mmb_next_t next_index;
-  u32 pkts_swapped = 0;
+  u32 pkts_done = 0;
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
@@ -102,11 +80,9 @@ mmb_node_fn (vlib_main_t * vm,
 
       while (n_left_from >= 4 && n_left_to_next >= 2)
 	{
-          u32 next0 = MMB_NEXT_INTERFACE_OUTPUT;
-          u32 next1 = MMB_NEXT_INTERFACE_OUTPUT;
-          u32 sw_if_index0, sw_if_index1;
-          u8 tmp0[6], tmp1[6];
-          ethernet_header_t *en0, *en1;
+          u32 next0 = MMB_NEXT_LOOKUP;
+          u32 next1 = MMB_NEXT_LOOKUP;
+          ip4_header_t *ip0, *ip1;
           u32 bi0, bi1;
 	  vlib_buffer_t * b0, * b1;
           
@@ -135,70 +111,27 @@ mmb_node_fn (vlib_main_t * vm,
 	  b0 = vlib_get_buffer (vm, bi0);
 	  b1 = vlib_get_buffer (vm, bi1);
 
-          ASSERT (b0->current_data == 0);
-          ASSERT (b1->current_data == 0);
+          //ASSERT (b0->current_data == 0);
+          //ASSERT (b1->current_data == 0);
           
-          en0 = vlib_buffer_get_current (b0);
-          en1 = vlib_buffer_get_current (b1);
+          ip0 = vlib_buffer_get_current (b0);
+          ip1 = vlib_buffer_get_current (b1);
 
-          /* This is not the fastest way to swap src + dst mac addresses */
-#define _(a) tmp0[a] = en0->src_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en0->src_address[a] = en0->dst_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en0->dst_address[a] = tmp0[a];
-          foreach_mac_address_offset;
-#undef _
-
-#define _(a) tmp1[a] = en1->src_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en1->src_address[a] = en1->dst_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en1->dst_address[a] = tmp1[a];
-          foreach_mac_address_offset;
-#undef _
-
-
-
-          sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
-          sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
-
-          /* Send pkt back out the RX interface */
-          vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
-          vnet_buffer(b1)->sw_if_index[VLIB_TX] = sw_if_index1;
-
-          pkts_swapped += 2;
+          pkts_done += 2;
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
             {
               if (b0->flags & VLIB_BUFFER_IS_TRACED) 
                 {
-                    mmb_trace_t *t = 
-                      vlib_add_trace (vm, node, b0, sizeof (*t));
-                    t->sw_if_index = sw_if_index0;
-                    t->next_index = next0;
-                    clib_memcpy (t->new_src_mac, en0->src_address,
-                                 sizeof (t->new_src_mac));
-                    clib_memcpy (t->new_dst_mac, en0->dst_address,
-                                 sizeof (t->new_dst_mac));
                     
                   }
                 if (b1->flags & VLIB_BUFFER_IS_TRACED) 
                   {
-                    mmb_trace_t *t = 
-                      vlib_add_trace (vm, node, b1, sizeof (*t));
-                    t->sw_if_index = sw_if_index1;
-                    t->next_index = next1;
-                    clib_memcpy (t->new_src_mac, en1->src_address,
-                                 sizeof (t->new_src_mac));
-                    clib_memcpy (t->new_dst_mac, en1->dst_address,
-                                 sizeof (t->new_dst_mac));
                   }
               }
+
+          if (pkts_done%2 == 0)
+            next1 = MMB_NEXT_DROP;
             
             /* verify speculative enqueues, maybe switch current next frame */
             vlib_validate_buffer_enqueue_x2 (vm, node, next_index,
@@ -210,10 +143,8 @@ mmb_node_fn (vlib_main_t * vm,
 	{
           u32 bi0;
 	  vlib_buffer_t * b0;
-          u32 next0 = MMB_NEXT_INTERFACE_OUTPUT;
-          u32 sw_if_index0;
-          u8 tmp0[6];
-          ethernet_header_t *en0;
+          u32 next0 = MMB_NEXT_LOOKUP;
+          ip4_header_t *ip0;
 
           /* speculatively enqueue b0 to the current next frame */
 	  bi0 = from[0];
@@ -228,39 +159,18 @@ mmb_node_fn (vlib_main_t * vm,
            * Direct from the driver, we should be at offset 0
            * aka at &b0->data[0]
            */
-          ASSERT (b0->current_data == 0);
+          //ASSERT (b0->current_data == 0);
           
-          en0 = vlib_buffer_get_current (b0);
-
-          /* This is not the fastest way to swap src + dst mac addresses */
-#define _(a) tmp0[a] = en0->src_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en0->src_address[a] = en0->dst_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en0->dst_address[a] = tmp0[a];
-          foreach_mac_address_offset;
-#undef _
-
-          sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
-
-          /* Send pkt back out the RX interface */
-          vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
+          ip0 = vlib_buffer_get_current (b0);
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
-            mmb_trace_t *t = 
-               vlib_add_trace (vm, node, b0, sizeof (*t));
-            t->sw_if_index = sw_if_index0;
-            t->next_index = next0;
-            clib_memcpy (t->new_src_mac, en0->src_address,
-                         sizeof (t->new_src_mac));
-            clib_memcpy (t->new_dst_mac, en0->dst_address,
-                         sizeof (t->new_dst_mac));
             }
             
-          pkts_swapped += 1;
+          pkts_done += 1;
+
+          if (pkts_done%2 == 0)
+            next0 = MMB_NEXT_DROP;
 
           /* verify speculative enqueue, maybe switch current next frame */
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
@@ -272,7 +182,7 @@ mmb_node_fn (vlib_main_t * vm,
     }
 
   vlib_node_increment_counter (vm, mmb_node.index, 
-                               MMB_ERROR_SWAPPED, pkts_swapped);
+                               MMB_ERROR_DONE, pkts_done);
   return frame->n_vectors;
 }
 
@@ -289,7 +199,12 @@ VLIB_REGISTER_NODE (mmb_node) = {
   .n_next_nodes = MMB_N_NEXT,
 
   /* edit / add dispositions here */
+  //TODO: we may need to change next nodes defined below
   .next_nodes = {
-        [MMB_NEXT_INTERFACE_OUTPUT] = "interface-output",
+        [MMB_NEXT_LOOKUP] = "ip4-lookup",
+        [MMB_NEXT_DROP]   = "error-drop",
   },
 };
+
+VLIB_NODE_FUNCTION_MULTIARCH(mmb_node, mmb_node_fn);
+
