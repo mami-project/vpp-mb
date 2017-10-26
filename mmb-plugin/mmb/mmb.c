@@ -93,21 +93,24 @@ static char* fields[] = {
 static u8 conditions_len = 6;
 static char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
-static u8 parse_match(unformat_input_t * input, mmb_match_t *match);
-static u8 parse_target(unformat_input_t * input, mmb_target_t *target);
+static uword unformat_field(unformat_input_t * input, va_list * va);
+static uword unformat_condition(unformat_input_t * input, va_list * va);
+static uword unformat_value(unformat_input_t * input, va_list * va);
 static u8 *mmb_format_rule(u8 *s, va_list *args);
 static u8 *mmb_format_match(u8 *s, va_list *args);
 static u8 *mmb_format_target(u8 *s, va_list *args);
 static u8* mmb_format_field(u8 *s, va_list *args);
 static u8* mmb_format_condition(u8 *s, va_list *args);
 static u8* mmb_format_keyword(u8 *s, va_list *args);
-static uword unformat_field(unformat_input_t * input, va_list * va);
-static uword unformat_condition(unformat_input_t * input, va_list * va);
-static uword unformat_value(unformat_input_t * input, va_list * va);
+
+static u8 parse_match(unformat_input_t * input, mmb_match_t *match);
+static u8 parse_target(unformat_input_t * input, mmb_target_t *target);
+static void mmb_free_rule(mmb_rule_t *rule);
 
 static clib_error_t *validate_rule();
 static void print_rules(vlib_main_t * vm, mmb_rule_t *rules);
 
+char *mmb_debug = 0;
 
 /**
  * @brief Enable/disable the mmb plugin. 
@@ -223,6 +226,12 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   if (vec_len(matches) < 1)
      return clib_error_return (0, "at least one <match> must be set");
 
+  /*uword index = 0;
+  vec_foreach_index(index, matches) {
+  vl_print(vm, "%U%s", mmb_format_match, &matches[index],
+                               (index != vec_len(matches)-1) ? " AND ":"\t");
+  }*/
+
   /* parse targets */
   mmb_target_t *targets = 0, target;
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
@@ -264,23 +273,33 @@ del_rule_command_fn (vlib_main_t * vm,
                      unformat_input_t * input,
                      vlib_cli_command_t * cmd)
 {
-  uword rule_index;
+  u32 rule_index;
+  mmb_main_t *mm = &mmb_main;
+  mmb_rule_t *rules = mm->rules;
+  vl_print(vm, "%d", vec_len(rules));
 
-  if (unformat(input, "%u", &rule_index) && rule_index > 0)
+  if (unformat(input, "%u", &rule_index))
   {
-    if (unformat_is_eof(input))
-    {
-      mmb_main_t *mm = &mmb_main;
-      vec_del1(mm->rules, rule_index-1);
-      return 0;
+
+   if (rule_index > 0 && rule_index <= vec_len(rules)) {
+
+       if (unformat_is_eof(input))
+       {
+         rule_index--; 
+         mmb_rule_t *rule = &rules[rule_index];
+         vec_del1(rules, rule_index);
+         mmb_free_rule(rule);
+
+         return 0;
+       } 
+       return clib_error_return(0, 
+        "Syntax error: unexpected additional element");
     }
+        return clib_error_return(0, "No rule at this index");
+  } 
 
-    return clib_error_return(0, "Syntax error: unexpected \
-                                 additional element");
-  }
-
-  return clib_error_return(0, "Syntax error: rule number must be an \
-                               integer greater than 0");
+  return clib_error_return(0, 
+    "Syntax error: rule number must be an integer greater than 0");
 }
 
 uword unformat_field(unformat_input_t * input, va_list * va)
@@ -319,21 +338,34 @@ uword unformat_condition(unformat_input_t * input, va_list * va)
 uword unformat_value(unformat_input_t * input, va_list * va)
 {
   u8 **bytes = va_arg(*va, u8**);
-  if (unformat (input, "0x%U", unformat_hex_string, bytes))
-    ;
-  else if (unformat (input, "x%U", unformat_hex_string, bytes))
-    ; 
-  else if (unformat (input, "%U", unformat_hex_string, bytes))
-    ;//TODO: %d for u32
-  else {
-    /* try adding a single hex digit
-    TODO: this is a hack, fix it or secure it.
-    */
-    unformat_put_input(input);
-    input->buffer[input->index] = '0';
-    if (!unformat (input, "%U", unformat_hex_string, bytes))
-      return 0;
-  }
+  u64 decimal = 0;
+
+  if (unformat (input, "0x") 
+    || unformat (input, "x")) {
+    /* hex value */ 
+
+    u8 *hex_str = 0;
+    if (unformat (input, "%U", unformat_hex_string, bytes))
+      ;
+    else if (unformat (input, "%s", &hex_str)) {
+
+      /* add an extra 0 for parity */  
+      unformat_input_t str_input = {0}, *sub_input = &str_input; 
+      unformat_init_vector(sub_input, format(0, "0%s", hex_str));
+      if (!unformat (sub_input, "%U", unformat_hex_string, bytes)) {
+        unformat_free(sub_input);
+        return 0;
+      }
+      unformat_free(sub_input);
+    }
+    
+  } else if (unformat (input, "%lu", &decimal)) {
+    /* dec value */
+    for (int i=7; i>=0; i--)
+      vec_add1(*bytes, (decimal>>(i*8)) & 0xff); 
+  } else 
+    return 0;
+
   return 1;
 }
 
@@ -456,8 +488,7 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
 
 static inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
   u8 *byte, *bytes = va_arg(*args, u8*); 
-  vec_foreach(byte, bytes) 
-  {
+  vec_foreach(byte, bytes) {
     s = format(s, "%02x", *byte);
   }
   return s;
@@ -483,6 +514,18 @@ u8 *mmb_format_target(u8 *s, va_list *args) {
                          mmb_format_bytes, target->value
                          );
   return s; 
+}
+
+void mmb_free_rule(mmb_rule_t *rule) {
+  uword index;
+  vec_foreach_index(index, rule->matches) {
+    vec_free(rule->matches[index].value);
+  }
+  vec_free(rule->matches);
+  vec_foreach_index(index, rule->targets) {
+    vec_free(rule->targets[index].value);
+  }
+  vec_free(rule->targets);
 }
 
 /**
