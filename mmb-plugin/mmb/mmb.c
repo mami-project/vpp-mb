@@ -201,7 +201,9 @@ display_rules_command_fn (vlib_main_t * vm,
   if (!unformat_is_eof(input))
     return clib_error_return(0, "Syntax error: unexpected additional element");
 
-  //TODO: display all rules
+  mmb_main_t *mm = &mmb_main;
+  print_rules(vm, mm->rules);
+
   return 0;
 }
 
@@ -404,53 +406,57 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
 void print_rules(vlib_main_t * vm, mmb_rule_t *rules) {
    //TODO: output alignment
    vl_print(vm, "\tMatches\t\tTargets\n");
-   for (int i=0; i<vec_len(rules); i++)
-      vl_print(vm, "%d\t%U\n", i, mmb_format_rule, &rules[i]);
+
+   uword rule_index = 0;
+   vec_foreach_index(rule_index, rules) {
+     vl_print(vm, "%d\t%U\n", rule_index, mmb_format_rule, &rules[rule_index]);
+   }
 }
 
 u8 *mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
-  for (int i=0;i<vec_len(rule->matches);i++) {
-    s = format(s, "%U%s", mmb_format_match, &rule->matches[i],
-                               (i != vec_len(rule->matches)-1) ? " AND ":"\t");
+
+  uword index = 0;
+  vec_foreach_index(index, rule->matches) {
+    s = format(s, "%U%s", mmb_format_match, &rule->matches[index],
+                               (index != vec_len(rule->matches)-1) ? " AND ":"\t");
   }
 
-  for (int i=0;i<vec_len(rule->targets);i++) {
-    s = format(s, "%U%s", mmb_format_target, &rule->targets[i],  
-                               (i != vec_len(rule->targets)-1) ? ", ":"\n");
+  vec_foreach_index(index, rule->targets) {
+    s = format(s, "%U%s", mmb_format_target, &rule->targets[index],  
+                               (index != vec_len(rule->targets)-1) ? ", ":"\n");
   }
-
   return s;
 }//TODO vec_foreach
+
+static inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
+  u8 *byte, *bytes = va_arg(*args, u8*); 
+  vec_foreach(byte, bytes) 
+  {
+    s = format(s, "%02x", *byte);
+  }
+  return s;
+}
 
 u8 *mmb_format_match(u8 *s, va_list *args) {
 
   mmb_match_t *match = va_arg(*args, mmb_match_t*);
-  s = format(s, "%s %U %U ", (match->reverse) ? "! ":"",
+  s = format(s, "%s %U %U %U", (match->reverse) ? "! ":"",
                           mmb_format_field, &match->field, &match->opt_kind,
-                          mmb_format_condition, &match->condition
-                         );
-
-  if (vec_len(match->value)) {
-     for (int i = 0; i < vec_len(match->value); i++)
-       s = format(s, "%02x", match->value[i]);
-  }
-  
+                          mmb_format_condition, &match->condition,
+                          mmb_format_bytes, match->value
+                          );
   return s;
-} // mmb add tcp-syn 4444444a5 tcp-opt-mss <= 1460 mod tcp-syn 55
+} 
 
 u8 *mmb_format_target(u8 *s, va_list *args) {
 
   mmb_target_t *target = va_arg(*args, mmb_target_t*);
-  s = format(s, "%s %U %U ", (target->reverse) ? "! ":"",
+  s = format(s, "%s %U %U %U", (target->reverse) ? "! ":"",
                          mmb_format_keyword, &target->keyword,
-                         mmb_format_field, &target->field, &target->opt_kind
-                       );
-  if (vec_len(target->value)) {
-     for (int i = 0; i < vec_len (target->value); i++)
-       s = format(s, "%02x", target->value[i]);
-  }
-
+                         mmb_format_field, &target->field, &target->opt_kind,
+                         mmb_format_bytes, target->value
+                         );
   return s; 
 }
 
