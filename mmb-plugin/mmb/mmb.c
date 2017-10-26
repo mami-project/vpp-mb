@@ -50,7 +50,7 @@
 #include <mmb/mmb_all_api_h.h>
 #undef vl_api_version
 
-#define REPLY_MSG_ID_BASE sm->msg_id_base
+#define REPLY_MSG_ID_BASE mm->msg_id_base
 #include <vlibapi/api_helper_macros.h>
 
 /* List of message types that this plugin understands */
@@ -95,14 +95,19 @@ static char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
 static u8 parse_match(unformat_input_t * input, mmb_match_t *match);
 static u8 parse_target(unformat_input_t * input, mmb_target_t *target);
-static void print_match(vlib_main_t * vm, mmb_match_t *match);
-static void print_target(vlib_main_t * vm, mmb_target_t *target);
-static u8* field_tostr(u8 field, u8 kind);
-static char* condition_tostr(u8 condition);
-static char* keyword_tostr(u8 keyword);
+static u8 *mmb_format_rule(u8 *s, va_list *args);
+static u8 *mmb_format_match(u8 *s, va_list *args);
+static u8 *mmb_format_target(u8 *s, va_list *args);
+static u8* mmb_format_field(u8 *s, va_list *args);
+static u8* mmb_format_condition(u8 *s, va_list *args);
+static u8* mmb_format_keyword(u8 *s, va_list *args);
 static uword unformat_field(unformat_input_t * input, va_list * va);
 static uword unformat_condition(unformat_input_t * input, va_list * va);
 static uword unformat_value(unformat_input_t * input, va_list * va);
+
+static clib_error_t *validate_rule();
+static void print_rules(vlib_main_t * vm, mmb_rule_t *rules);
+
 
 /**
  * @brief Enable/disable the mmb plugin. 
@@ -202,8 +207,8 @@ display_rules_command_fn (vlib_main_t * vm,
 
 uword unformat_field(unformat_input_t * input, va_list * va)
 {
-  u8 *field = va_arg (*va, u8*);
-  u8 *kind  = va_arg (*va, u8*);
+  u8 *field = va_arg(*va, u8*);
+  u8 *kind  = va_arg(*va, u8*);
   for (u8 i=0; i<fields_len; i++) {
     if (unformat (input, fields[i])) {
       *field = MMB_FIELD_NET_PROTO+i;
@@ -222,7 +227,7 @@ uword unformat_field(unformat_input_t * input, va_list * va)
 
 uword unformat_condition(unformat_input_t * input, va_list * va)
 {
-  u8 *cond = va_arg (*va, u8*);
+  u8 *cond = va_arg(*va, u8*);
   for (u8 i=0; i<conditions_len; i++) {
     if (unformat (input, conditions[i])) {
       *cond = MMB_COND_EQ+i;
@@ -235,63 +240,23 @@ uword unformat_condition(unformat_input_t * input, va_list * va)
 
 uword unformat_value(unformat_input_t * input, va_list * va)
 {
-  u8 **hex_value = va_arg (*va, u8**);
-  if (unformat (input, "0x%U", unformat_hex_string, hex_value))
+  u8 **bytes = va_arg(*va, u8**);
+  if (unformat (input, "0x%U", unformat_hex_string, bytes))
     ;
-  else if (unformat (input, "x%U", unformat_hex_string, hex_value))
+  else if (unformat (input, "x%U", unformat_hex_string, bytes))
     ; 
-  else if (unformat (input, "%U", unformat_hex_string, hex_value))
-    ;
+  else if (unformat (input, "%U", unformat_hex_string, bytes))
+    ;//TODO: %d for u32
   else {
     /* try adding a single hex digit
     TODO: this is a hack, fix it or secure it.
     */
     unformat_put_input(input);
     input->buffer[input->index] = '0';
-    if (!unformat (input, "%U", unformat_hex_string, hex_value))
+    if (!unformat (input, "%U", unformat_hex_string, bytes))
       return 0;
   }
-
   return 1;
-}
-
-u8* field_tostr(u8 field, u8 kind) 
-{
-   if (field < MMB_FIELD_NET_PROTO 
-    || field > MMB_FIELD_NET_PROTO+fields_len)
-     return NULL;
-
-   u8 field_index = field-MMB_FIELD_NET_PROTO;
-   u8 * field_str = format(0, "");
-   if (field == MMB_FIELD_TCP_OPT && kind) {
-     field_str = format(field_str, "%s %d", fields[field_index], kind);
-   } else
-     field_str = format(field_str, "%s", fields[field_index]);
-
-   vec_terminate_c_string(field_str);
-   return field_str;
-}
-
-char* condition_tostr(u8 condition) 
-{
-   if (condition < MMB_COND_EQ 
-    || condition > MMB_COND_EQ+conditions_len)
-     return NULL;
-   return conditions[condition-MMB_COND_EQ];
-}
-
-char* keyword_tostr(u8 keyword) 
-{
-   switch(keyword) {
-      case MMB_TARGET_DROP:
-         return "drop";
-      case MMB_TARGET_MODIFY:
-         return "mod";
-      case MMB_TARGET_STRIP:
-         return "strip";
-      default:
-         return NULL;
-   }
 }
 
 u8 parse_target(unformat_input_t * input, mmb_target_t *target) 
@@ -327,12 +292,62 @@ u8 parse_match(unformat_input_t * input, mmb_match_t *match)
                     &match->field, &match->opt_kind, 
                     unformat_value, &match->value)) 
      match->condition = MMB_DEFAULT_MATCH_CONDITION;
-   else if (unformat(input, "%U", unformat_field, 
+   else if (unformat(input, "%U", unformat_field, //TODO: donot match
                     &match->field, &match->opt_kind)) 
      ;
    else 
      return 0;
    return 1;
+}
+
+u8* mmb_format_field(u8* s, va_list *args) 
+{
+   u8 field = *va_arg(*args, u8*); 
+   u8 kind  = *va_arg(*args, u8*);
+
+   u8 field_index = field-MMB_FIELD_NET_PROTO;
+   if (field < MMB_FIELD_NET_PROTO 
+    || field > MMB_FIELD_NET_PROTO+fields_len)
+     ; 
+   else if (field == MMB_FIELD_TCP_OPT && kind) 
+     s = format(s, "%s %d", fields[field_index], kind);
+   else
+     s = format(s, "%s", fields[field_index]);
+
+   return s;
+}
+
+u8* mmb_format_condition(u8* s, va_list *args) 
+{
+  u8 condition = *va_arg(*args, u8*);
+  if (condition >= MMB_COND_EQ 
+    &&  condition <= MMB_COND_EQ+conditions_len)
+    s = format(s, "%s", conditions[condition-MMB_COND_EQ]);
+  
+  return s;
+}
+
+u8* mmb_format_keyword(u8* s, va_list *args) 
+{
+  u8 keyword = *va_arg(*args, u8*);
+   
+  char *keyword_str = "";
+  switch(keyword) {
+    case MMB_TARGET_DROP:
+       keyword_str = "drop";
+       break;
+    case MMB_TARGET_MODIFY:
+       keyword_str =  "mod";
+       break;
+    case MMB_TARGET_STRIP:
+       keyword_str =  "strip";
+       break;
+    default:
+       break;
+  }
+
+  s = format(s, "%s", keyword_str);
+  return s;
 }
 
 static clib_error_t *
@@ -360,7 +375,6 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
       break;
     else vec_add1(targets, target);
   }
-
   if (vec_len(targets) < 1)
      return clib_error_return (0, "at least one <target> must be set");
 
@@ -368,42 +382,76 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
     return clib_error_return(0, "Could not parse whole input");
   }
 
-  for (int i=0;i<vec_len(matches);i++) 
-    print_match(vm, &matches[i]);
-  vlib_cli_output(vm, "end of matching");
-  vlib_cli_output(vm, "\n");
-  for (int i=0;i<vec_len(targets);i++) 
-    print_target(vm, &targets[i]);
-  vlib_cli_output(vm, "end of targets");
-  vlib_cli_output(vm, "\n");
+  mmb_rule_t rule;
+  memset(&rule, 0, sizeof(mmb_rule_t));
+  rule.matches  = matches;
+  rule.targets = targets;
 
-  //TODO validate args
+  clib_error_t *error;
+  if ( (error = validate_rule(&rule)) )
+    return error;
+
+  vl_print(vm, "%U", mmb_format_rule, &rule);
+  vec_add1(mmb_main.rules, rule);
   return 0;
 }
 
-void print_match(vlib_main_t * vm, mmb_match_t *match) {
-  if (match->reverse)
-   vlib_cli_output(vm, "! ");
-  u8 *field_str = field_tostr(match->field, match->opt_kind);
-  vlib_cli_output(vm, "%s ", field_str);
-  if (match->condition)
-    vlib_cli_output(vm, "%s ", condition_tostr(match->condition)); 
-    for (int i = 0; i < vec_len (match->value); i++)
-      vlib_cli_output(vm, "%02x", match->value[i]);
-  vlib_cli_output(vm, "\n"); 
+clib_error_t *validate_rule(mmb_rule_t *rule) {
+   //TODO
+   return NULL;
 }
 
-void print_target(vlib_main_t * vm, mmb_target_t *target) {
-  if (target->reverse)
-    vlib_cli_output(vm, "! ");
-  vlib_cli_output(vm, "%s ", keyword_tostr(target->keyword));
-  if (target->field) {;
-     u8 *field_str = field_tostr(target->field, target->opt_kind);
-     vlib_cli_output(vm, "%s ", field_str);
-  } 
-  for (int i = 0; i < vec_len (target->value); i++)
-    vlib_cli_output(vm, "%02x", target->value[i]);
-  vlib_cli_output(vm, "\n"); 
+void print_rules(vlib_main_t * vm, mmb_rule_t *rules) {
+   //TODO: output alignment
+   vl_print(vm, "\tMatches\t\tTargets\n");
+   for (int i=0; i<vec_len(rules); i++)
+      vl_print(vm, "%d\t%U\n", i, mmb_format_rule, &rules[i]);
+}
+
+u8 *mmb_format_rule(u8 *s, va_list *args) {
+  mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
+  for (int i=0;i<vec_len(rule->matches);i++) {
+    s = format(s, "%U%s", mmb_format_match, &rule->matches[i],
+                               (i != vec_len(rule->matches)-1) ? " AND ":"\t");
+  }
+
+  for (int i=0;i<vec_len(rule->targets);i++) {
+    s = format(s, "%U%s", mmb_format_target, &rule->targets[i],  
+                               (i != vec_len(rule->targets)-1) ? ", ":"\n");
+  }
+
+  return s;
+}//TODO vec_foreach
+
+u8 *mmb_format_match(u8 *s, va_list *args) {
+
+  mmb_match_t *match = va_arg(*args, mmb_match_t*);
+  s = format(s, "%s %U %U ", (match->reverse) ? "! ":"",
+                          mmb_format_field, &match->field, &match->opt_kind,
+                          mmb_format_condition, &match->condition
+                         );
+
+  if (vec_len(match->value)) {
+     for (int i = 0; i < vec_len(match->value); i++)
+       s = format(s, "%02x", match->value[i]);
+  }
+  
+  return s;
+} // mmb add tcp-syn 4444444a5 tcp-opt-mss <= 1460 mod tcp-syn 55
+
+u8 *mmb_format_target(u8 *s, va_list *args) {
+
+  mmb_target_t *target = va_arg(*args, mmb_target_t*);
+  s = format(s, "%s %U %U ", (target->reverse) ? "! ":"",
+                         mmb_format_keyword, &target->keyword,
+                         mmb_format_field, &target->field, &target->opt_kind
+                       );
+  if (vec_len(target->value)) {
+     for (int i = 0; i < vec_len (target->value); i++)
+       s = format(s, "%02x", target->value[i]);
+  }
+
+  return s; 
 }
 
 static clib_error_t *
@@ -478,9 +526,9 @@ VLIB_CLI_COMMAND (sr_content_command_del_rule, static) = {
 static clib_error_t *
 mmb_plugin_api_hookup (vlib_main_t *vm)
 {
-  CLIB_UNUSED(mmb_main_t) * sm = &mmb_main;
+  CLIB_UNUSED(mmb_main_t) * mm = &mmb_main;
 #define _(N,n)                                                  \
-    vl_msg_api_set_handlers((VL_API_##N + sm->msg_id_base),     \
+    vl_msg_api_set_handlers((VL_API_##N + mm->msg_id_base),     \
                            #n,					\
                            vl_api_##n##_t_handler,              \
                            vl_noop_handler,                     \
@@ -498,10 +546,10 @@ mmb_plugin_api_hookup (vlib_main_t *vm)
 #undef vl_msg_name_crc_list
 
 static void 
-setup_message_id_table (mmb_main_t * sm, api_main_t *am)
+setup_message_id_table (mmb_main_t * mm, api_main_t *am)
 {
 #define _(id,n,crc) \
-  vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + sm->msg_id_base);
+  vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + mm->msg_id_base);
   foreach_vl_msg_name_crc_mmb;
 #undef _
 }
@@ -511,22 +559,23 @@ setup_message_id_table (mmb_main_t * sm, api_main_t *am)
  */
 static clib_error_t * mmb_init (vlib_main_t * vm)
 {
-  mmb_main_t * sm = &mmb_main;
+  mmb_main_t * mm = &mmb_main;
   clib_error_t * error = 0;
   u8 * name;
 
-  sm->vnet_main =  vnet_get_main ();
+  mm->vnet_main =  vnet_get_main ();
+  mm->rules = 0;
 
   name = format (0, "mmb_%08x%c", api_version, 0);
 
   /* Ask for a correctly-sized block of API message decode slots */
-  sm->msg_id_base = vl_msg_api_get_msg_ids 
+  mm->msg_id_base = vl_msg_api_get_msg_ids 
       ((char *) name, VL_MSG_FIRST_AVAILABLE);
 
   error = mmb_plugin_api_hookup (vm);
 
   /* Add our API messages to the global name_crc hash table */
-  setup_message_id_table (sm, &api_main);
+  setup_message_id_table (mm, &api_main);
 
   vec_free(name);
 

@@ -115,32 +115,32 @@
 typedef struct {
    u8 field; /*! The field to match on */
    u8 opt_kind; /*! The kind of option, if the field is one */
-
    u8 condition; /*! The constraint condition (optional) */
-   u8 *value; /*! The constraint value (optional) */
-   //u64 value;
-   u8 value_len; 
+   u8 *value; /*! The constraint value (optional) */ 
    u8 reverse; /*! reverse matching (boolean not) */
-
 } mmb_match_t;
 
 typedef struct {
    u8 keyword; /*! The target keyword */ 
    u8 field;  /*! The field to modify */
    u8 opt_kind;  /*! The kind of option, if the field is one */
-   u8 *value; /*! The value to write */
-   //u64 value;
-   u8 value_len; 
+   u8 *value; /*! The value to write */ 
    u8 reverse; /*! whitelist (strip only) */
-
 } mmb_target_t;
 
 typedef struct {
-    /* API message ID base */
-    u16 msg_id_base;
+  mmb_match_t *matches; /*! Matches vector */
+  mmb_target_t *targets; /*! Targets vector */
+} mmb_rule_t;
 
-    /* convenience */
-    vnet_main_t * vnet_main;
+typedef struct {
+   /* API message ID base */
+   u16 msg_id_base;
+
+   mmb_rule_t *rules;  /*! Matches vector */
+
+   /* convenience */
+   vnet_main_t * vnet_main;
 } mmb_main_t;
 
 mmb_main_t mmb_main;

@@ -178,10 +178,10 @@ _(mmb_valuebased_enable_disable, "<intfc> [disable]")
 
 static void mmb_api_hookup (vat_main_t *vam)
 {
-    mmb_test_main_t * sm = &mmb_test_main;
+    mmb_test_main_t * mm = &mmb_test_main;
     /* Hook up handlers for replies from the data plane plug-in */
 #define _(N,n)                                                  \
-    vl_msg_api_set_handlers((VL_API_##N + sm->msg_id_base),     \
+    vl_msg_api_set_handlers((VL_API_##N + mm->msg_id_base),     \
                            #n,                                  \
                            vl_api_##n##_t_handler,              \
                            vl_noop_handler,                     \
@@ -204,15 +204,15 @@ static void mmb_api_hookup (vat_main_t *vam)
 
 clib_error_t * vat_plugin_register (vat_main_t *vam)
 {
-  mmb_test_main_t * sm = &mmb_test_main;
+  mmb_test_main_t * mm = &mmb_test_main;
   u8 * name;
 
-  sm->vat_main = vam;
+  mm->vat_main = vam;
 
   name = format (0, "mmb_%08x%c", api_version, 0);
-  sm->msg_id_base = vl_client_get_first_plugin_msg_id ((char *) name);
+  mm->msg_id_base = vl_client_get_first_plugin_msg_id ((char *) name);
 
-  if (sm->msg_id_base != (u16) ~0)
+  if (mm->msg_id_base != (u16) ~0)
     mmb_api_hookup (vam);
   
   vec_free(name);
