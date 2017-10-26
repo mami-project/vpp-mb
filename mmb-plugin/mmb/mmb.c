@@ -15,7 +15,7 @@
 /**
  * @file
  * @brief MMB Plugin, plugin API / trace / CLI handling.
- * @author J.Iurman K.Edeline
+ * @author 
  */
 
 #include <vnet/vnet.h>
@@ -276,7 +276,6 @@ del_rule_command_fn (vlib_main_t * vm,
   u32 rule_index;
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
-  vl_print(vm, "%d", vec_len(rules));
 
   if (unformat(input, "%u", &rule_index))
   {
@@ -287,8 +286,8 @@ del_rule_command_fn (vlib_main_t * vm,
        {
          rule_index--; 
          mmb_rule_t *rule = &rules[rule_index];
-         vec_del1(rules, rule_index);
          mmb_free_rule(rule);
+         vec_delete(rules, 1, rule_index);
 
          return 0;
        } 
@@ -402,7 +401,7 @@ u8 parse_match(unformat_input_t * input, mmb_match_t *match)
                     &match->field, &match->opt_kind, 
                     unformat_value, &match->value)) 
      match->condition = MMB_DEFAULT_MATCH_CONDITION;
-   else if (unformat(input, "%U", unformat_field, //TODO: donot match
+   else if (unformat(input, "%U", unformat_field,
                     &match->field, &match->opt_kind)) 
      ;
    else 
