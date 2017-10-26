@@ -20,6 +20,7 @@
 
 typedef struct {
   u32 pkt_id;
+  u8  ttl;
   u32 next;
 } mmb_trace_t;
 
@@ -54,8 +55,8 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   mmb_trace_t * t = va_arg (*args, mmb_trace_t *);
   
-  s = format (s, "MMB: packet %d, action %d (%s)\n",
-              t->pkt_id, t->next, t->next == MMB_NEXT_DROP ? "DROP" : "LOOKUP");
+  s = format (s, "MMB: packet %d, action %d (%s) - TTL = %d\n",
+              t->pkt_id, t->next, t->next == MMB_NEXT_DROP ? "DROP" : "LOOKUP", t->ttl);
 
   return s;
 }
@@ -160,7 +161,7 @@ mmb_node_fn (vlib_main_t * vm,
       u32 bi0;
       vlib_buffer_t * b0;
       u32 next0 = MMB_NEXT_LOOKUP;
-      //ip4_header_t *ip0;
+      ip4_header_t *ip0;
 
       /* speculatively enqueue b0 to the current next frame */
       bi0 = from[0];
@@ -179,7 +180,9 @@ mmb_node_fn (vlib_main_t * vm,
       //ASSERT (b0->current_data == 0);
       
       //TODO
-      //ip0 = vlib_buffer_get_current (b0);
+      ip0 = vlib_buffer_get_current (b0);
+      ip0->ttl -= pkts_count+1;
+      ip0->checksum = ip4_header_checksum(ip0);
 
       pkts_done += 1;
       pkts_count += 1;
@@ -190,6 +193,7 @@ mmb_node_fn (vlib_main_t * vm,
         //TODO trace
         mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
         t->pkt_id = pkts_count;
+        t->ttl = ip0->ttl;
         t->next = (pkts_count%2 == 0) ? MMB_NEXT_DROP : MMB_NEXT_LOOKUP;
       }
 
