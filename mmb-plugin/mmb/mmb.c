@@ -93,17 +93,19 @@ static char* fields[] = {
 static u8 conditions_len = 6;
 static char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
-static u8 parse_match(unformat_input_t * input, mmb_match_t *match);
-static u8 parse_target(unformat_input_t * input, mmb_target_t *target);
+static uword unformat_field(unformat_input_t * input, va_list * va);
+static uword unformat_condition(unformat_input_t * input, va_list * va);
+static uword unformat_value(unformat_input_t * input, va_list * va);
 static u8 *mmb_format_rule(u8 *s, va_list *args);
 static u8 *mmb_format_match(u8 *s, va_list *args);
 static u8 *mmb_format_target(u8 *s, va_list *args);
 static u8* mmb_format_field(u8 *s, va_list *args);
 static u8* mmb_format_condition(u8 *s, va_list *args);
 static u8* mmb_format_keyword(u8 *s, va_list *args);
-static uword unformat_field(unformat_input_t * input, va_list * va);
-static uword unformat_condition(unformat_input_t * input, va_list * va);
-static uword unformat_value(unformat_input_t * input, va_list * va);
+
+static u8 parse_match(unformat_input_t * input, mmb_match_t *match);
+static u8 parse_target(unformat_input_t * input, mmb_target_t *target);
+static void mmb_free_rule(mmb_rule_t *rule);
 
 static clib_error_t *validate_rule();
 static void print_rules(vlib_main_t * vm, mmb_rule_t *rules);
@@ -264,23 +266,33 @@ del_rule_command_fn (vlib_main_t * vm,
                      unformat_input_t * input,
                      vlib_cli_command_t * cmd)
 {
-  uword rule_index;
+  u32 rule_index;
+  mmb_main_t *mm = &mmb_main;
+  mmb_rule_t *rules = mm->rules;
+  vl_print(vm, "%d", vec_len(rules));
 
-  if (unformat(input, "%u", &rule_index) && rule_index > 0)
+  if (unformat(input, "%u", &rule_index))
   {
-    if (unformat_is_eof(input))
-    {
-      mmb_main_t *mm = &mmb_main;
-      vec_del1(mm->rules, rule_index-1);
-      return 0;
+
+   if (rule_index > 0 && rule_index <= vec_len(rules)) {
+
+       if (unformat_is_eof(input))
+       {
+         rule_index--; 
+         mmb_rule_t *rule = &rules[rule_index];
+         vec_del1(rules, rule_index);
+         mmb_free_rule(rule);
+
+         return 0;
+       } 
+       return clib_error_return(0, 
+        "Syntax error: unexpected additional element");
     }
+        return clib_error_return(0, "No rule at this index");
+  } 
 
-    return clib_error_return(0, "Syntax error: unexpected \
-                                 additional element");
-  }
-
-  return clib_error_return(0, "Syntax error: rule number must be an \
-                               integer greater than 0");
+  return clib_error_return(0, 
+    "Syntax error: rule number must be an integer greater than 0");
 }
 
 uword unformat_field(unformat_input_t * input, va_list * va)
@@ -456,8 +468,7 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
 
 static inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
   u8 *byte, *bytes = va_arg(*args, u8*); 
-  vec_foreach(byte, bytes) 
-  {
+  vec_foreach(byte, bytes) {
     s = format(s, "%02x", *byte);
   }
   return s;
@@ -483,6 +494,18 @@ u8 *mmb_format_target(u8 *s, va_list *args) {
                          mmb_format_bytes, target->value
                          );
   return s; 
+}
+
+void mmb_free_rule(mmb_rule_t *rule) {
+  uword index;
+  vec_foreach_index(index, rule->matches) {
+    vec_free(rule->matches[index].value);
+  }
+  vec_free(rule->matches);
+  vec_foreach_index(index, rule->targets) {
+    vec_free(rule->targets[index].value);
+  }
+  vec_free(rule->targets);
 }
 
 /**
