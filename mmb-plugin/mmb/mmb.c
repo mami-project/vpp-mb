@@ -207,6 +207,82 @@ display_rules_command_fn (vlib_main_t * vm,
   return 0;
 }
 
+static clib_error_t *
+add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
+                     vlib_cli_command_t * cmd)
+{
+   /* parse matches */
+  mmb_match_t *matches = 0, match;
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
+  {
+    memset(&match, 0, sizeof (mmb_match_t));
+    if (!parse_match(input, &match)) 
+      break;
+    else vec_add1(matches, match);
+  } 
+  if (vec_len(matches) < 1)
+     return clib_error_return (0, "at least one <match> must be set");
+
+  /* parse targets */
+  mmb_target_t *targets = 0, target;
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
+  {
+    memset(&target, 0, sizeof (mmb_target_t));
+    if (!parse_target(input, &target)) 
+      break;
+    else vec_add1(targets, target);
+  }
+  if (vec_len(targets) < 1)
+     return clib_error_return (0, "at least one <target> must be set");
+
+  if (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+    return clib_error_return(0, "Could not parse whole input");
+  }
+
+  mmb_rule_t rule;
+  memset(&rule, 0, sizeof(mmb_rule_t));
+  rule.matches  = matches;
+  rule.targets = targets;
+
+  clib_error_t *error;
+  if ( (error = validate_rule(&rule)) )
+    return error;
+
+  vl_print(vm, "%U", mmb_format_rule, &rule);
+  mmb_main_t *mm = &mmb_main;
+  vec_add1(mm->rules, rule);
+  return 0;
+}
+
+clib_error_t *validate_rule(mmb_rule_t *rule) {
+   //TODO
+   return NULL;
+}
+
+static clib_error_t *
+del_rule_command_fn (vlib_main_t * vm,
+                     unformat_input_t * input,
+                     vlib_cli_command_t * cmd)
+{
+  uword rule_index;
+
+  if (unformat(input, "%u", &rule_index) && rule_index > 0)
+  {
+    if (unformat_is_eof(input))
+    {
+      mmb_main_t *mm = &mmb_main;
+      vec_del1(mm->rules, rule_index-1);
+      return 0;
+    }
+
+    return clib_error_return(0, "Syntax error: unexpected \
+                                 additional element");
+  }
+
+  return clib_error_return(0, "Syntax error: rule number must be an \
+                               integer greater than 0");
+}
+
 uword unformat_field(unformat_input_t * input, va_list * va)
 {
   u8 *field = va_arg(*va, u8*);
@@ -352,64 +428,13 @@ u8* mmb_format_keyword(u8* s, va_list *args)
   return s;
 }
 
-static clib_error_t *
-add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
-                     vlib_cli_command_t * cmd)
-{
-   /* parse matches */
-  mmb_match_t *matches = 0, match;
-  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
-  {
-    memset(&match, 0, sizeof (mmb_match_t));
-    if (!parse_match(input, &match)) 
-      break;
-    else vec_add1(matches, match);
-  } 
-  if (vec_len(matches) < 1)
-     return clib_error_return (0, "at least one <match> must be set");
-
-  /* parse targets */
-  mmb_target_t *targets = 0, target;
-  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
-  {
-    memset(&target, 0, sizeof (mmb_target_t));
-    if (!parse_target(input, &target)) 
-      break;
-    else vec_add1(targets, target);
-  }
-  if (vec_len(targets) < 1)
-     return clib_error_return (0, "at least one <target> must be set");
-
-  if (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
-    return clib_error_return(0, "Could not parse whole input");
-  }
-
-  mmb_rule_t rule;
-  memset(&rule, 0, sizeof(mmb_rule_t));
-  rule.matches  = matches;
-  rule.targets = targets;
-
-  clib_error_t *error;
-  if ( (error = validate_rule(&rule)) )
-    return error;
-
-  vl_print(vm, "%U", mmb_format_rule, &rule);
-  vec_add1(mmb_main.rules, rule);
-  return 0;
-}
-
-clib_error_t *validate_rule(mmb_rule_t *rule) {
-   //TODO
-   return NULL;
-}
-
 void print_rules(vlib_main_t * vm, mmb_rule_t *rules) {
    //TODO: output alignment
-   vl_print(vm, "\tMatches\t\tTargets\n");
+   vl_print(vm, "\tIndex\tMatches\t\t\t\tTargets\n");
 
    uword rule_index = 0;
    vec_foreach_index(rule_index, rules) {
-     vl_print(vm, "%d\t%U\n", rule_index, mmb_format_rule, &rules[rule_index]);
+     vl_print(vm, "%d\t%U\n", rule_index+1, mmb_format_rule, &rules[rule_index]);
    }
 }
 
@@ -427,7 +452,7 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
                                (index != vec_len(rule->targets)-1) ? ", ":"\n");
   }
   return s;
-}//TODO vec_foreach
+}
 
 static inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
   u8 *byte, *bytes = va_arg(*args, u8*); 
@@ -458,27 +483,6 @@ u8 *mmb_format_target(u8 *s, va_list *args) {
                          mmb_format_bytes, target->value
                          );
   return s; 
-}
-
-static clib_error_t *
-del_rule_command_fn (vlib_main_t * vm,
-                   unformat_input_t * input,
-                   vlib_cli_command_t * cmd)
-{
-  u32 ruleId;
-
-  if (unformat(input, "%u", &ruleId) && ruleId > 0)
-  {
-    if (unformat_is_eof(input))
-    {
-      //TODO: remove rule ruleId
-      return 0;
-    }
-
-    return clib_error_return(0, "Syntax error: unexpected additional element");
-  }
-
-  return clib_error_return(0, "Syntax error: rule number must be an integer greater than 0");
 }
 
 /**
