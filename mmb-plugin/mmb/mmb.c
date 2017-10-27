@@ -53,6 +53,8 @@
 #define REPLY_MSG_ID_BASE mm->msg_id_base
 #include <vlibapi/api_helper_macros.h>
 
+#include <ctype.h>
+
 /* List of message types that this plugin understands */
 
 #define foreach_mmb_plugin_api_msg
@@ -112,15 +114,21 @@ static void print_rules(vlib_main_t * vm, mmb_rule_t *rules);
 
 char *mmb_debug = 0;
 
+static_always_inline void unformat_input_tolower(unformat_input_t *input) {
+  uword buffer_index = 0;
+  vec_foreach_index(buffer_index, input->buffer) {
+     input->buffer[buffer_index] = tolower(input->buffer[buffer_index]);
+  }
+}
+
 /**
  * @brief Enable/disable the mmb plugin. 
  *
  * Action function shared between message handler and debug CLI.
  */
 
-int mmb_enable_disable (mmb_main_t * mm, u32 sw_if_index,
-                                   int enable_disable)
-{
+int mmb_enable_disable (mmb_main_t *mm, u32 sw_if_index,
+                                   int enable_disable) {
   vnet_sw_interface_t * sw;
   int rv = 0;
 
@@ -144,16 +152,15 @@ static clib_error_t *
 mmb_enable_disable_fn (vlib_main_t * vm,
                    unformat_input_t * input,
                    vlib_cli_command_t * cmd,
-                   int enable_disable)
-{
+                   int enable_disable) {
+  unformat_input_tolower(input);
   mmb_main_t *mm = &mmb_main;
   u32 sw_if_index = ~0;
     
   int rv;
-
-  while(unformat_check_input(input) != UNFORMAT_END_OF_INPUT)
-  {
-    if (!unformat(input, "%U", unformat_vnet_sw_interface, mm->vnet_main, &sw_if_index))
+  while(unformat_check_input(input) != UNFORMAT_END_OF_INPUT) {
+    if (!unformat(input, "%U", unformat_vnet_sw_interface, 
+                  mm->vnet_main, &sw_if_index))
       break;
   }
 
@@ -162,8 +169,7 @@ mmb_enable_disable_fn (vlib_main_t * vm,
     
   rv = mmb_enable_disable(mm, sw_if_index, enable_disable);
 
-  switch(rv)
-  {
+  switch(rv) {
     case 0:
       break;
 
@@ -184,24 +190,22 @@ mmb_enable_disable_fn (vlib_main_t * vm,
 static clib_error_t *
 enable_command_fn (vlib_main_t * vm,
                    unformat_input_t * input,
-                   vlib_cli_command_t * cmd)
-{
+                   vlib_cli_command_t * cmd) {
   return mmb_enable_disable_fn(vm, input, cmd, /* enable */ 1);
 }
 
 static clib_error_t *
 disable_command_fn (vlib_main_t * vm,
                    unformat_input_t * input,
-                   vlib_cli_command_t * cmd)
-{
+                   vlib_cli_command_t * cmd) {
   return mmb_enable_disable_fn(vm, input, cmd, /* disable */ 0);
 }
 
 static clib_error_t *
 display_rules_command_fn (vlib_main_t * vm,
                           unformat_input_t * input,
-                          vlib_cli_command_t * cmd)
-{
+                          vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
   if (!unformat_is_eof(input))
     return clib_error_return(0, "Syntax error: unexpected additional element");
 
@@ -213,12 +217,12 @@ display_rules_command_fn (vlib_main_t * vm,
 
 static clib_error_t *
 add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
-                     vlib_cli_command_t * cmd)
-{
+                     vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
+  
    /* parse matches */
   mmb_match_t *matches = 0, match;
-  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
-  {
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
     memset(&match, 0, sizeof (mmb_match_t));
     if (!parse_match(input, &match)) 
       break;
@@ -229,8 +233,7 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   /* parse targets */
   mmb_target_t *targets = 0, target;
-  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
-  {
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
     memset(&target, 0, sizeof (mmb_target_t));
     if (!parse_target(input, &target)) 
       break;
@@ -298,19 +301,17 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
 static clib_error_t *
 del_rule_command_fn (vlib_main_t * vm,
                      unformat_input_t * input,
-                     vlib_cli_command_t * cmd)
-{
+                     vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
   u32 rule_index;
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
 
-  if (unformat(input, "%u", &rule_index))
-  {
+  if (unformat(input, "%u", &rule_index)) {
 
    if (rule_index > 0 && rule_index <= vec_len(rules)) {
 
-       if (unformat_is_eof(input))
-       {
+       if (unformat_is_eof(input)) {
          rule_index--; 
          mmb_rule_t *rule = &rules[rule_index];
          mmb_free_rule(rule);
@@ -328,8 +329,7 @@ del_rule_command_fn (vlib_main_t * vm,
     "Syntax error: rule number must be an integer greater than 0");
 }
 
-uword unformat_field(unformat_input_t * input, va_list * va)
-{
+uword unformat_field(unformat_input_t * input, va_list * va) {
   u8 *field = va_arg(*va, u8*);
   u8 *kind  = va_arg(*va, u8*);
   for (u8 i=0; i<fields_len; i++) {
@@ -349,8 +349,7 @@ uword unformat_field(unformat_input_t * input, va_list * va)
   return 0;
 }
 
-uword unformat_condition(unformat_input_t * input, va_list * va)
-{
+uword unformat_condition(unformat_input_t * input, va_list * va) {
   u8 *cond = va_arg(*va, u8*);
   for (u8 i=0; i<conditions_len; i++) {
     if (unformat (input, conditions[i])) {
@@ -362,8 +361,7 @@ uword unformat_condition(unformat_input_t * input, va_list * va)
   return 0;
 }
 
-uword unformat_value(unformat_input_t * input, va_list * va)
-{
+uword unformat_value(unformat_input_t * input, va_list * va) {
   u8 **bytes = va_arg(*va, u8**);
   u64 decimal = 0;
 
@@ -377,7 +375,8 @@ uword unformat_value(unformat_input_t * input, va_list * va)
     else if (unformat (input, "%s", &hex_str)) {
 
       /* add an extra 0 for parity */  
-      unformat_input_t str_input = {0}, *sub_input = &str_input; 
+      unformat_input_t str_input, *sub_input = &str_input; 
+      unformat_init(sub_input, 0, 0);
       unformat_init_vector(sub_input, format(0, "0%s", hex_str));
       if (!unformat (sub_input, "%U", unformat_hex_string, bytes)) {
         unformat_free(sub_input);
@@ -396,8 +395,7 @@ uword unformat_value(unformat_input_t * input, va_list * va)
   return 1;
 }
 
-u8 parse_target(unformat_input_t * input, mmb_target_t *target) 
-{
+u8 parse_target(unformat_input_t * input, mmb_target_t *target) {
    if (unformat(input, "strip ! %U", unformat_field, 
                &target->field, &target->opt_kind)) {
      target->keyword=MMB_TARGET_STRIP;
@@ -416,8 +414,7 @@ u8 parse_target(unformat_input_t * input, mmb_target_t *target)
    return 1;
 }
 
-u8 parse_match(unformat_input_t * input, mmb_match_t *match) 
-{
+u8 parse_match(unformat_input_t * input, mmb_match_t *match) {
    if (unformat(input, "!"))
      match->reverse = 1;
 
@@ -437,8 +434,7 @@ u8 parse_match(unformat_input_t * input, mmb_match_t *match)
    return 1;
 }
 
-u8* mmb_format_field(u8* s, va_list *args) 
-{
+u8* mmb_format_field(u8* s, va_list *args) {
    u8 field = *va_arg(*args, u8*); 
    u8 kind  = *va_arg(*args, u8*);
 
@@ -454,8 +450,7 @@ u8* mmb_format_field(u8* s, va_list *args)
    return s;
 }
 
-u8* mmb_format_condition(u8* s, va_list *args) 
-{
+u8* mmb_format_condition(u8* s, va_list *args) {
   u8 condition = *va_arg(*args, u8*);
   if (condition >= MMB_COND_EQ 
     &&  condition <= MMB_COND_EQ+conditions_len)
@@ -464,8 +459,7 @@ u8* mmb_format_condition(u8* s, va_list *args)
   return s;
 }
 
-u8* mmb_format_keyword(u8* s, va_list *args) 
-{
+u8* mmb_format_keyword(u8* s, va_list *args) {
   u8 keyword = *va_arg(*args, u8*);
    
   char *keyword_str = "";
@@ -608,8 +602,7 @@ VLIB_CLI_COMMAND (sr_content_command_del_rule, static) = {
  * @brief Set up the API message handling tables.
  */
 static clib_error_t *
-mmb_plugin_api_hookup (vlib_main_t *vm)
-{
+mmb_plugin_api_hookup (vlib_main_t *vm) {
   CLIB_UNUSED(mmb_main_t) * mm = &mmb_main;
 #define _(N,n)                                                  \
     vl_msg_api_set_handlers((VL_API_##N + mm->msg_id_base),     \
@@ -630,8 +623,7 @@ mmb_plugin_api_hookup (vlib_main_t *vm)
 #undef vl_msg_name_crc_list
 
 static void 
-setup_message_id_table (mmb_main_t * mm, api_main_t *am)
-{
+setup_message_id_table (mmb_main_t * mm, api_main_t *am) {
 #define _(id,n,crc) \
   vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + mm->msg_id_base);
   foreach_vl_msg_name_crc_mmb;
@@ -641,8 +633,7 @@ setup_message_id_table (mmb_main_t * mm, api_main_t *am)
 /**
  * @brief Initialize the mmb plugin.
  */
-static clib_error_t * mmb_init (vlib_main_t * vm)
-{
+static clib_error_t * mmb_init (vlib_main_t * vm) {
   mmb_main_t * mm = &mmb_main;
   clib_error_t * error = 0;
   u8 * name;
@@ -672,8 +663,7 @@ VLIB_INIT_FUNCTION (mmb_init);
  * @brief Hook the mmb plugin into the VPP graph hierarchy.
  */
 //TODO: work in progress (we may need to change the node location...)
-VNET_FEATURE_INIT (mmb, static) = 
-{
+VNET_FEATURE_INIT (mmb, static) = {
   .arc_name = "ip4-unicast", //ip4-output
   .node_name = "mmb",
   .runs_before = VNET_FEATURES ("ip4-lookup"), //interface-output
