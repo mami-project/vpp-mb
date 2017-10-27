@@ -19,8 +19,7 @@
 #include <mmb/mmb.h>
 
 typedef struct {
-  u32 pkt_id;
-  u8  ttl;
+  u8  proto;
   u32 next;
 } mmb_trace_t;
 
@@ -55,8 +54,9 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   mmb_trace_t * t = va_arg (*args, mmb_trace_t *);
   
-  s = format (s, "MMB: packet %d, action %d (%s) - TTL = %d\n",
-              t->pkt_id, t->next, t->next == MMB_NEXT_DROP ? "DROP" : "LOOKUP", t->ttl);
+  s = format (s, "MMB: packet with action %d (%s) / protocol %d (%s)\n",
+              t->next, t->next == MMB_NEXT_DROP ? "DROP" : "LOOKUP", t->proto, 
+              ((t->proto == IP_PROTOCOL_TCP) ? "TCP" : ((t->proto == IP_PROTOCOL_UDP) ? "UDP" : ((t->proto == IP_PROTOCOL_ICMP) ? "ICMP" : "OTHER"))));
 
   return s;
 }
@@ -68,10 +68,10 @@ mmb_node_fn (vlib_main_t * vm,
 {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
+
   u32 n_left_from, * from, * to_next;
   mmb_next_t next_index;
   u32 pkts_done = 0;
-  static u32 pkts_count = 0;
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
@@ -88,7 +88,7 @@ mmb_node_fn (vlib_main_t * vm,
     {
       u32 next0 = MMB_NEXT_LOOKUP;
       u32 next1 = MMB_NEXT_LOOKUP;
-      //ip4_header_t *ip0, *ip1;
+      ip4_header_t *ip0, *ip1;
       u32 bi0, bi1;
       vlib_buffer_t * b0, * b1;
           
@@ -116,39 +116,28 @@ mmb_node_fn (vlib_main_t * vm,
 
       b0 = vlib_get_buffer (vm, bi0);
       b1 = vlib_get_buffer (vm, bi1);
-
-      //TODO
-      //ASSERT (b0->current_data == 0);
-      //ASSERT (b1->current_data == 0);
       
-      //TODO
-      //ip0 = vlib_buffer_get_current (b0);
-      //ip1 = vlib_buffer_get_current (b1);
+      ip0 = vlib_buffer_get_current (b0);
+      ip1 = vlib_buffer_get_current (b1);
 
       pkts_done += 2;
-      pkts_count += 2;
 
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
       {
         if (b0->flags & VLIB_BUFFER_IS_TRACED) 
         {
-          //TODO trace for b0 packets
           mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
-          t->pkt_id = pkts_count-1;
-          t->next = MMB_NEXT_LOOKUP;
+          t->proto = ip0->protocol;
+          t->next = next0;
         }
 
         if (b1->flags & VLIB_BUFFER_IS_TRACED) 
         {
-          //TODO trace for b1 packets
           mmb_trace_t *t = vlib_add_trace (vm, node, b1, sizeof (*t));
-          t->pkt_id = pkts_count;
-          t->next = MMB_NEXT_LOOKUP;
+          t->proto = ip1->protocol;
+          t->next = next1;
         }
       }
-
-      //TODO try droping each time 1 pkts over 2
-      next1 = MMB_NEXT_DROP;
             
       /* verify speculative enqueues, maybe switch current next frame */
       vlib_validate_buffer_enqueue_x2 (vm, node, next_index,
@@ -171,35 +160,76 @@ mmb_node_fn (vlib_main_t * vm,
       n_left_from -= 1;
       n_left_to_next -= 1;
 
+      /* get vlib buffer */
       b0 = vlib_get_buffer (vm, bi0);
-      /* 
-       * Direct from the driver, we should be at offset 0
-       * aka at &b0->data[0]
-       */
-      //TODO
-      //ASSERT (b0->current_data == 0);
       
-      //TODO
+      /* get IP header */
       ip0 = vlib_buffer_get_current (b0);
-      ip0->ttl -= pkts_count+1;
-      ip0->checksum = ip4_header_checksum(ip0);
+
+      /* example: modify TTL and update checksum */
+      //ip0->ttl -= pkts_count+1;
+      //ip0->checksum = ip4_header_checksum(ip0);
+
+      /*
+        Idea of matching/action algorithm
+
+        - for each rule
+           - for each match in this rule
+              - MATCH: process each target in this rule
+              - NO MATCH: go to next rule
+      */
+      uword index_rule = 0;
+      vec_foreach_index(index_rule, rules)
+      {
+        mmb_rule_t *rule = &rules[index_rule];
+        uword index_match = 0;
+
+        vec_foreach_index(index_match, rule->matches)
+        {
+          mmb_match_t *match = &rule->matches[index_match];
+
+          // case: ip-proto == 1 (icmp) and current packet matches
+          if (match->field == MMB_FIELD_IP_PROTO && match->condition == MMB_COND_EQ 
+              /*&& !strcmp(match->value, "0000000000000001")*/ && ip0->protocol == IP_PROTOCOL_ICMP)
+          {
+            uword index_target = 0;
+            vec_foreach_index(index_target, rule->targets)
+            {
+              mmb_target_t *target = &rule->targets[index_target];
+
+              // case: DROP
+              if (target->keyword == MMB_TARGET_DROP)
+                next0 = MMB_NEXT_DROP;
+            }
+          }
+        }
+      }
+
+      /* apply rules on TCP and UDP packets only */
+      switch(ip0->protocol)
+      {
+        case IP_PROTOCOL_TCP: ;
+          tcp_header_t *tcp = ip4_next_header(ip0);
+          //Example: DROP all TCP packets
+          next0 = MMB_NEXT_DROP;
+          break;
+
+        case IP_PROTOCOL_UDP: ;
+          udp_header_t *udp = ip4_next_header(ip0);
+          break;
+
+        default: ;
+      }
 
       pkts_done += 1;
-      pkts_count += 1;
 
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
                         && (b0->flags & VLIB_BUFFER_IS_TRACED)))
       {
-        //TODO trace
         mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
-        t->pkt_id = pkts_count;
-        t->ttl = ip0->ttl;
-        t->next = (pkts_count%2 == 0) ? MMB_NEXT_DROP : MMB_NEXT_LOOKUP;
+        t->proto = ip0->protocol;
+        t->next = next0;
       }
-
-      //TODO try droping each time 1 pkts over 2
-      if (pkts_count%2 == 0)
-        next0 = MMB_NEXT_DROP;
 
       /* verify speculative enqueue, maybe switch current next frame */
       vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
