@@ -168,7 +168,8 @@ mmb_enable_disable_fn (vlib_main_t * vm,
       break;
 
     case VNET_API_ERROR_INVALID_SW_IF_INDEX:
-      return clib_error_return(0, "Invalid interface, only works on physical ports");
+      return clib_error_return(0, "Invalid interface, only works on "
+                                  "physical ports");
 
     case VNET_API_ERROR_UNIMPLEMENTED:
       return clib_error_return(0, "Device driver doesn't support redirection");
@@ -226,12 +227,6 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   if (vec_len(matches) < 1)
      return clib_error_return (0, "at least one <match> must be set");
 
-  /*uword index = 0;
-  vec_foreach_index(index, matches) {
-  vl_print(vm, "%U%s", mmb_format_match, &matches[index],
-                               (index != vec_len(matches)-1) ? " AND ":"\t");
-  }*/
-
   /* parse targets */
   mmb_target_t *targets = 0, target;
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
@@ -264,7 +259,39 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
 }
 
 clib_error_t *validate_rule(mmb_rule_t *rule) {
-   //TODO
+   uword index = 0;
+
+   vec_foreach_index(index, rule->matches) {
+     mmb_match_t *match = &rule->matches[index];
+
+     switch (match->field) {
+       case MMB_FIELD_ALL:
+         /* other fields must be empty, and no other matches */
+         if (match->condition || vec_len(match->value) || match->reverse
+             || vec_len(rule->matches)>1)
+           return clib_error_return(0, "'all' in a <match> must be used alone");
+         break;
+       default:
+         break;
+     }
+   }
+
+   vec_foreach_index(index, rule->targets) {
+     mmb_target_t *target = &rule->targets[index];
+
+     switch (target->field) {
+       case MMB_FIELD_ALL:
+         if (target->keyword != MMB_TARGET_STRIP || vec_len(target->value))
+           return clib_error_return(0, "'all' in a <target> can only be used"
+                                     " with the 'strip' keyword and no value");
+         if (target->reverse)
+           return clib_error_return(0, "<target> has no effect");
+         break;
+       default:
+         break;
+     }
+   }
+
    return NULL;
 }
 
@@ -311,8 +338,9 @@ uword unformat_field(unformat_input_t * input, va_list * va)
  
       /* optional kind */
       if (*field == MMB_FIELD_TCP_OPT
-          && unformat(input, "%d", kind) 
-          && unformat(input, "x%x", kind))
+          && (unformat(input, "x%x", kind)
+              || unformat(input, "0x%x", kind) 
+              || unformat(input, "%d", kind)))
         ;
       return 1;
     }
@@ -532,7 +560,8 @@ void mmb_free_rule(mmb_rule_t *rule) {
  */
 VLIB_CLI_COMMAND (sr_content_command_enable, static) = {
     .path = "mmb enable",
-    .short_help = "mmb enable <interface-name> (enable the MMB plugin on a given interface)",
+    .short_help = "mmb enable <interface-name> "
+                  "(enable the MMB plugin on a given interface)",
     .function = enable_command_fn,
 };
 
@@ -541,7 +570,8 @@ VLIB_CLI_COMMAND (sr_content_command_enable, static) = {
  */
 VLIB_CLI_COMMAND (sr_content_command_disable, static) = {
     .path = "mmb disable",
-    .short_help = "mmb disable <interface-name> (disable the MMB plugin on a given interface)",
+    .short_help = "mmb disable <interface-name> "
+                  "(disable the MMB plugin on a given interface)",
     .function = disable_command_fn,
 };
 
@@ -559,7 +589,9 @@ VLIB_CLI_COMMAND (sr_content_command_display_rules, static) = {
  */
 VLIB_CLI_COMMAND (sr_content_command_add_rule, static) = {
     .path = "mmb add",
-    .short_help = "Add a rule: mmb add <field> [[<cond>] <value>] [<field> [[<cond>] <value>] ...] <strip <option-field> [strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
+    .short_help = "Add a rule: mmb add <field> [[<cond>] <value>] "
+                  "[<field> [[<cond>] <value>] ...] <strip <option-field> "
+                  "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
     .function = add_rule_command_fn,
 };
 
