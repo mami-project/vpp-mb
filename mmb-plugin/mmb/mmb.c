@@ -202,15 +202,34 @@ disable_command_fn (vlib_main_t * vm,
 }
 
 static clib_error_t *
-display_rules_command_fn (vlib_main_t * vm,
+list_rules_command_fn (vlib_main_t * vm,
                           unformat_input_t * input,
                           vlib_cli_command_t * cmd) {
-  unformat_input_tolower(input);
   if (!unformat_is_eof(input))
     return clib_error_return(0, "Syntax error: unexpected additional element");
 
   mmb_main_t *mm = &mmb_main;
   print_rules(vm, mm->rules);
+
+  return 0;
+}
+
+static clib_error_t *
+flush_rules_command_fn (vlib_main_t * vm,
+                        unformat_input_t * input,
+                        vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
+  if (!unformat_is_eof(input))
+    return clib_error_return(0, "Syntax error: unexpected additional element");
+
+  mmb_main_t *mm = &mmb_main;
+  mmb_rule_t *rules = mm->rules;
+  uword rule_index;
+  vec_foreach_index(rule_index, rules) {
+    mmb_rule_t *rule = &rules[rule_index];
+    mmb_free_rule(rule);
+  }
+  vec_delete(rules, vec_len(rules), 0);
 
   return 0;
 }
@@ -677,10 +696,10 @@ VLIB_CLI_COMMAND (sr_content_command_disable, static) = {
 /**
  * @brief CLI command to list all rules.
  */
-VLIB_CLI_COMMAND (sr_content_command_display_rules, static) = {
+VLIB_CLI_COMMAND (sr_content_command_list_rules, static) = {
     .path = "mmb list",
     .short_help = "Display all rules",
-    .function = display_rules_command_fn,
+    .function = list_rules_command_fn,
 };
 
 /**
@@ -697,10 +716,19 @@ VLIB_CLI_COMMAND (sr_content_command_add_rule, static) = {
 /**
  * @brief CLI command to remove a rule.
  */
-VLIB_CLI_COMMAND (sr_content_command_del_rule, static) = {
+VLIB_CLI_COMMAND (sr_content_command_del_rules, static) = {
     .path = "mmb del",
     .short_help = "Remove a rule: mmb del <rule-number>",
     .function = del_rule_command_fn,
+};
+
+/**
+ * @brief CLI command to remove a rule.
+ */
+VLIB_CLI_COMMAND (sr_content_command_flush_rule, static) = {
+    .path = "mmb flush",
+    .short_help = "Remove all rules",
+    .function = flush_rules_command_fn,
 };
 
 /**
