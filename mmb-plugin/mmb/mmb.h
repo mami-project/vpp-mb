@@ -25,54 +25,54 @@
 
 #define MMB_PLUGIN_BUILD_VER "1.0"
 
-#define MMB_TYPE_FIELD          1
-#define MMB_TYPE_CONDITION      2
-#define MMB_TYPE_VALUE          3
-#define MMB_TYPE_TARGET         4
-#define MMB_TYPE_FIELD_OPT      5
+#define MMB_TYPE_FIELD           1
+#define MMB_TYPE_CONDITION       2
+#define MMB_TYPE_VALUE           3
+#define MMB_TYPE_TARGET          4
+#define MMB_TYPE_FIELD_OPT       5
 
-#define MMB_COND_EQ             10
-#define MMB_COND_NEQ            11
-#define MMB_COND_LEQ            12
-#define MMB_COND_GEQ            13
-#define MMB_COND_LT             14
-#define MMB_COND_GT             15
+#define MMB_COND_EQ              10
+#define MMB_COND_NEQ             11
+#define MMB_COND_LEQ             12
+#define MMB_COND_GEQ             13
+#define MMB_COND_LT              14
+#define MMB_COND_GT              15
 
-#define MMB_TARGET_DROP         20
-#define MMB_TARGET_STRIP        21
-#define MMB_TARGET_MODIFY       22
+#define MMB_TARGET_DROP          20
+#define MMB_TARGET_STRIP         21
+#define MMB_TARGET_MODIFY        22
 
-#define MMB_FIELD_PROTO_IP      70
-#define MMB_FIELD_PROTO_ICMP    71
-#define MMB_FIELD_PROTO_TCP     72
-#define MMB_FIELD_PROTO_UDP     73
+#define MMB_FIELD_PROTO_IP       70
+#define MMB_FIELD_PROTO_ICMP     71
+#define MMB_FIELD_PROTO_TCP      72
+#define MMB_FIELD_PROTO_UDP      73
 
-#define MMB_FIELD_NET_PROTO           110
-#define MMB_FIELD_IP_VER              111
-#define MMB_FIELD_IP_IHL              112
-#define MMB_FIELD_IP_DSCP             113
-#define MMB_FIELD_IP_ECN              114
-#define MMB_FIELD_IP_NON_ECT          115
-#define MMB_FIELD_IP_ECT0             116
-#define MMB_FIELD_IP_ECT1             117
-#define MMB_FIELD_IP_CE               118
-#define MMB_FIELD_IP_LEN              119
-#define MMB_FIELD_IP_ID               120
-#define MMB_FIELD_IP_FLAGS            121
-#define MMB_FIELD_IP_RES              122
-#define MMB_FIELD_IP_DF               123
-#define MMB_FIELD_IP_MF               124
-#define MMB_FIELD_IP_FRAG_OFFSET      125
-#define MMB_FIELD_IP_TTL              126
-#define MMB_FIELD_IP_PROTO            127
-#define MMB_FIELD_IP_CHECKSUM         128
-#define MMB_FIELD_IP_SADDR            129
-#define MMB_FIELD_IP_DADDR            130
+#define MMB_FIELD_NET_PROTO      110
+#define MMB_FIELD_IP_VER         111
+#define MMB_FIELD_IP_IHL         112
+#define MMB_FIELD_IP_DSCP        113
+#define MMB_FIELD_IP_ECN         114
+#define MMB_FIELD_IP_NON_ECT     115
+#define MMB_FIELD_IP_ECT0        116
+#define MMB_FIELD_IP_ECT1        117
+#define MMB_FIELD_IP_CE          118
+#define MMB_FIELD_IP_LEN         119
+#define MMB_FIELD_IP_ID          120
+#define MMB_FIELD_IP_FLAGS       121
+#define MMB_FIELD_IP_RES         122
+#define MMB_FIELD_IP_DF          123
+#define MMB_FIELD_IP_MF          124
+#define MMB_FIELD_IP_FRAG_OFFSET 125
+#define MMB_FIELD_IP_TTL         126
+#define MMB_FIELD_IP_PROTO       127
+#define MMB_FIELD_IP_CHECKSUM    128
+#define MMB_FIELD_IP_SADDR       129
+#define MMB_FIELD_IP_DADDR       130
 
-#define MMB_FIELD_ICMP_TYPE          131
-#define MMB_FIELD_ICMP_CODE          132
-#define MMB_FIELD_ICMP_CHECKSUM      133
-#define MMB_FIELD_ICMP_PAYLOAD       134
+#define MMB_FIELD_ICMP_TYPE      131
+#define MMB_FIELD_ICMP_CODE      132
+#define MMB_FIELD_ICMP_CHECKSUM  133
+#define MMB_FIELD_ICMP_PAYLOAD   134
 
 #define MMB_FIELD_UDP_SPORT      135
 #define MMB_FIELD_UDP_DPORT      136
@@ -129,6 +129,8 @@ typedef struct {
 } mmb_target_t;
 
 typedef struct {
+  u16 l3;
+  u8 l4;
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
 } mmb_rule_t;
