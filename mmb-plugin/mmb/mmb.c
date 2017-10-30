@@ -68,6 +68,15 @@ VLIB_PLUGIN_REGISTER () = {
 
 #define MMB_DEFAULT_MATCH_CONDITION MMB_COND_EQ
 
+#define foreach_mmb_transport_proto       \
+_(tcp,TCP)                                    \
+_(udp,UDP)                                    \
+_(icmp,ICMP)     
+                               
+#define foreach_mmb_network_proto       \
+_(ip4,IP4)                                    \
+_(ip6,IP6)                                   
+
 static u8 fields_len = 58;
 static char* fields[] = {
   "net-proto", "ip-ver", "ip-ihl",
@@ -485,6 +494,25 @@ uword unformat_condition(unformat_input_t * input, va_list * va) {
 uword unformat_value(unformat_input_t * input, va_list * va) {
   u8 **bytes = va_arg(*va, u8**);
   u64 decimal = 0;
+  u8 found_l4 = 0;
+  u16 found_l3 = 0;
+
+   if (0);
+#define _(a,b) else if (unformat (input, #a)) found_l4 = IP_PROTOCOL_##b;
+   foreach_mmb_transport_proto
+#undef _
+#define _(a,b) else if (unformat (input, #a)) found_l3 = ETHERNET_TYPE_##b;
+   foreach_mmb_network_proto
+#undef _
+
+  if (found_l4) {
+    vec_add1(*bytes, found_l4);
+    return 1;
+  } else if (found_l3) {
+    vec_add1(*bytes, (found_l3 & 0xff00) >> 8);
+    vec_add1(*bytes, found_l3 & 0x00ff);
+    return 1;
+  }
 
   if (unformat (input, "0x") 
     || unformat (input, "x")) {
