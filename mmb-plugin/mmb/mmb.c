@@ -77,8 +77,8 @@ _(icmp,ICMP)
 _(ip4,IP4)                                    \
 _(ip6,IP6)                                   
 
-static u8 fields_len = 58;
-static char* fields[] = {
+static const u8 fields_len = 58;
+static const char* fields[] = {
   "net-proto", "ip-ver", "ip-ihl",
   "ip-dscp", "ip-ecn", "ip-non-ect",
   "ip-ect0", "ip-ect1", "ip-ce",
@@ -101,13 +101,19 @@ static char* fields[] = {
   "all"
 };
 
-static u8 conditions_len = 6;
-static char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
+static const u8 conditions_len = 6;
+static const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
+
+static const char* blanks = "                                                "
+                            "                                                "
+                            "                                                "
+                            "                                                ";
 
 static uword unformat_field(unformat_input_t * input, va_list * va);
 static uword unformat_condition(unformat_input_t * input, va_list * va);
 static uword unformat_value(unformat_input_t * input, va_list * va);
 static u8 *mmb_format_rule(u8 *s, va_list *args);
+static u8 *mmb_format_rule_column(u8 *s, va_list *args);
 static u8 *mmb_format_match(u8 *s, va_list *args);
 static u8 *mmb_format_target(u8 *s, va_list *args);
 static u8* mmb_format_field(u8 *s, va_list *args);
@@ -120,8 +126,6 @@ static void mmb_free_rule(mmb_rule_t *rule);
 
 static clib_error_t *validate_rule();
 static void print_rules(vlib_main_t * vm, mmb_rule_t *rules);
-
-char *mmb_debug = 0;
 
 static_always_inline void unformat_input_tolower(unformat_input_t *input) {
   uword buffer_index = 0;
@@ -368,7 +372,7 @@ static clib_error_t *derive_l4(mmb_rule_t *rule) {
 }
 
 clib_error_t *validate_rule(mmb_rule_t *rule) {
-   //TODO: validate, protocols name, recalibrate decimal payload, subnet
+   //TODO: validate, recalibrate decimal payload, subnet
    uword index = 0;
    
    clib_error_t *error;
@@ -491,11 +495,16 @@ uword unformat_condition(unformat_input_t * input, va_list * va) {
   return 0;
 }
 
+static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
+  for (int i=count-1; i>=0; i--)
+    vec_add1(*bytes, value>>(i*8)); 
+}
+
 uword unformat_value(unformat_input_t * input, va_list * va) {
   u8 **bytes = va_arg(*va, u8**);
-  u64 decimal = 0;
   u8 found_l4 = 0;
   u16 found_l3 = 0;
+  u64 decimal = 0;
 
    if (0);
 #define _(a,b) else if (unformat (input, #a)) found_l4 = IP_PROTOCOL_##b;
@@ -506,11 +515,10 @@ uword unformat_value(unformat_input_t * input, va_list * va) {
 #undef _
 
   if (found_l4) {
-    vec_add1(*bytes, found_l4);
+    u64_tobytes(bytes, found_l4, 1);
     return 1;
   } else if (found_l3) {
-    vec_add1(*bytes, (found_l3 & 0xff00) >> 8);
-    vec_add1(*bytes, found_l3 & 0x00ff);
+    u64_tobytes(bytes, found_l3, 2);
     return 1;
   }
 
@@ -535,9 +543,7 @@ uword unformat_value(unformat_input_t * input, va_list * va) {
     }
     
   } else if (unformat (input, "%lu", &decimal)) {
-    /* dec value */
-    for (int i=7; i>=0; i--)
-      vec_add1(*bytes, (decimal>>(i*8)) & 0xff); 
+     u64_tobytes(bytes, decimal, 8);
   } else 
     return 0;
 
@@ -632,19 +638,19 @@ u8* mmb_format_keyword(u8* s, va_list *args) {
 
 void print_rules(vlib_main_t * vm, mmb_rule_t *rules) {
    //TODO: alignment
-   vl_print(vm, " Index\tL3\tL4\tMatches\t\t\t\tTargets\n");
-
+   vl_print(vm, " Index%2sL3%4sL4%6sMatches%33sTargets\n", 
+                blanks, blanks, blanks, blanks);
    uword rule_index = 0;
    vec_foreach_index(rule_index, rules) {
-     vl_print(vm, " %d\t%U\n%s", rule_index+1, 
-              mmb_format_rule, &rules[rule_index], 
+     vl_print(vm, " %d\t%U%s", rule_index+1, 
+              mmb_format_rule_column, &rules[rule_index], 
               rule_index == vec_len(rules)-1 ? "" : "\n");
    }
 }
 
 u8 *mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
-  s = format(s, "%04x\t%d\t", rule->l3, rule->l4); 
+  s = format(s, "%04x\t%-8d", rule->l3, rule->l4); 
 
   uword index = 0;
   vec_foreach_index(index, rule->matches) {
@@ -659,7 +665,31 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
   return s;
 }
 
-static inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
+u8 *mmb_format_rule_column(u8 *s, va_list *args) {
+  mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
+  s = format(s, "%04x  %-8d", rule->l3, rule->l4); 
+  
+  for (uword index = 0; 
+       index<clib_max(vec_len(rule->matches), vec_len(rule->targets)); 
+       index++) {
+    if (index < vec_len(rule->matches)) {
+      /* tabulate empty line */
+      if (index) 
+        s = format(s, "%22s", "AND ");
+      s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
+
+    } else  
+      s = format(s, "%62s", blanks);
+
+    if (index < vec_len(rule->targets)) 
+      s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
+    s = format(s, "\n");
+
+  }
+  return s;
+}
+
+static_always_inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
   u8 *byte, *bytes = va_arg(*args, u8*); 
   vec_foreach(byte, bytes) {
     s = format(s, "%02x", *byte);

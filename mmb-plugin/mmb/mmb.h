@@ -23,7 +23,7 @@
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
 
-#define MMB_PLUGIN_BUILD_VER "1.0"
+#define MMB_PLUGIN_BUILD_VER "0.1"
 
 #define MMB_TYPE_FIELD           1
 #define MMB_TYPE_CONDITION       2
