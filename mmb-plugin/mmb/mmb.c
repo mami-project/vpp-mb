@@ -237,12 +237,15 @@ flush_rules_command_fn (vlib_main_t * vm,
 
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
-  uword rule_index;
-  vec_foreach_index(rule_index, rules) {
-    mmb_rule_t *rule = &rules[rule_index];
-    mmb_free_rule(rule);
+
+  if (vec_len(rules)) {
+    uword rule_index;
+    vec_foreach_index(rule_index, rules) {
+      mmb_rule_t *rule = &rules[rule_index];
+      mmb_free_rule(rule);
+    }
+    vec_delete(rules, vec_len(rules), 0);
   }
-  vec_delete(rules, vec_len(rules), 0);
 
   return 0;
 }
@@ -496,7 +499,7 @@ uword unformat_condition(unformat_input_t * input, va_list * va) {
 }
 
 static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
-  for (int i=count-1; i>=0; i--)
+  for (int i=0; i<count; i++)
     vec_add1(*bytes, value>>(i*8)); 
 }
 
@@ -781,7 +784,7 @@ VLIB_CLI_COMMAND (sr_content_command_del_rules, static) = {
 };
 
 /**
- * @brief CLI command to remove a rule.
+ * @brief CLI command to remove all rules.
  */
 VLIB_CLI_COMMAND (sr_content_command_flush_rule, static) = {
     .path = "mmb flush",
