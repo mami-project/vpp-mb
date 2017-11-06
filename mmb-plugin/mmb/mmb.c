@@ -77,6 +77,11 @@ _(icmp,ICMP)
 _(ip4,IP4)                                    \
 _(ip6,IP6)                                   
 
+static const char* blanks = "                                                "
+                            "                                                "
+                            "                                                "
+                            "                                                ";
+
 static const u8 fields_len = 58;
 static const char* fields[] = {
   "net-proto", "ip-ver", "ip-ihl",
@@ -104,11 +109,6 @@ static const char* fields[] = {
 static const u8 conditions_len = 6;
 static const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
-static const char* blanks = "                                                "
-                            "                                                "
-                            "                                                "
-                            "                                                ";
-
 static uword unformat_field(unformat_input_t * input, va_list * va);
 static uword unformat_condition(unformat_input_t * input, va_list * va);
 static uword unformat_value(unformat_input_t * input, va_list * va);
@@ -125,7 +125,7 @@ static u8 parse_target(unformat_input_t * input, mmb_target_t *target);
 static void mmb_free_rule(mmb_rule_t *rule);
 
 static clib_error_t *validate_rule();
-static void print_rules(vlib_main_t * vm, mmb_rule_t *rules);
+static_always_inline void print_rules(vlib_main_t * vm, mmb_rule_t *rules);
 
 static_always_inline void unformat_input_tolower(unformat_input_t *input) {
   uword buffer_index = 0;
@@ -238,14 +238,14 @@ flush_rules_command_fn (vlib_main_t * vm,
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
 
-  if (vec_len(rules)) {
-    uword rule_index;
-    vec_foreach_index(rule_index, rules) {
-      mmb_rule_t *rule = &rules[rule_index];
-      mmb_free_rule(rule);
-    }
-    vec_delete(rules, vec_len(rules), 0);
+  uword rule_index;
+  vec_foreach_index(rule_index, rules) {
+    mmb_rule_t *rule = &rules[rule_index];
+    mmb_free_rule(rule);
   }
+
+  if (vec_len(rules))
+    vec_delete(rules, vec_len(rules), 0);
 
   return 0;
 }
@@ -283,7 +283,7 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   mmb_rule_t rule;
   memset(&rule, 0, sizeof(mmb_rule_t));
-  rule.matches  = matches;
+  rule.matches = matches;
   rule.targets = targets;
 
   clib_error_t *error;
@@ -390,14 +390,14 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
      switch (match->field) {
        case MMB_FIELD_ALL:
          /* other fields must be empty, and no other matches */
-         if (match->condition || vec_len(match->value) || match->reverse
-             || vec_len(rule->matches)>1)
+         if (match->condition || vec_len(match->value) > 0 || match->reverse
+             || vec_len(rule->matches) > 1)
            return clib_error_return(0, "'all' in a <match> must be used alone");
          break;
 
        case MMB_FIELD_IP_NON_ECT:case MMB_FIELD_IP_ECT0:
        case MMB_FIELD_IP_ECT1:case MMB_FIELD_IP_CE:
-         if (vec_len(match->value))
+         if (vec_len(match->value) > 0)
            return clib_error_return(0, "%s does not take a condition nor a value", 
                                     fields[match->field-MMB_FIELD_NET_PROTO]);
          translate_match_ip4_ecn(match);
@@ -422,7 +422,7 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
 
        case MMB_FIELD_IP_NON_ECT:case MMB_FIELD_IP_ECT0:
        case MMB_FIELD_IP_ECT1:case MMB_FIELD_IP_CE:
-         if (vec_len(target->value))
+         if (vec_len(target->value) > 0)
            return clib_error_return(0, "%s does not take a condition nor a value", 
                                     fields[target->field-MMB_FIELD_NET_PROTO]);
          translate_target_ip4_ecn(target);
@@ -639,8 +639,7 @@ u8* mmb_format_keyword(u8* s, va_list *args) {
   return s;
 }
 
-void print_rules(vlib_main_t * vm, mmb_rule_t *rules) {
-   //TODO: alignment
+static_always_inline void print_rules(vlib_main_t * vm, mmb_rule_t *rules) {
    vl_print(vm, " Index%2sL3%4sL4%6sMatches%33sTargets\n", 
                 blanks, blanks, blanks, blanks);
    uword rule_index = 0;
@@ -737,7 +736,7 @@ void mmb_free_rule(mmb_rule_t *rule) {
 /**
  * @brief CLI command to enable the mmb plugin.
  */
-VLIB_CLI_COMMAND (sr_content_command_enable, static) = {
+VLIB_CLI_COMMAND(sr_content_command_enable, static) = {
     .path = "mmb enable",
     .short_help = "mmb enable <interface-name> "
                   "(enable the MMB plugin on a given interface)",
@@ -747,7 +746,7 @@ VLIB_CLI_COMMAND (sr_content_command_enable, static) = {
 /**
  * @brief CLI command to disable the mmb plugin.
  */
-VLIB_CLI_COMMAND (sr_content_command_disable, static) = {
+VLIB_CLI_COMMAND(sr_content_command_disable, static) = {
     .path = "mmb disable",
     .short_help = "mmb disable <interface-name> "
                   "(disable the MMB plugin on a given interface)",
@@ -757,7 +756,7 @@ VLIB_CLI_COMMAND (sr_content_command_disable, static) = {
 /**
  * @brief CLI command to list all rules.
  */
-VLIB_CLI_COMMAND (sr_content_command_list_rules, static) = {
+VLIB_CLI_COMMAND(sr_content_command_list_rules, static) = {
     .path = "mmb list",
     .short_help = "Display all rules",
     .function = list_rules_command_fn,
@@ -766,7 +765,7 @@ VLIB_CLI_COMMAND (sr_content_command_list_rules, static) = {
 /**
  * @brief CLI command to add a new rule.
  */
-VLIB_CLI_COMMAND (sr_content_command_add_rule, static) = {
+VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
     .path = "mmb add",
     .short_help = "Add a rule: mmb add <field> [[<cond>] <value>] "
                   "[<field> [[<cond>] <value>] ...] <strip <option-field> "
@@ -777,7 +776,7 @@ VLIB_CLI_COMMAND (sr_content_command_add_rule, static) = {
 /**
  * @brief CLI command to remove a rule.
  */
-VLIB_CLI_COMMAND (sr_content_command_del_rules, static) = {
+VLIB_CLI_COMMAND(sr_content_command_del_rules, static) = {
     .path = "mmb del",
     .short_help = "Remove a rule: mmb del <rule-number>",
     .function = del_rule_command_fn,
@@ -786,7 +785,7 @@ VLIB_CLI_COMMAND (sr_content_command_del_rules, static) = {
 /**
  * @brief CLI command to remove all rules.
  */
-VLIB_CLI_COMMAND (sr_content_command_flush_rule, static) = {
+VLIB_CLI_COMMAND(sr_content_command_flush_rule, static) = {
     .path = "mmb flush",
     .short_help = "Remove all rules",
     .function = flush_rules_command_fn,
@@ -796,7 +795,7 @@ VLIB_CLI_COMMAND (sr_content_command_flush_rule, static) = {
  * @brief Set up the API message handling tables.
  */
 static clib_error_t *
-mmb_plugin_api_hookup (vlib_main_t *vm) {
+mmb_plugin_api_hookup(vlib_main_t *vm) {
   CLIB_UNUSED(mmb_main_t) * mm = &mmb_main;
 #define _(N,n)                                                  \
     vl_msg_api_set_handlers((VL_API_##N + mm->msg_id_base),     \
@@ -817,7 +816,7 @@ mmb_plugin_api_hookup (vlib_main_t *vm) {
 #undef vl_msg_name_crc_list
 
 static void 
-setup_message_id_table (mmb_main_t * mm, api_main_t *am) {
+setup_message_id_table(mmb_main_t * mm, api_main_t *am) {
 #define _(id,n,crc) \
   vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + mm->msg_id_base);
   foreach_vl_msg_name_crc_mmb;
@@ -827,13 +826,13 @@ setup_message_id_table (mmb_main_t * mm, api_main_t *am) {
 /**
  * @brief Initialize the mmb plugin.
  */
-static clib_error_t * mmb_init (vlib_main_t * vm) {
+static clib_error_t * mmb_init(vlib_main_t * vm) {
   mmb_main_t * mm = &mmb_main;
   clib_error_t * error = 0;
   u8 * name;
 
-  mm->vnet_main =  vnet_get_main ();
-  mm->rules = 0;
+  memset(mm, 0, sizeof(mmb_main_t));
+  mm->vnet_main =  vnet_get_main();
 
   name = format (0, "mmb_%08x%c", api_version, 0);
 
@@ -841,10 +840,10 @@ static clib_error_t * mmb_init (vlib_main_t * vm) {
   mm->msg_id_base = vl_msg_api_get_msg_ids 
       ((char *) name, VL_MSG_FIRST_AVAILABLE);
 
-  error = mmb_plugin_api_hookup (vm);
+  error = mmb_plugin_api_hookup(vm);
 
   /* Add our API messages to the global name_crc hash table */
-  setup_message_id_table (mm, &api_main);
+  setup_message_id_table(mm, &api_main);
 
   vec_free(name);
 
