@@ -503,7 +503,7 @@ uword unformat_condition(unformat_input_t * input, va_list * va) {
 }
 
 static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
-  for (int i=0; i<count; i++)
+  for (int i=count-1; i>=0; i--)
     vec_add1(*bytes, value>>(i*8)); 
 }
 
