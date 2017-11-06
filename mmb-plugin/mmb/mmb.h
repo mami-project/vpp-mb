@@ -139,7 +139,7 @@ typedef struct {
    /* API message ID base */
    u16 msg_id_base;
 
-   mmb_rule_t *rules;  /*! Matches vector */
+   mmb_rule_t *rules;  /*! Rules vector */
 
    /* convenience */
    vnet_main_t * vnet_main;
