@@ -29,16 +29,6 @@ typedef enum {
   MMB_N_NEXT
 } mmb_next_t;
 
-typedef enum {
-  MMB_NO_SCOPE,
-  MMB_IP_SCOPE,
-  MMB_ICMP_SCOPE,
-  MMB_UDP_SCOPE,
-  MMB_TCP_SCOPE,
-  MMB_UNRELATED_SCOPE,
-  MMB_ALL_SCOPE
-} mmb_scope_t;
-
 vlib_node_registration_t mmb_node;
 
 #define foreach_mmb_error \
@@ -71,95 +61,17 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   return s;
 }
 
-u8 packet_scoped_field(u8 ip_proto, mmb_match_t *match)
-{
-  /*
-   * step 1: check if a field belongs to a packet (protocol dependency)
-   */
-
-  /* IP field ? */
-  if (match->field >= MMB_FIELD_IP_VER && match->field <= MMB_FIELD_IP_DADDR)
-    return MMB_IP_SCOPE;
-
-  /* not an IP field: only matches on ICMP/UDP/TCP packets (others are out of scope) */
-  if (ip_proto != IP_PROTOCOL_ICMP && ip_proto != IP_PROTOCOL_UDP && ip_proto != IP_PROTOCOL_TCP)
-    return MMB_NO_SCOPE;
-
-  /* if we match on any packet */
-  if (match->field == MMB_FIELD_ALL)
-    return MMB_ALL_SCOPE;
-
-  /* ICMP field ? */
-  if (ip_proto == IP_PROTOCOL_ICMP && match->field >= MMB_FIELD_ICMP_TYPE && match->field <= MMB_FIELD_ICMP_PAYLOAD)
-    return MMB_ICMP_SCOPE;
-
-  /* UDP field ? */
-  if (ip_proto == IP_PROTOCOL_UDP && match->field >= MMB_FIELD_UDP_SPORT && match->field <= MMB_FIELD_UDP_PAYLOAD)
-    return MMB_UDP_SCOPE;
-
-  /* TCP field ? */
-  if (ip_proto == IP_PROTOCOL_TCP && match->field >= MMB_FIELD_TCP_SPORT && match->field <= MMB_FIELD_TCP_OPT)
-    return MMB_TCP_SCOPE;
-
-  /*
-   * step 2: not in scope, last try by checking the context (reverse/condition)
-   */
-
-  // ==========================================================================================================================================================
-  //            -MATCH-            |       -MEANING-       |                            -RESULT-                            |            -EXAMPLE-
-  // ==========================================================================================================================================================
-  // (1) reverse:0, condition:0    |    field is present   |  NOT in scope (unrelated field is never present)               |  "tcp-opt" for udp pkts
-  // (2) reverse:1, condition:0    |  field is not present |  in scope (unrelated field is always not present)              |  "!tcp-opt" for udp pkts
-  // (3) reverse:0, condition:"==" |          ==           |  NOT in scope (unrelated field is never "equal to something")  |  "tcp-dport==12345" for udp pkts
-  // (4) reverse:1, condition:"==" |          !=           |  in scope (unrelated field is always "not equal to something") |  "!tcp-dport==12345" for udp pkts
-  // (5) reverse:0, condition:"!=" |          !=           |  in scope (unrelated field is always "not equal to something") |  "tcp-dport!=12345" for udp pkts
-  // (6) reverse:1, condition:"!=" |          ==           |  NOT in scope (unrelated field is never "equal to something")  |  "!tcp-dport==12345" for udp pkts
-  // ==========================================================================================================================================================
-  // (7) Note: "<", "<=", ">=", ">" are considered "in scope" by default, with or without reverse
-  // ==========================================================================================================================================================
-
-  switch(match->condition)
-  {
-    case 0:
-      //match 1
-      if (match->reverse == 0)
-        return MMB_NO_SCOPE;
-
-      //match 2
-      return MMB_UNRELATED_SCOPE;
-
-    case MMB_COND_EQ:
-      //match 3
-      if (match->reverse == 0)
-        return MMB_NO_SCOPE;
-
-      //match 4
-      return MMB_UNRELATED_SCOPE;
-
-    case MMB_COND_NEQ:
-      //match 5
-      if (match->reverse == 0)
-        return MMB_UNRELATED_SCOPE;
-
-      //match 6
-      return MMB_NO_SCOPE;
-
-    case MMB_COND_LEQ:
-    case MMB_COND_GEQ:
-    case MMB_COND_LT:
-    case MMB_COND_GT:
-      //match 7
-      return MMB_UNRELATED_SCOPE; //TODO: maybe we should consider them out of scope ?
-
-    default:
-      break;
-  }
-
-  return MMB_NO_SCOPE;
-}
-
 u8 value_compare(u64 a, u64 b, u8 condition)
 {
+  //TODO: remove (debug)
+  FILE *f = fopen("/home/vagrant/cmp.txt", "a");
+  if (f != NULL)
+  {
+    fprintf(f, "compare %lu (%lx) with %lu (%lx)\n", a, a, b, b);
+    fclose(f);
+  }
+  //
+
   switch(condition)
   {
     case MMB_COND_EQ:
@@ -190,12 +102,11 @@ u8 value_compare(u64 a, u64 b, u8 condition)
 u64 bytes_to_u64(u8 *bytes)
 {
   u64 value = 0;
-  uword i = 0;
+  u32 i = 0;
+  u32 len = vec_len(bytes) - 1;
 
   vec_foreach_index(i, bytes)
-  {
-    value += (bytes[i] << (i*8));
-  }
+    value += (bytes[i] << ((len - i) * 8));
 
   return value;
 }
@@ -218,8 +129,16 @@ u8 check_ip_condition(ip4_header_t *ip, mmb_match_t *match)
   switch(match->field)
   {
     /*
-     * Normal cases: read field's value in the packet and compare it to user's (rule) value
+     * read field's value in the packet and compare it to user's (rule) value
      */
+
+#define MMB_FIELD_IP_FLAGS       121
+#define MMB_FIELD_IP_RES         122
+#define MMB_FIELD_IP_DF          123
+#define MMB_FIELD_IP_MF          124
+#define MMB_FIELD_IP_FRAG_OFFSET 125
+#define MMB_FIELD_IP_SADDR       129
+#define MMB_FIELD_IP_DADDR       130
 
     case MMB_FIELD_IP_VER:
     case MMB_FIELD_IP_IHL:
@@ -242,35 +161,8 @@ u8 check_ip_condition(ip4_header_t *ip, mmb_match_t *match)
         return 0;
       }
 
-      /* compare packet value and match value */
+      /* compare packet field and matching values */
       return value_compare(IP_FIELD_GET(ip, match->field), bytes_to_u64(match->value), match->condition);
-
-
-    /*
-     * Special cases: shortcuts for users to directly match on fields with specific values
-     */
-
-    case MMB_FIELD_IP_NON_ECT:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_ECN), 0, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_ECT0:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_ECN), 2, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_ECT1:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_ECN), 1, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_CE:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_ECN), 3, MMB_COND_EQ);
-
-    //TODO: should go in "normal" cases and get a specific bit instead ?
-    /*case MMB_FIELD_IP_RES:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_FLAGS), xxx, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_DF:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_FLAGS), xxx, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_MF:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_FLAGS), xxx, MMB_COND_EQ);*/
 
     default:
       break;
@@ -297,60 +189,83 @@ u8 check_tcp_condition(tcp_header_t *tcp, mmb_match_t *match)
   return 0;
 }
 
-u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches)
+u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
 {
+  /* Don't apply rules concerning layer 3 other than IP4 */
+  if (l3 != ETHERNET_TYPE_IP4)
+    return 0;
+
+  /* Don't touch packets with layer 4 different than ICMP,UDP,TCP */
+  if (ip->protocol != IP_PROTOCOL_ICMP 
+      && ip->protocol != IP_PROTOCOL_UDP 
+      && ip->protocol != IP_PROTOCOL_TCP)
+  {
+    return 0;
+  }
+
+  /* Don't apply rules with a layer 4 different than the packet's one */
+  /* Note: case l4 = IP_PROTOCOL_RESERVED when "all" or only "ip-fields" in matching */
+  if (l4 != IP_PROTOCOL_RESERVED && ip->protocol != l4)
+    return 0;
+
+  /* Rule could be applied to packet, let's check all matching conditions */
   uword imatch = 0;
   vec_foreach_index(imatch, matches)
   {
     mmb_match_t *match = &matches[imatch];
 
-    /* (semantically) check if a match-field is in the packet's scope */
-    u8 scope;
-    if ((scope = packet_scoped_field(ip->protocol, match)) == MMB_NO_SCOPE)
-    {
-      /* NO MATCH */
-      return 0;
-    }
-
-    /* "all" and unrelated fields that are in scope -> pass */
-    if (scope == MMB_ALL_SCOPE || scope == MMB_UNRELATED_SCOPE)
+    if (match->field == MMB_FIELD_ALL)
       continue;
 
-    /* check for the condition */
-    switch(scope)
+    u16 field_protocol = get_field_protocol(match->field);
+    switch(field_protocol)
     {
-      case MMB_IP_SCOPE:
+      /* IP field */
+      case ETHERNET_TYPE_IP4:
         if (!check_ip_condition(ip, match))
           return 0;
         break;
 
-      case MMB_ICMP_SCOPE:
-        ;
+      /* ICMP field */
+      case IP_PROTOCOL_ICMP:
+        /* If not an ICMP packet, don't match */
+        if (ip->protocol != field_protocol)
+          return 0;
+
         icmp46_header_t *icmp = ip4_next_header(ip);
         if (!check_icmp_condition(icmp, match))
           return 0;
         break;
 
-      case MMB_UDP_SCOPE:
-        ;
+      /* UDP field */
+      case IP_PROTOCOL_UDP:
+        /* If not an UDP packet, don't match */
+        if (ip->protocol != field_protocol)
+          return 0;
+
         udp_header_t *udp = ip4_next_header(ip);
         if (!check_udp_condition(udp, match))
           return 0;
         break;
 
-      case MMB_TCP_SCOPE:
-        ;
+      /* TCP field */
+      case IP_PROTOCOL_TCP:
+        /* If not a TCP packet, don't match */
+        if (ip->protocol != field_protocol)
+          return 0;
+
         tcp_header_t *tcp = ip4_next_header(ip);
         if (!check_tcp_condition(tcp, match))
           return 0;
         break;
 
+      /* Unexpected field */
       default:
-        break;
+        return 0;
     }
   }
 
-  /* MATCH */
+  /* MATCH: none of the conditions triggered "false" */
   return 1;
 }
 
@@ -493,7 +408,7 @@ mmb_node_fn (vlib_main_t * vm,
       {
         mmb_rule_t *rule = &rules[irule];
 
-        if (packet_matches(ip0, rule->matches))
+        if (packet_matches(ip0, rule->matches, rule->l3, rule->l4))
         {
           /* MATCH: apply targets to packet */
           next0 = packet_apply_targets(ip0, rule->targets);
