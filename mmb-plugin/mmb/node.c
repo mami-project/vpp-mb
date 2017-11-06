@@ -16,7 +16,7 @@
 #include <vnet/vnet.h>
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
-#include <mmb/node.h>
+#include <mmb/mmb.h>
 
 typedef struct {
   u8  proto;
@@ -26,18 +26,8 @@ typedef struct {
 typedef enum {
   MMB_NEXT_LOOKUP,
   MMB_NEXT_DROP,
-  MMB_N_NEXT
+  MMB_N_NEXT,
 } mmb_next_t;
-
-typedef enum {
-  MMB_NO_SCOPE,
-  MMB_IP_SCOPE,
-  MMB_ICMP_SCOPE,
-  MMB_UDP_SCOPE,
-  MMB_TCP_SCOPE,
-  MMB_UNRELATED_SCOPE,
-  MMB_ALL_SCOPE
-} mmb_scope_t;
 
 vlib_node_registration_t mmb_node;
 
@@ -69,317 +59,6 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
               ((t->proto == IP_PROTOCOL_TCP) ? "TCP" : ((t->proto == IP_PROTOCOL_UDP) ? "UDP" : ((t->proto == IP_PROTOCOL_ICMP) ? "ICMP" : "OTHER"))));
 
   return s;
-}
-
-u8 packet_scoped_field(u8 ip_proto, mmb_match_t *match)
-{
-  /*
-   * step 1: check if a field belongs to a packet (protocol dependency)
-   */
-
-  /* IP field ? */
-  if (match->field >= MMB_FIELD_IP_VER && match->field <= MMB_FIELD_IP_DADDR)
-    return MMB_IP_SCOPE;
-
-  /* not an IP field: only matches on ICMP/UDP/TCP packets (others are out of scope) */
-  if (ip_proto != IP_PROTOCOL_ICMP && ip_proto != IP_PROTOCOL_UDP && ip_proto != IP_PROTOCOL_TCP)
-    return MMB_NO_SCOPE;
-
-  /* if we match on any packet */
-  if (match->field == MMB_FIELD_ALL)
-    return MMB_ALL_SCOPE;
-
-  /* ICMP field ? */
-  if (ip_proto == IP_PROTOCOL_ICMP && match->field >= MMB_FIELD_ICMP_TYPE && match->field <= MMB_FIELD_ICMP_PAYLOAD)
-    return MMB_ICMP_SCOPE;
-
-  /* UDP field ? */
-  if (ip_proto == IP_PROTOCOL_UDP && match->field >= MMB_FIELD_UDP_SPORT && match->field <= MMB_FIELD_UDP_PAYLOAD)
-    return MMB_UDP_SCOPE;
-
-  /* TCP field ? */
-  if (ip_proto == IP_PROTOCOL_TCP && match->field >= MMB_FIELD_TCP_SPORT && match->field <= MMB_FIELD_TCP_OPT)
-    return MMB_TCP_SCOPE;
-
-  /*
-   * step 2: not in scope, last try by checking the context (reverse/condition)
-   */
-
-  // ==========================================================================================================================================================
-  //            -MATCH-            |       -MEANING-       |                            -RESULT-                            |            -EXAMPLE-
-  // ==========================================================================================================================================================
-  // (1) reverse:0, condition:0    |    field is present   |  NOT in scope (unrelated field is never present)               |  "tcp-opt" for udp pkts
-  // (2) reverse:1, condition:0    |  field is not present |  in scope (unrelated field is always not present)              |  "!tcp-opt" for udp pkts
-  // (3) reverse:0, condition:"==" |          ==           |  NOT in scope (unrelated field is never "equal to something")  |  "tcp-dport==12345" for udp pkts
-  // (4) reverse:1, condition:"==" |          !=           |  in scope (unrelated field is always "not equal to something") |  "!tcp-dport==12345" for udp pkts
-  // (5) reverse:0, condition:"!=" |          !=           |  in scope (unrelated field is always "not equal to something") |  "tcp-dport!=12345" for udp pkts
-  // (6) reverse:1, condition:"!=" |          ==           |  NOT in scope (unrelated field is never "equal to something")  |  "!tcp-dport==12345" for udp pkts
-  // ==========================================================================================================================================================
-  // (7) Note: "<", "<=", ">=", ">" are considered "in scope" by default, with or without reverse
-  // ==========================================================================================================================================================
-
-  switch(match->condition)
-  {
-    case 0:
-      //match 1
-      if (match->reverse == 0)
-        return MMB_NO_SCOPE;
-
-      //match 2
-      return MMB_UNRELATED_SCOPE;
-
-    case MMB_COND_EQ:
-      //match 3
-      if (match->reverse == 0)
-        return MMB_NO_SCOPE;
-
-      //match 4
-      return MMB_UNRELATED_SCOPE;
-
-    case MMB_COND_NEQ:
-      //match 5
-      if (match->reverse == 0)
-        return MMB_UNRELATED_SCOPE;
-
-      //match 6
-      return MMB_NO_SCOPE;
-
-    case MMB_COND_LEQ:
-    case MMB_COND_GEQ:
-    case MMB_COND_LT:
-    case MMB_COND_GT:
-      //match 7
-      return MMB_UNRELATED_SCOPE; //TODO: maybe we should consider them out of scope ?
-
-    default:
-      break;
-  }
-
-  return MMB_NO_SCOPE;
-}
-
-u8 value_compare(u64 a, u64 b, u8 condition)
-{
-  switch(condition)
-  {
-    case MMB_COND_EQ:
-      return a == b;
-
-    case MMB_COND_NEQ:
-      return a != b;
-
-    case MMB_COND_LEQ:
-      return a <= b;
-
-    case MMB_COND_GEQ:
-      return a >= b;
-
-    case MMB_COND_LT:
-      return a < b;
-
-    case MMB_COND_GT:
-      return a > b;
-
-    default:
-      break;
-  }
-
-  return 0;
-}
-
-u64 bytes_to_u64(u8 *bytes)
-{
-  u64 value = 0;
-  uword i = 0;
-
-  vec_foreach_index(i, bytes)
-  {
-    value += (bytes[i] << (i*8));
-  }
-
-  return value;
-}
-
-u8 check_ip_condition(ip4_header_t *ip, mmb_match_t *match)
-{
-  // (u8)  ip_version_and_header_length:  "ip-ver" (4 bits) ; "ip-ihl" (4 bits)
-  // (u8)  tos:                           "ip-dscp" (6 bits) ; "ip-ecn" (2 bits) contains "ip-non-ect", "ip-ect0", "ip-ect1" and "ip-ce"
-  // (u16) length:                        "ip-len"
-  // (u16) fragment_id:                   "ip-id"
-  //TODO (u16) flags_and_fragment_offset:     "ip-flags" (3 bits) contains "ip-res", "ip-df" and "ip-mf" ; "ip-frag-offset" (13 bits)
-  // (u8)  ttl:                           "ip-ttl"
-  // (u8)  protocol:                      "ip-proto"
-  // (u16) checksum:                      "ip-checksum"
-  //TODO union address: "ip-saddr", "ip-daddr"
-
-  //MMB_FIELD_IP_FLAGS
-  //MMB_FIELD_IP_FRAG_OFFSET
-
-  switch(match->field)
-  {
-    /*
-     * Normal cases: read field's value in the packet and compare it to user's (rule) value
-     */
-
-    case MMB_FIELD_IP_VER:
-    case MMB_FIELD_IP_IHL:
-    case MMB_FIELD_IP_DSCP:
-    case MMB_FIELD_IP_ECN:
-    case MMB_FIELD_IP_LEN:
-    case MMB_FIELD_IP_ID:
-    //etc...
-    case MMB_FIELD_IP_TTL:
-    case MMB_FIELD_IP_PROTO:
-    case MMB_FIELD_IP_CHECKSUM:
-      /* search for "ip-field" or "!ip-field" match */
-      if (match->condition == 0)
-      {
-        /* "ip-field" is always found in an IP packet */
-        if (match->reverse == 0)
-          return 1;
-
-        /* "!ip-field" is always false for an IP packet */
-        return 0;
-      }
-
-      /* compare packet value and match value */
-      return value_compare(IP_FIELD_GET(ip, match->field), bytes_to_u64(match->value), match->condition);
-
-
-    /*
-     * Special cases: shortcuts for users to directly match on fields with specific values
-     */
-
-    case MMB_FIELD_IP_NON_ECT:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_ECN), 0, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_ECT0:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_ECN), 2, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_ECT1:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_ECN), 1, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_CE:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_ECN), 3, MMB_COND_EQ);
-
-    //TODO: should go in "normal" cases and get a specific bit instead ?
-    /*case MMB_FIELD_IP_RES:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_FLAGS), xxx, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_DF:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_FLAGS), xxx, MMB_COND_EQ);
-
-    case MMB_FIELD_IP_MF:
-      return value_compare(IP_FIELD_GET(ip, MMB_FIELD_IP_FLAGS), xxx, MMB_COND_EQ);*/
-
-    default:
-      break;
-  }
-
-  return 0;
-}
-
-u8 check_icmp_condition(icmp46_header_t *icmp, mmb_match_t *match)
-{
-  //TODO
-  return 0;
-}
-
-u8 check_udp_condition(udp_header_t *udp, mmb_match_t *match)
-{
-  //TODO
-  return 0;
-}
-
-u8 check_tcp_condition(tcp_header_t *tcp, mmb_match_t *match)
-{
-  //TODO
-  return 0;
-}
-
-u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches)
-{
-  uword imatch = 0;
-  vec_foreach_index(imatch, matches)
-  {
-    mmb_match_t *match = &matches[imatch];
-
-    /* (semantically) check if a match-field is in the packet's scope */
-    u8 scope;
-    if ((scope = packet_scoped_field(ip->protocol, match)) == MMB_NO_SCOPE)
-    {
-      /* NO MATCH */
-      return 0;
-    }
-
-    /* "all" and unrelated fields that are in scope -> pass */
-    if (scope == MMB_ALL_SCOPE || scope == MMB_UNRELATED_SCOPE)
-      continue;
-
-    /* check for the condition */
-    switch(scope)
-    {
-      case MMB_IP_SCOPE:
-        if (!check_ip_condition(ip, match))
-          return 0;
-        break;
-
-      case MMB_ICMP_SCOPE:
-        ;
-        icmp46_header_t *icmp = ip4_next_header(ip);
-        if (!check_icmp_condition(icmp, match))
-          return 0;
-        break;
-
-      case MMB_UDP_SCOPE:
-        ;
-        udp_header_t *udp = ip4_next_header(ip);
-        if (!check_udp_condition(udp, match))
-          return 0;
-        break;
-
-      case MMB_TCP_SCOPE:
-        ;
-        tcp_header_t *tcp = ip4_next_header(ip);
-        if (!check_tcp_condition(tcp, match))
-          return 0;
-        break;
-
-      default:
-        break;
-    }
-  }
-
-  /* MATCH */
-  return 1;
-}
-
-u32 packet_apply_targets(ip4_header_t *ip, mmb_target_t *targets)
-{
-  uword itarget = 0;
-  vec_foreach_index(itarget, targets)
-  {
-    mmb_target_t *target = &targets[itarget];
-
-    switch(target->keyword)
-    {
-      case MMB_TARGET_DROP:
-        return MMB_NEXT_DROP;
-
-      case MMB_TARGET_STRIP:
-        //TODO (+ recompute checksum ?)
-        break;
-
-      case MMB_TARGET_MODIFY:
-        //TODO (+ recompute checksum ?)
-        break;
-
-      default:
-        break;
-    }
-  }
-
-  return MMB_NEXT_LOOKUP;
 }
 
 static uword
@@ -487,25 +166,63 @@ mmb_node_fn (vlib_main_t * vm,
       /* get IP header */
       ip0 = vlib_buffer_get_current (b0);
 
-      /* fetch each rule to find a match */
-      uword irule = 0;
-      vec_foreach_index(irule, rules)
-      {
-        mmb_rule_t *rule = &rules[irule];
+      /* example: modify TTL and update checksum */
+      //ip0->ttl -= pkts_count+1;
+      //ip0->checksum = ip4_header_checksum(ip0);
 
-        if (packet_matches(ip0, rule->matches))
+      /*
+        Idea of matching/action algorithm
+
+        - for each rule
+           - for each match in this rule
+              - MATCH: process each target in this rule
+              - NO MATCH: go to next rule
+      */
+      uword index_rule = 0;
+      vec_foreach_index(index_rule, rules)
+      {
+        mmb_rule_t *rule = &rules[index_rule];
+        uword index_match = 0;
+
+        vec_foreach_index(index_match, rule->matches)
         {
-          /* MATCH: apply targets to packet */
-          next0 = packet_apply_targets(ip0, rule->targets);
-          //TODO trace: add triggered rule id
-          break;
+          mmb_match_t *match = &rule->matches[index_match];
+
+          // case: ip-proto == 1 (icmp) and current packet matches
+          if (match->field == MMB_FIELD_IP_PROTO && match->condition == MMB_COND_EQ 
+              /*&& !strcmp(match->value, "0000000000000001")*/ && ip0->protocol == IP_PROTOCOL_ICMP)
+          {
+            uword index_target = 0;
+            vec_foreach_index(index_target, rule->targets)
+            {
+              mmb_target_t *target = &rule->targets[index_target];
+
+              // case: DROP
+              if (target->keyword == MMB_TARGET_DROP)
+                next0 = MMB_NEXT_DROP;
+            }
+          }
         }
       }
 
-      /* one more packet processed */
+      /* apply rules on TCP and UDP packets only */
+      switch(ip0->protocol)
+      {
+        case IP_PROTOCOL_TCP: ;
+          tcp_header_t *tcp = ip4_next_header(ip0);
+          //Example: DROP all TCP packets
+          next0 = MMB_NEXT_DROP;
+          break;
+
+        case IP_PROTOCOL_UDP: ;
+          udp_header_t *udp = ip4_next_header(ip0);
+          break;
+
+        default: ;
+      }
+
       pkts_done += 1;
 
-      /* node trace (if enabled) */
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
                         && (b0->flags & VLIB_BUFFER_IS_TRACED)))
       {
