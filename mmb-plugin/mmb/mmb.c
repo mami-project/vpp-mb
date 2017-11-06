@@ -327,7 +327,7 @@ static_always_inline void translate_target_ip4_ecn(mmb_target_t *target) {
 }
 
 u16 get_field_protocol(u8 field) {
-  if (MMB_FIELD_NET_PROTO >= field && field <= MMB_FIELD_IP_DADDR)
+  if (MMB_FIELD_NET_PROTO <= field && field <= MMB_FIELD_IP_DADDR)
      return ETHERNET_TYPE_IP4;
    else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD)
      return IP_PROTOCOL_ICMP;
