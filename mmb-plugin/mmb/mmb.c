@@ -326,32 +326,36 @@ static_always_inline void translate_target_ip4_ecn(mmb_target_t *target) {
   target->field = MMB_FIELD_IP_ECN;
 }
 
+u16 get_field_protocol(u8 field) {
+  if (MMB_FIELD_NET_PROTO >= field && field <= MMB_FIELD_IP_DADDR)
+     return ETHERNET_TYPE_IP4;
+   else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD)
+     return IP_PROTOCOL_ICMP;
+   else if (MMB_FIELD_UDP_SPORT <= field && field <= MMB_FIELD_UDP_PAYLOAD)
+     return IP_PROTOCOL_UDP;
+   else if (MMB_FIELD_TCP_SPORT <= field && field <= MMB_FIELD_TCP_OPT)
+     return IP_PROTOCOL_TCP;
+   return 0;
+}
+
 static clib_error_t *derive_l4(mmb_rule_t *rule) {
   u8 l4 = IP_PROTOCOL_RESERVED;
   
   inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
     
-    inline clib_error_t *update_l4_aux(u8 l4, u8 *derived_l4) {
-      if (*derived_l4 == IP_PROTOCOL_RESERVED) 
-        *derived_l4 = l4;
-      else if (*derived_l4 != l4)
-        return clib_error_return(0, "Multiple l4 protocols");
-      return NULL;
+    u16 proto = get_field_protocol(field);
+    switch (proto) {
+      case IP_PROTOCOL_ICMP:case IP_PROTOCOL_UDP:
+      case IP_PROTOCOL_TCP:
+
+         if (*derived_l4 == IP_PROTOCOL_RESERVED) 
+           *derived_l4 = proto;
+         else if (*derived_l4 != proto)
+           return clib_error_return(0, "Multiple l4 protocols");
+      default:
+        break;
     }
-    
-    clib_error_t *error;
-    if (MMB_FIELD_NET_PROTO >= field && field <= MMB_FIELD_IP_DADDR) 
-      ;
-    else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD) {
-      if ( (error = update_l4_aux(IP_PROTOCOL_ICMP, derived_l4)) )
-        return error;
-    } else if (MMB_FIELD_UDP_SPORT <= field && field <= MMB_FIELD_UDP_PAYLOAD) {
-      if ( (error = update_l4_aux(IP_PROTOCOL_UDP, derived_l4)) )
-        return error;
-    } else if (MMB_FIELD_TCP_SPORT <= field && field <= MMB_FIELD_TCP_OPT) {
-      if ( (error = update_l4_aux(IP_PROTOCOL_TCP, derived_l4)) )
-        return error;
-    }
+
     return NULL;
   }
 

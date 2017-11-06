@@ -149,4 +149,6 @@ mmb_main_t mmb_main;
 
 extern vlib_node_registration_t mmb_node;
 
+u16 get_field_protocol(u8 field);
+
 #endif /* __included_mmb_h__ */
