@@ -86,18 +86,18 @@
 #define MMB_FIELD_TCP_ACK_NUM    143
 #define MMB_FIELD_TCP_OFFSET     144
 #define MMB_FIELD_TCP_RESERVED   145
-#define MMB_FIELD_TCP_URG_PTR    146
+#define MMB_FIELD_TCP_FLAGS      146
 #define MMB_FIELD_TCP_CWR        147
 #define MMB_FIELD_TCP_ECE        148
 #define MMB_FIELD_TCP_URG        149
 #define MMB_FIELD_TCP_ACK        150
 #define MMB_FIELD_TCP_PUSH       151
-#define MMB_FIELD_TCP_RES        152
+#define MMB_FIELD_TCP_RST        152
 #define MMB_FIELD_TCP_SYN        153
 #define MMB_FIELD_TCP_FIN        154
-#define MMB_FIELD_TCP_FLAGS      155
-#define MMB_FIELD_TCP_WIN        156
-#define MMB_FIELD_TCP_CHECKSUM   157
+#define MMB_FIELD_TCP_WINDOW     155
+#define MMB_FIELD_TCP_CHECKSUM   156
+#define MMB_FIELD_TCP_URG_PTR    157
 
 #define MMB_FIELD_TCP_PAYLOAD    158
 
