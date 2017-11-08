@@ -20,6 +20,7 @@
 
 typedef struct {
   u8  proto;
+  u32 rule;
   u32 next;
 } mmb_trace_t;
 
@@ -53,25 +54,27 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   mmb_trace_t * t = va_arg (*args, mmb_trace_t *);
-  
-  s = format (s, "MMB: packet with action %d (%s) / protocol %d (%s)\n",
-              t->next, t->next == MMB_NEXT_DROP ? "DROP" : "LOOKUP", t->proto, 
-              ((t->proto == IP_PROTOCOL_TCP) ? "TCP" : ((t->proto == IP_PROTOCOL_UDP) ? "UDP" : ((t->proto == IP_PROTOCOL_ICMP) ? "ICMP" : "OTHER"))));
+
+  if (t->rule == 0)
+  {
+    s = format(s, "MMB: no rule applied to packet IP with protocol %d (%s)\n",
+                  t->proto,
+                  (t->proto == IP_PROTOCOL_TCP) ? "TCP" : (t->proto == IP_PROTOCOL_UDP) ? "UDP" : (t->proto == IP_PROTOCOL_ICMP) ? "ICMP" : "OTHER");
+  }
+  else
+  {
+    s = format(s, "MMB: rule %u applied to packet IP with protocol %d (%s), action %s\n",
+                   t->rule,
+                   t->proto,
+                   (t->proto == IP_PROTOCOL_TCP) ? "TCP" : (t->proto == IP_PROTOCOL_UDP) ? "UDP" : (t->proto == IP_PROTOCOL_ICMP) ? "ICMP" : "OTHER",
+                   (t->next == MMB_NEXT_DROP) ? "DROP" : "FORWARD");
+  }
 
   return s;
 }
 
 u8 value_compare(u64 a, u64 b, u8 condition)
 {
-  //TODO: remove (debug)
-  FILE *f = fopen("/home/vagrant/cmp.txt", "a");
-  if (f != NULL)
-  {
-    fprintf(f, "compare %lu (%lx) with %lu (%lx)\n", a, a, b, b);
-    fclose(f);
-  }
-  //
-
   switch(condition)
   {
     case MMB_COND_EQ:
@@ -111,84 +114,6 @@ u64 bytes_to_u64(u8 *bytes)
   return value;
 }
 
-u8 check_ip_condition(ip4_header_t *ip, mmb_match_t *match)
-{
-  // (u8)  ip_version_and_header_length:  "ip-ver" (4 bits) ; "ip-ihl" (4 bits)
-  // (u8)  tos:                           "ip-dscp" (6 bits) ; "ip-ecn" (2 bits) contains "ip-non-ect", "ip-ect0", "ip-ect1" and "ip-ce"
-  // (u16) length:                        "ip-len"
-  // (u16) fragment_id:                   "ip-id"
-  //TODO (u16) flags_and_fragment_offset:     "ip-flags" (3 bits) contains "ip-res", "ip-df" and "ip-mf" ; "ip-frag-offset" (13 bits)
-  // (u8)  ttl:                           "ip-ttl"
-  // (u8)  protocol:                      "ip-proto"
-  // (u16) checksum:                      "ip-checksum"
-  //TODO union address: "ip-saddr", "ip-daddr"
-
-  //MMB_FIELD_IP_FLAGS
-  //MMB_FIELD_IP_FRAG_OFFSET
-
-  switch(match->field)
-  {
-    /*
-     * read field's value in the packet and compare it to user's (rule) value
-     */
-
-#define MMB_FIELD_IP_FLAGS       121
-#define MMB_FIELD_IP_RES         122
-#define MMB_FIELD_IP_DF          123
-#define MMB_FIELD_IP_MF          124
-#define MMB_FIELD_IP_FRAG_OFFSET 125
-#define MMB_FIELD_IP_SADDR       129
-#define MMB_FIELD_IP_DADDR       130
-
-    case MMB_FIELD_IP_VER:
-    case MMB_FIELD_IP_IHL:
-    case MMB_FIELD_IP_DSCP:
-    case MMB_FIELD_IP_ECN:
-    case MMB_FIELD_IP_LEN:
-    case MMB_FIELD_IP_ID:
-    //etc...
-    case MMB_FIELD_IP_TTL:
-    case MMB_FIELD_IP_PROTO:
-    case MMB_FIELD_IP_CHECKSUM:
-      /* search for "ip-field" or "!ip-field" match */
-      if (match->condition == 0)
-      {
-        /* "ip-field" is always found in an IP packet */
-        if (match->reverse == 0)
-          return 1;
-
-        /* "!ip-field" is always false for an IP packet */
-        return 0;
-      }
-
-      /* compare packet field and matching values */
-      return value_compare(IP_FIELD_GET(ip, match->field), bytes_to_u64(match->value), match->condition);
-
-    default:
-      break;
-  }
-
-  return 0;
-}
-
-u8 check_icmp_condition(icmp46_header_t *icmp, mmb_match_t *match)
-{
-  //TODO
-  return 0;
-}
-
-u8 check_udp_condition(udp_header_t *udp, mmb_match_t *match)
-{
-  //TODO
-  return 0;
-}
-
-u8 check_tcp_condition(tcp_header_t *tcp, mmb_match_t *match)
-{
-  //TODO
-  return 0;
-}
-
 u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
 {
   /* Don't apply rules concerning layer 3 other than IP4 */
@@ -214,15 +139,38 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
   {
     mmb_match_t *match = &matches[imatch];
 
+    /* "all" field */
     if (match->field == MMB_FIELD_ALL)
       continue;
 
+    /* get field related protocol */
     u16 field_protocol = get_field_protocol(match->field);
+
+    /* First, search for "field" or "!field" match */
+    switch(field_protocol)
+    {
+      case ETHERNET_TYPE_IP4:
+      case IP_PROTOCOL_ICMP:
+      case IP_PROTOCOL_UDP:
+      case IP_PROTOCOL_TCP:
+        if (match->condition == 0)
+        {
+          /* "!field" is always false for a related packet */
+          if (match->reverse == 1)
+            return 0;
+        }
+        break;
+
+      default:
+        break;
+    }
+
+    /* Then, check protocol condition */
     switch(field_protocol)
     {
       /* IP field */
       case ETHERNET_TYPE_IP4:
-        if (!check_ip_condition(ip, match))
+        if (!value_compare(GET_IP_FIELD(ip, match->field), bytes_to_u64(match->value), match->condition))
           return 0;
         break;
 
@@ -233,7 +181,7 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
           return 0;
 
         icmp46_header_t *icmp = ip4_next_header(ip);
-        if (!check_icmp_condition(icmp, match))
+        if (!value_compare(GET_ICMP_FIELD(icmp, match->field), bytes_to_u64(match->value), match->condition))
           return 0;
         break;
 
@@ -244,7 +192,7 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
           return 0;
 
         udp_header_t *udp = ip4_next_header(ip);
-        if (!check_udp_condition(udp, match))
+        if (!value_compare(GET_UDP_FIELD(udp, match->field), bytes_to_u64(match->value), match->condition))
           return 0;
         break;
 
@@ -255,7 +203,7 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
           return 0;
 
         tcp_header_t *tcp = ip4_next_header(ip);
-        if (!check_tcp_condition(tcp, match))
+        if (!value_compare(GET_TCP_FIELD(tcp, match->field), bytes_to_u64(match->value), match->condition))
           return 0;
         break;
 
@@ -404,6 +352,7 @@ mmb_node_fn (vlib_main_t * vm,
 
       /* fetch each rule to find a match */
       uword irule = 0;
+      u32 applied_rule_index = ~0;
       vec_foreach_index(irule, rules)
       {
         mmb_rule_t *rule = &rules[irule];
@@ -412,7 +361,7 @@ mmb_node_fn (vlib_main_t * vm,
         {
           /* MATCH: apply targets to packet */
           next0 = packet_apply_targets(ip0, rule->targets);
-          //TODO trace: add triggered rule id
+          applied_rule_index = irule;
           break;
         }
       }
@@ -426,6 +375,7 @@ mmb_node_fn (vlib_main_t * vm,
       {
         mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
         t->proto = ip0->protocol;
+        t->rule = (applied_rule_index == ~0) ? 0 : applied_rule_index+1;
         t->next = next0;
       }
 
