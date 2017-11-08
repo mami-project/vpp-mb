@@ -318,12 +318,18 @@ static_always_inline void translate_ip4_ecn(u8 field, u8 **value) {
 static_always_inline void translate_match_ip4_ecn(mmb_match_t *match) {
   translate_ip4_ecn(match->field, &match->value);
   match->field = MMB_FIELD_IP_ECN;
-  match->condition = MMB_COND_EQ;
+  match->condition = match->reverse ? MMB_COND_NEQ : MMB_COND_EQ;
 }
 
 static_always_inline void translate_target_ip4_ecn(mmb_target_t *target) {
   translate_ip4_ecn(target->field, &target->value);
   target->field = MMB_FIELD_IP_ECN;
+}
+
+static_always_inline void translate_match_bit_flags(mmb_match_t *match)
+{
+  match->condition = match->reverse ? MMB_COND_NEQ : MMB_COND_EQ;
+  vec_add1(match->value, 1);
 }
 
 u16 get_field_protocol(u8 field) {
@@ -406,12 +412,27 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
                                     fields[match->field-MMB_FIELD_NET_PROTO]);
          translate_match_ip4_ecn(match);
          break;
+
+       case MMB_FIELD_IP_RES:case MMB_FIELD_IP_DF:case MMB_FIELD_IP_MF:
+       case MMB_FIELD_TCP_CWR:case MMB_FIELD_TCP_ECE:case MMB_FIELD_TCP_URG:
+       case MMB_FIELD_TCP_ACK:case MMB_FIELD_TCP_PUSH:case MMB_FIELD_TCP_RST:
+       case MMB_FIELD_TCP_SYN:case MMB_FIELD_TCP_FIN:
+         /* "bit-field" or "!bit-field" means "bit-field == 1" or "bit-field == 0" */
+         /* so this is NOT "bit-field is present in current packet" */
+         if (vec_len(match->value) > 0)
+           return clib_error_return(0, "%s does not take a condition nor a value", 
+                                    fields[match->field-MMB_FIELD_NET_PROTO]);
+         translate_match_bit_flags(match);
+         break;
+
        default:
          break;
      }
    }
 
    /* targets */
+   //TODO: check that "value" is allowed (range) for each field
+   //TODO: check that a field is a TCP option for STRIP case
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
 
@@ -431,6 +452,9 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
                                     fields[target->field-MMB_FIELD_NET_PROTO]);
          translate_target_ip4_ecn(target);
          break;
+
+       //TODO: other "bit fields" (see above in "matches" part)
+
        default:
          break;
      }
