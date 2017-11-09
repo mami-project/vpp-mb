@@ -20,12 +20,12 @@
 
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
+
 #include <mmb/mmb.h>
 #include <mmb/mmb_format.h>
 
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
-/*#include <vlibsocket/api.h>*/
 
 /* define message IDs */
 #include <mmb/mmb_msg_enum.h>
@@ -408,7 +408,7 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
        case MMB_FIELD_TCP_ACK:case MMB_FIELD_TCP_PUSH:case MMB_FIELD_TCP_RST:
        case MMB_FIELD_TCP_SYN:case MMB_FIELD_TCP_FIN:
          /* "bit-field" or "!bit-field" means "bit-field == 1" or "bit-field == 0" */
-         /* so this is NOT "bit-field is present in current packet" */
+         /* so this does NOT mean "bit-field is (not) present in current packet" */
          if (vec_len(match->value) == 0)
            translate_match_bit_flags(match);
          break;
