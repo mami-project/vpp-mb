@@ -66,8 +66,9 @@ VLIB_PLUGIN_REGISTER () = {
 };
 /* *INDENT-ON* */
 
-#define MMB_DEFAULT_MATCH_CONDITION MMB_COND_EQ
+#define MMB_MAX_FIELD_LEN 32
 
+/* cli-name,protocol-name */
 #define foreach_mmb_transport_proto       \
 _(tcp,TCP)                                    \
 _(udp,UDP)                                    \
@@ -98,12 +99,36 @@ static const char* fields[] = {
   "tcp-ack-num", "tcp-offset", "tcp-reserved",
   "tcp-urg-ptr", "tcp-cwr", "tcp-ece", 
   "tcp-urg", "tcp-ack", "tcp-push", 
-  "tcp-res", "tcp-syn", "tcp-fin", 
+  "tcp-rst", "tcp-syn", "tcp-fin", 
   "tcp-flags", "tcp-win", "tcp-checksum", 
   "tcp-payload",  "tcp-opt-mss", "tcp-opt-wscale", 
   "tcp-opt-sackp", "tcp-opt-sack", "tcp-opt-timestamp", 
   "tcp-opt-fast-open", "tcp-opt-mptcp", "tcp-opt",
   "all"
+};
+
+static const u8 lens_len = 58;
+static const u8 lens[] = {
+  2, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  2, 2, 1,
+  1, 1, 1,
+  2, 1, 1,
+  2, 4, 4,
+  1, 1, 2,
+  0, 2, 2,
+  2, 2, 0,
+  2, 2, 4,
+  4, 1, 1,
+  2, 1, 1, 
+  1, 1, 1, 
+  1, 1, 1, 
+  1, 2, 2, 
+  0, 4, 3, 
+  2, 0, 10, 
+  0, 0, 0,
+  0
 };
 
 static const u8 conditions_len = 6;
@@ -127,11 +152,28 @@ static void mmb_free_rule(mmb_rule_t *rule);
 static clib_error_t *validate_rule();
 static_always_inline void print_rules(vlib_main_t * vm, mmb_rule_t *rules);
 
-static_always_inline void unformat_input_tolower(unformat_input_t *input) {
-  uword buffer_index = 0;
-  vec_foreach_index(buffer_index, input->buffer) {
-     input->buffer[buffer_index] = tolower(input->buffer[buffer_index]);
+static_always_inline u8 *str_tolower(u8 *str) {
+  for(int i = 0; str[i]; i++){
+    str[i] = tolower(str[i]);
   }
+  return str;
+}
+
+static_always_inline void unformat_input_tolower(unformat_input_t *input) {
+  str_tolower(input->buffer);
+}
+
+static_always_inline u8 field_toindex(u8 macro) {
+  return macro-MMB_FIELD_NET_PROTO;
+}
+static_always_inline u8 field_tomacro(u8 index) {
+  return index+MMB_FIELD_NET_PROTO;
+}
+static_always_inline u8 cond_toindex(u8 macro) {
+  return macro-MMB_COND_EQ;
+}
+static_always_inline u8 cond_tomacro(u8 index) {
+  return index+MMB_COND_EQ;
 }
 
 /**
@@ -326,8 +368,13 @@ static_always_inline void translate_target_ip4_ecn(mmb_target_t *target) {
   target->field = MMB_FIELD_IP_ECN;
 }
 
+static_always_inline void translate_match_bit_flags(mmb_match_t *match) {
+  match->condition = MMB_COND_EQ;
+  vec_add1(match->value, 1);
+}
+
 u16 get_field_protocol(u8 field) {
-  if (MMB_FIELD_NET_PROTO >= field && field <= MMB_FIELD_IP_DADDR)
+  if (MMB_FIELD_NET_PROTO <= field && field <= MMB_FIELD_IP_DADDR)
      return ETHERNET_TYPE_IP4;
    else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD)
      return IP_PROTOCOL_ICMP;
@@ -378,6 +425,19 @@ static clib_error_t *derive_l4(mmb_rule_t *rule) {
   return NULL;
 }
 
+static_always_inline void resize_value(u8 field, u8 **value) {
+  u8 user_len = vec_len(*value);
+  if (user_len == 0) return;
+
+  u8 proper_len = lens[field_toindex(field)];
+  if (proper_len == 0) return;
+
+  if (user_len > proper_len)
+    vec_delete(*value, user_len-proper_len, 0);
+  else if (user_len < proper_len)
+    vec_insert(*value, proper_len-user_len, 0);
+}
+
 clib_error_t *validate_rule(mmb_rule_t *rule) {
    //TODO: validate, recalibrate decimal payload, subnet
    uword index = 0;
@@ -403,15 +463,32 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
        case MMB_FIELD_IP_ECT1:case MMB_FIELD_IP_CE:
          if (vec_len(match->value) > 0)
            return clib_error_return(0, "%s does not take a condition nor a value", 
-                                    fields[match->field-MMB_FIELD_NET_PROTO]);
+                                    fields[field_toindex(match->field)]);
          translate_match_ip4_ecn(match);
+         break;
+
+       case MMB_FIELD_TCP_FLAGS:
+         break; // TODO: translate to bits
+       case MMB_FIELD_IP_FLAGS:
+         break; // TODO: translate to bits
+
+       case MMB_FIELD_IP_RES:case MMB_FIELD_IP_DF:case MMB_FIELD_IP_MF:
+       case MMB_FIELD_TCP_CWR:case MMB_FIELD_TCP_ECE:case MMB_FIELD_TCP_URG:
+       case MMB_FIELD_TCP_ACK:case MMB_FIELD_TCP_PUSH:case MMB_FIELD_TCP_RST:
+       case MMB_FIELD_TCP_SYN:case MMB_FIELD_TCP_FIN:
+         /* "bit-field" or "!bit-field" means "bit-field == 1" or "bit-field == 0" */
+         /* so this is NOT "bit-field is present in current packet" */
+         if (vec_len(match->value) == 0)
+           translate_match_bit_flags(match);
          break;
        default:
          break;
      }
+     resize_value(match->field, &match->value);
    }
 
    /* targets */
+   //TODO: check that "value" is allowed (range) for each field
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
 
@@ -428,12 +505,24 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
        case MMB_FIELD_IP_ECT1:case MMB_FIELD_IP_CE:
          if (vec_len(target->value) > 0)
            return clib_error_return(0, "%s does not take a condition nor a value", 
-                                    fields[target->field-MMB_FIELD_NET_PROTO]);
+                                    fields[field_toindex(target->field)]);
          translate_target_ip4_ecn(target);
          break;
+
+       //TODO: other "bit fields" (see above in "matches" part)
        default:
          break;
      }
+
+     /* Ensure that field of strip target is a tcp opt. */
+     if (target->keyword == MMB_TARGET_STRIP 
+       && !(MMB_FIELD_TCP_OPT_MSS <= target->field 
+             && target->field <= MMB_FIELD_ALL) 
+         )
+       return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
+  
+     if (target->keyword == MMB_TARGET_MOD)
+       resize_value(target->field, &target->value);
    }
 
    return NULL;
@@ -475,7 +564,7 @@ uword unformat_field(unformat_input_t * input, va_list * va) {
   u8 *kind  = va_arg(*va, u8*);
   for (u8 i=0; i<fields_len; i++) {
     if (unformat (input, fields[i])) {
-      *field = MMB_FIELD_NET_PROTO+i;
+      *field = field_tomacro(i);
  
       /* optional kind */
       if (*field == MMB_FIELD_TCP_OPT
@@ -494,7 +583,7 @@ uword unformat_condition(unformat_input_t * input, va_list * va) {
   u8 *cond = va_arg(*va, u8*);
   for (u8 i=0; i<conditions_len; i++) {
     if (unformat (input, conditions[i])) {
-      *cond = MMB_COND_EQ+i;
+      *cond = cond_tomacro(i);
       return 1;
     }
   }
@@ -587,7 +676,7 @@ u8 parse_match(unformat_input_t * input, mmb_match_t *match) {
    else if (unformat(input, "%U %U", unformat_field, 
                     &match->field, &match->opt_kind, 
                     unformat_value, &match->value)) 
-     match->condition = MMB_DEFAULT_MATCH_CONDITION;
+     match->condition = MMB_COND_EQ;
    else if (unformat(input, "%U", unformat_field,
                     &match->field, &match->opt_kind)) 
      ;
@@ -600,7 +689,7 @@ u8* mmb_format_field(u8* s, va_list *args) {
    u8 field = *va_arg(*args, u8*); 
    u8 kind  = *va_arg(*args, u8*);
 
-   u8 field_index = field-MMB_FIELD_NET_PROTO;
+   u8 field_index = field_toindex(field);
    if (field < MMB_FIELD_NET_PROTO 
     || field > MMB_FIELD_NET_PROTO+fields_len)
      ; 
@@ -616,7 +705,7 @@ u8* mmb_format_condition(u8* s, va_list *args) {
   u8 condition = *va_arg(*args, u8*);
   if (condition >= MMB_COND_EQ 
     &&  condition <= MMB_COND_EQ+conditions_len)
-    s = format(s, "%s", conditions[condition-MMB_COND_EQ]);
+    s = format(s, "%s", conditions[cond_toindex(condition)]);
   
   return s;
 }
