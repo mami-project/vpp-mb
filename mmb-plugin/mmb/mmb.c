@@ -360,7 +360,7 @@ static_always_inline void translate_ip4_ecn(u8 field, u8 **value) {
 static_always_inline void translate_match_ip4_ecn(mmb_match_t *match) {
   translate_ip4_ecn(match->field, &match->value);
   match->field = MMB_FIELD_IP_ECN;
-  match->condition = MMB_COND_EQ;
+  match->condition = match->reverse ? MMB_COND_NEQ : MMB_COND_EQ;
 }
 
 static_always_inline void translate_target_ip4_ecn(mmb_target_t *target) {
@@ -368,8 +368,14 @@ static_always_inline void translate_target_ip4_ecn(mmb_target_t *target) {
   target->field = MMB_FIELD_IP_ECN;
 }
 
+<<<<<<< HEAD
 static_always_inline void translate_match_bit_flags(mmb_match_t *match) {
   match->condition = MMB_COND_EQ;
+=======
+static_always_inline void translate_match_bit_flags(mmb_match_t *match)
+{
+  match->condition = match->reverse ? MMB_COND_NEQ : MMB_COND_EQ;
+>>>>>>> 8a7b280a7ce822c0d0bc62e61692ac3988a13d37
   vec_add1(match->value, 1);
 }
 
