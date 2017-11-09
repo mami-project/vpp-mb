@@ -78,6 +78,16 @@ _(icmp,ICMP)
 _(ip4,IP4)                                    \
 _(ip6,IP6)                                   
 
+#define foreach_mmb_tcp_opts            \
+_(MMB_FIELD_TCP_OPT_MSS,MSS,2)            \
+_(MMB_FIELD_TCP_OPT_WSCALE,WScale,3)         \
+_(MMB_FIELD_TCP_OPT_SACKP,SACK-P,4)          \
+_(MMB_FIELD_TCP_OPT_SACK,SACK,5)           \
+_(MMB_FIELD_TCP_OPT_TIMESTAMP,Timestamp,8)      \
+_(MMB_FIELD_TCP_OPT_FAST_OPEN,Fast Open,34)      \
+_(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)                                    
+
+
 static const char* blanks = "                                                "
                             "                                                "
                             "                                                "
@@ -115,7 +125,7 @@ static const u8 lens[] = {
   2, 2, 1,
   1, 1, 1,
   2, 1, 1,
-  2, 4, 4,
+  2, 5, 5,
   1, 1, 2,
   0, 2, 2,
   2, 2, 0,
@@ -125,8 +135,8 @@ static const u8 lens[] = {
   1, 1, 1, 
   1, 1, 1, 
   1, 2, 2, 
-  0, 4, 3, 
-  2, 0, 10, 
+  0, 2, 1, 
+  0, 0, 8, 
   0, 0, 0,
   0
 };
@@ -439,7 +449,7 @@ static_always_inline void resize_value(u8 field, u8 **value) {
 }
 
 clib_error_t *validate_rule(mmb_rule_t *rule) {
-   //TODO: validate, recalibrate decimal payload, subnet
+   //TODO: validate
    uword index = 0;
    
    clib_error_t *error;
@@ -481,14 +491,15 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
          if (vec_len(match->value) == 0)
            translate_match_bit_flags(match);
          break;
+#define _(a,b,c) case a: {match->field = MMB_FIELD_TCP_OPT; match->opt_kind=c;break;}
+   foreach_mmb_tcp_opts
+#undef _
        default:
          break;
      }
-     resize_value(match->field, &match->value);
    }
 
    /* targets */
-   //TODO: check that "value" is allowed (range) for each field
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
 
@@ -509,20 +520,31 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
          translate_target_ip4_ecn(target);
          break;
 
+#define _(a,b,c) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=c;break;}
+   foreach_mmb_tcp_opts
+#undef _
+
        //TODO: other "bit fields" (see above in "matches" part)
        default:
          break;
      }
 
      /* Ensure that field of strip target is a tcp opt. */
-     if (target->keyword == MMB_TARGET_STRIP 
-       && !(MMB_FIELD_TCP_OPT_MSS <= target->field 
-             && target->field <= MMB_FIELD_ALL) 
-         )
-       return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
-  
-     if (target->keyword == MMB_TARGET_MOD)
-       resize_value(target->field, &target->value);
+     if (target->keyword == MMB_TARGET_STRIP) {
+
+       if  (!(MMB_FIELD_TCP_OPT_MSS <= target->field 
+             && target->field <= MMB_FIELD_ALL))
+         return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
+
+       /* build option strip list  */
+       if (vec_len(rule->opts) == 0)
+         rule->whitelist = target->reverse;
+       else if (rule->whitelist != target->reverse)
+         return clib_error_return(0, "inconsistent use of ! in strip");
+       vec_add1(rule->opts, target->opt_kind);
+
+     } else if (target->keyword == MMB_TARGET_MODIFY) 
+       ;
    }
 
    return NULL;
@@ -596,6 +618,31 @@ static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
     vec_add1(*bytes, value>>(i*8)); 
 }
 
+/* Parse an IP4 address %d.%d.%d.%d[/%d] */
+uword
+mmb_unformat_ip4_address (unformat_input_t * input, va_list * args) {
+  u8 **result = va_arg (*args, u8 **);
+  unsigned a[5];
+
+  if (unformat (input, "%d.%d.%d.%d/%d", &a[0], &a[1], &a[2], &a[3], &a[4])) {
+    if (a[4] > 32)
+      return 0;
+  } else if (unformat (input, "%d.%d.%d.%d", &a[0], &a[1], &a[2], &a[3])) 
+    a[4] = 32;
+  else return 0;
+
+  if (a[0] >= 256 || a[1] >= 256 || a[2] >= 256 || a[3] >= 256)
+    return 0;
+
+  vec_add1 (*result, a[0]);
+  vec_add1 (*result, a[1]);
+  vec_add1 (*result, a[2]);
+  vec_add1 (*result, a[3]);
+  vec_add1 (*result, a[4]);
+
+  return 1;
+}
+
 uword unformat_value(unformat_input_t * input, va_list * va) {
   u8 **bytes = va_arg(*va, u8**);
   u8 found_l4 = 0;
@@ -618,7 +665,9 @@ uword unformat_value(unformat_input_t * input, va_list * va) {
     return 1;
   }
 
-  if (unformat (input, "0x") 
+  if (unformat(input, "%U", mmb_unformat_ip4_address, bytes))   
+    ;
+  else if (unformat (input, "0x") 
     || unformat (input, "x")) {
     /* hex value */ 
 
@@ -662,13 +711,15 @@ u8 parse_target(unformat_input_t * input, mmb_target_t *target) {
      target->keyword=MMB_TARGET_DROP; 
    else 
      return 0;
+   
+   resize_value(target->field, &target->value);
    return 1;
 }
 
 u8 parse_match(unformat_input_t * input, mmb_match_t *match) {
    if (unformat(input, "!"))
      match->reverse = 1;
-
+   
    if (unformat(input, "%U %U %U", unformat_field, 
                     &match->field, &match->opt_kind, unformat_condition, 
                     &match->condition, unformat_value, &match->value)) 
@@ -682,6 +733,8 @@ u8 parse_match(unformat_input_t * input, mmb_match_t *match) {
      ;
    else 
      return 0;
+
+   resize_value(match->field, &match->value);
    return 1;
 }
 
@@ -693,9 +746,13 @@ u8* mmb_format_field(u8* s, va_list *args) {
    if (field < MMB_FIELD_NET_PROTO 
     || field > MMB_FIELD_NET_PROTO+fields_len)
      ; 
-   else if (field == MMB_FIELD_TCP_OPT && kind) 
-     s = format(s, "%s %d", fields[field_index], kind);
-   else
+   else if (field == MMB_FIELD_TCP_OPT && kind) {
+     if (0);
+#define _(a,b,c) else if (kind == c) s = format(s, "%s %s", fields[field_index], #b);
+   foreach_mmb_tcp_opts
+#undef _
+     else s = format(s, "%s %d", fields[field_index], kind);
+   } else
      s = format(s, "%s", fields[field_index]);
 
    return s;
@@ -732,6 +789,14 @@ u8* mmb_format_keyword(u8* s, va_list *args) {
   return s;
 }
 
+static_always_inline u8 *mmb_format_ip_protocol (u8 * s, va_list * args)
+{
+  u8 protocol = va_arg (*args, ip_protocol_t);
+  if (protocol == IP_PROTOCOL_RESERVED)
+    return format(s, "all");
+  return format(s, "%U", format_ip_protocol, protocol);
+}
+
 static_always_inline void print_rules(vlib_main_t * vm, mmb_rule_t *rules) {
    vl_print(vm, " Index%2sL3%4sL4%6sMatches%33sTargets\n", 
                 blanks, blanks, blanks, blanks);
@@ -745,8 +810,9 @@ static_always_inline void print_rules(vlib_main_t * vm, mmb_rule_t *rules) {
 
 u8 *mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
-  s = format(s, "%04x\t%-8d", rule->l3, rule->l4); 
-
+  s = format(s, "%-4U\t%-8U", format_ethernet_type, rule->l3, 
+                              mmb_format_ip_protocol, rule->l4); 
+  
   uword index = 0;
   vec_foreach_index(index, rule->matches) {
     s = format(s, "%U%s", mmb_format_match, &rule->matches[index],
@@ -762,7 +828,8 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
 
 u8 *mmb_format_rule_column(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
-  s = format(s, "%04x  %-8d", rule->l3, rule->l4); 
+  s = format(s, "%-4U  %-8U", format_ethernet_type, rule->l3, 
+                              mmb_format_ip_protocol, rule->l4); 
   
   for (uword index = 0; 
        index<clib_max(vec_len(rule->matches), vec_len(rule->targets)); 
@@ -785,9 +852,20 @@ u8 *mmb_format_rule_column(u8 *s, va_list *args) {
 }
 
 static_always_inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
-  u8 *byte, *bytes = va_arg(*args, u8*); 
-  vec_foreach(byte, bytes) {
-    s = format(s, "%02x", *byte);
+  u8 *byte, *bytes = va_arg(*args, u8*);
+  u8 field = va_arg(*args, u32);
+  switch (field) {
+    case MMB_FIELD_IP_SADDR:
+    case MMB_FIELD_IP_DADDR:
+      s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
+      break;
+
+    
+    default:
+      vec_foreach(byte, bytes) {
+        s = format(s, "%02x", *byte);
+      }
+    break;
   }
   return s;
 }
@@ -798,7 +876,7 @@ u8 *mmb_format_match(u8 *s, va_list *args) {
   s = format(s, "%s%U %U %U", (match->reverse) ? "! ":"",
                           mmb_format_field, &match->field, &match->opt_kind,
                           mmb_format_condition, &match->condition,
-                          mmb_format_bytes, match->value
+                          mmb_format_bytes, match->value, match->field
                           );
   return s;
 } 
@@ -809,7 +887,7 @@ u8 *mmb_format_target(u8 *s, va_list *args) {
   s = format(s, "%s%U %U %U", (target->reverse) ? "! ":"",
                          mmb_format_keyword, &target->keyword,
                          mmb_format_field, &target->field, &target->opt_kind,
-                         mmb_format_bytes, target->value
+                         mmb_format_bytes, target->value, target->field
                          );
   return s; 
 }
