@@ -73,33 +73,44 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   return s;
 }
 
-u8 value_compare(u64 a, u64 b, u8 condition)
+u8 value_compare(u64 a, u64 b, u8 condition, u8 reverse)
 {
+  u8 res;
+
   switch(condition)
   {
     case MMB_COND_EQ:
-      return a == b;
+      res = (a == b);
+      break;
 
     case MMB_COND_NEQ:
-      return a != b;
+      res = (a != b);
+      break;
 
     case MMB_COND_LEQ:
-      return a <= b;
+      res = (a <= b);
+      break;
 
     case MMB_COND_GEQ:
-      return a >= b;
+      res = (a >= b);
+      break;
 
     case MMB_COND_LT:
-      return a < b;
+      res = (a < b);
+      break;
 
     case MMB_COND_GT:
-      return a > b;
+      res = (a > b);
+      break;
 
     default:
-      break;
+      return 0;
   }
 
-  return 0;
+  if (reverse)
+    return !res;
+
+  return res;
 }
 
 u64 bytes_to_u64(u8 *bytes)
@@ -139,9 +150,9 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
   {
     mmb_match_t *match = &matches[imatch];
 
-    /* "all" field */
+    /* "all" field -> MATCH */
     if (match->field == MMB_FIELD_ALL)
-      continue;
+      return 1;
 
     /* get field related protocol */
     u16 field_protocol = get_field_protocol(match->field);
@@ -170,7 +181,7 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
     {
       /* IP field */
       case ETHERNET_TYPE_IP4:
-        if (!value_compare(GET_IP_FIELD(ip, match->field), bytes_to_u64(match->value), match->condition))
+        if (!value_compare(GET_IP_FIELD(ip, match->field), bytes_to_u64(match->value), match->condition, match->reverse))
           return 0;
         break;
 
@@ -181,7 +192,7 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
           return 0;
 
         icmp46_header_t *icmp = ip4_next_header(ip);
-        if (!value_compare(GET_ICMP_FIELD(icmp, match->field), bytes_to_u64(match->value), match->condition))
+        if (!value_compare(GET_ICMP_FIELD(icmp, match->field), bytes_to_u64(match->value), match->condition, match->reverse))
           return 0;
         break;
 
@@ -192,7 +203,7 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
           return 0;
 
         udp_header_t *udp = ip4_next_header(ip);
-        if (!value_compare(GET_UDP_FIELD(udp, match->field), bytes_to_u64(match->value), match->condition))
+        if (!value_compare(GET_UDP_FIELD(udp, match->field), bytes_to_u64(match->value), match->condition, match->reverse))
           return 0;
         break;
 
@@ -203,7 +214,7 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
           return 0;
 
         tcp_header_t *tcp = ip4_next_header(ip);
-        if (!value_compare(GET_TCP_FIELD(tcp, match->field), bytes_to_u64(match->value), match->condition))
+        if (!value_compare(GET_TCP_FIELD(tcp, match->field), bytes_to_u64(match->value), match->condition, match->reverse))
           return 0;
         break;
 
@@ -217,24 +228,89 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
   return 1;
 }
 
-u32 packet_apply_targets(ip4_header_t *ip, mmb_target_t *targets)
+u32 packet_apply_targets(vlib_main_t *vm, vlib_buffer_t *buffer, ip4_header_t *ip, mmb_target_t *targets)
 {
   uword itarget = 0;
+  u8 l4_recompute_checksum = 0;
+
   vec_foreach_index(itarget, targets)
   {
     mmb_target_t *target = &targets[itarget];
 
-    switch(target->keyword)
-    {
-      case MMB_TARGET_DROP:
-        return MMB_NEXT_DROP;
+    if (target->keyword == MMB_TARGET_DROP)
+      return MMB_NEXT_DROP;
 
-      case MMB_TARGET_STRIP:
-        //TODO (+ recompute checksum ?)
+    //TODO: waiting for the whitelist/blacklist in rules
+    /*if (target->keyword == MMB_TARGET_STRIP)
+    {
+      //TODO (+ recompute checksum at the end)
+      l4_recompute_checksum = 1;
+      continue;
+    }*/
+
+    if (target->keyword == MMB_TARGET_MODIFY)
+    {
+      u16 field_protocol = get_field_protocol(target->field);
+
+      switch(field_protocol)
+      {
+        case ETHERNET_TYPE_IP4:
+          SET_IP_FIELD(ip, target->field, bytes_to_u64(target->value));
+          break;
+
+        case IP_PROTOCOL_ICMP:
+          ;
+          icmp46_header_t *icmp = ip4_next_header(ip);
+          SET_ICMP_FIELD(icmp, target->field, bytes_to_u64(target->value));
+          l4_recompute_checksum = 1;
+          break;
+
+        case IP_PROTOCOL_UDP:
+          ;
+          udp_header_t *udp = ip4_next_header(ip);
+          SET_UDP_FIELD(udp, target->field, bytes_to_u64(target->value));
+          l4_recompute_checksum = 1;
+          break;
+
+        case IP_PROTOCOL_TCP:
+          ;
+          tcp_header_t *tcp = ip4_next_header(ip);
+          SET_TCP_FIELD(tcp, target->field, bytes_to_u64(target->value));
+          l4_recompute_checksum = 1;
+          break;
+
+        default:
+          break;
+      }
+    }
+  }
+
+  /* Re-compute L4 checksum if modified */
+  if (l4_recompute_checksum)
+  {
+    switch(ip->protocol)
+    {
+      case IP_PROTOCOL_ICMP:
+        ;
+        icmp46_header_t *icmp = ip4_next_header(ip);
+        icmp->checksum = 0;
+        ip_csum_t csum = ip_incremental_checksum(0, icmp, clib_net_to_host_u16(ip->length) - sizeof(*ip));
+        icmp->checksum = ~ip_csum_fold(csum);
         break;
 
-      case MMB_TARGET_MODIFY:
-        //TODO (+ recompute checksum ?)
+      case IP_PROTOCOL_UDP:
+        ;
+        udp_header_t *udp = ip4_next_header(ip);
+        udp->checksum = ip4_tcp_udp_compute_checksum(vm, buffer, ip);
+        /* RFC 7011 section 10.3.2 */
+        if (udp->checksum == 0)
+          udp->checksum = 0xffff;
+        break;
+
+      case IP_PROTOCOL_TCP:
+        ;
+        tcp_header_t *tcp = ip4_next_header(ip);
+        tcp->checksum = ip4_tcp_udp_compute_checksum(vm, buffer, ip);
         break;
 
       default:
@@ -242,6 +318,8 @@ u32 packet_apply_targets(ip4_header_t *ip, mmb_target_t *targets)
     }
   }
 
+  /* Re-compute L3 (IPv4) checksum */
+  ip->checksum = ip4_header_checksum(ip);
   return MMB_NEXT_LOOKUP;
 }
 
@@ -360,7 +438,7 @@ mmb_node_fn (vlib_main_t * vm,
         if (packet_matches(ip0, rule->matches, rule->l3, rule->l4))
         {
           /* MATCH: apply targets to packet */
-          next0 = packet_apply_targets(ip0, rule->targets);
+          next0 = packet_apply_targets(vm, b0, ip0, rule->targets);
           applied_rule_index = irule;
           break;
         }
