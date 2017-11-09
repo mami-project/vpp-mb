@@ -17,11 +17,8 @@
 
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
-#include <vnet/ethernet/ethernet.h>
 
-#include <vppinfra/hash.h>
 #include <vppinfra/error.h>
-#include <vppinfra/elog.h>
 
 #define MMB_PLUGIN_BUILD_VER "0.1"
 
@@ -163,7 +160,7 @@ typedef struct {
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
 
-  u8 whitelist; /*! 1: blacklist 0: whitelist */
+  u8 whitelist; /*! 1: whitelist 0: blacklist */
   u8 *opts;
 } mmb_rule_t;
 
