@@ -133,6 +133,9 @@ typedef struct {
   u8 l4;
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
+
+  u8 whitelist; /*! 1: blacklist 0: whitelist */
+  u8 *opts;
 } mmb_rule_t;
 
 typedef struct {

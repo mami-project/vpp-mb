@@ -78,6 +78,16 @@ _(icmp,ICMP)
 _(ip4,IP4)                                    \
 _(ip6,IP6)                                   
 
+#define foreach_mmb_tcp_opts            \
+_(MMB_FIELD_TCP_OPT_MSS,2)            \
+_(MMB_FIELD_TCP_OPT_WSCALE,3)         \
+_(MMB_FIELD_TCP_OPT_SACKP,4)          \
+_(MMB_FIELD_TCP_OPT_SACK,5)           \
+_(MMB_FIELD_TCP_OPT_TIMESTAMP,8)      \
+_(MMB_FIELD_TCP_OPT_FAST_OPEN,34)      \
+_(MMB_FIELD_TCP_OPT_MPTCP,30)                                    
+
+
 static const char* blanks = "                                                "
                             "                                                "
                             "                                                "
@@ -125,8 +135,8 @@ static const u8 lens[] = {
   1, 1, 1, 
   1, 1, 1, 
   1, 2, 2, 
-  0, 4, 3, 
-  2, 0, 10, 
+  0, 2, 1, 
+  0, 0, 8, 
   0, 0, 0,
   0
 };
@@ -439,7 +449,7 @@ static_always_inline void resize_value(u8 field, u8 **value) {
 }
 
 clib_error_t *validate_rule(mmb_rule_t *rule) {
-   //TODO: validate, recalibrate decimal payload, subnet
+   //TODO: validate
    uword index = 0;
    
    clib_error_t *error;
@@ -481,14 +491,15 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
          if (vec_len(match->value) == 0)
            translate_match_bit_flags(match);
          break;
+#define _(a,b) case a: {match->field = MMB_FIELD_TCP_OPT; match->opt_kind=b;break;}
+   foreach_mmb_tcp_opts
+#undef _
        default:
          break;
      }
-     resize_value(match->field, &match->value);
    }
 
    /* targets */
-   //TODO: check that "value" is allowed (range) for each field
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
 
@@ -509,20 +520,30 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
          translate_target_ip4_ecn(target);
          break;
 
+#define _(a,b) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=b;break;}
+   foreach_mmb_tcp_opts
+#undef _
+
        //TODO: other "bit fields" (see above in "matches" part)
        default:
          break;
      }
 
      /* Ensure that field of strip target is a tcp opt. */
-     if (target->keyword == MMB_TARGET_STRIP 
-       && !(MMB_FIELD_TCP_OPT_MSS <= target->field 
-             && target->field <= MMB_FIELD_ALL) 
-         )
-       return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
-  
-     if (target->keyword == MMB_TARGET_MODIFY)
-       resize_value(target->field, &target->value);
+     if (target->keyword == MMB_TARGET_STRIP) {
+
+       if  (!(MMB_FIELD_TCP_OPT_MSS <= target->field 
+             && target->field <= MMB_FIELD_ALL))
+         return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
+
+       if (vec_len(rule->opts) == 0)
+         rule->whitelist = target->reverse;
+       else if (rule->whitelist != target->reverse) 
+         return clib_error_return(0, "inconsistent use of ! in strip");
+
+       vec_add1(rule->opts, target->opt_kind);     
+     } else if (target->keyword == MMB_TARGET_MODIFY) 
+       ;
    }
 
    return NULL;
@@ -689,13 +710,15 @@ u8 parse_target(unformat_input_t * input, mmb_target_t *target) {
      target->keyword=MMB_TARGET_DROP; 
    else 
      return 0;
+   
+   resize_value(target->field, &target->value);
    return 1;
 }
 
 u8 parse_match(unformat_input_t * input, mmb_match_t *match) {
    if (unformat(input, "!"))
      match->reverse = 1;
-
+   
    if (unformat(input, "%U %U %U", unformat_field, 
                     &match->field, &match->opt_kind, unformat_condition, 
                     &match->condition, unformat_value, &match->value)) 
@@ -709,6 +732,8 @@ u8 parse_match(unformat_input_t * input, mmb_match_t *match) {
      ;
    else 
      return 0;
+
+   resize_value(match->field, &match->value);
    return 1;
 }
 
@@ -782,7 +807,7 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
   s = format(s, "%-4U\t%-8U", format_ethernet_type, rule->l3, 
                               mmb_format_ip_protocol, rule->l4); 
-
+  
   uword index = 0;
   vec_foreach_index(index, rule->matches) {
     s = format(s, "%U%s", mmb_format_match, &rule->matches[index],
