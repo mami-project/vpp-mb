@@ -112,6 +112,35 @@
 
 #define MMB_FIELD_ALL                167
 
+#define field_toindex(macro) macro-MMB_FIELD_NET_PROTO
+#define field_tomacro(index) index+MMB_FIELD_NET_PROTO
+#define cond_toindex(macro) macro-MMB_COND_EQ
+#define cond_tomacro(index) index+MMB_COND_EQ
+
+#define MMB_MAX_FIELD_LEN 32
+
+/* cli-name,protocol-name */
+#define foreach_mmb_transport_proto       \
+_(tcp,TCP)                                    \
+_(udp,UDP)                                    \
+_(icmp,ICMP)     
+     
+/* cli-name,protocol-name */                          
+#define foreach_mmb_network_proto       \
+_(ip4,IP4)                                    \
+_(ip6,IP6)                                   
+
+/* mmb-const,cli-name,opt-kind */
+#define foreach_mmb_tcp_opts            \
+_(MMB_FIELD_TCP_OPT_MSS,MSS,2)            \
+_(MMB_FIELD_TCP_OPT_WSCALE,WScale,3)         \
+_(MMB_FIELD_TCP_OPT_SACKP,SACK-P,4)          \
+_(MMB_FIELD_TCP_OPT_SACK,SACK,5)           \
+_(MMB_FIELD_TCP_OPT_TIMESTAMP,Timestamp,8)      \
+_(MMB_FIELD_TCP_OPT_FAST_OPEN,Fast Open,34)      \
+_(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)                                    
+
+
 typedef struct {
    u8 field; /*! The field to match on */
    u8 opt_kind; /*! The kind of option, if the field is one */
@@ -133,6 +162,9 @@ typedef struct {
   u8 l4;
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
+
+  u8 whitelist; /*! 1: blacklist 0: whitelist */
+  u8 *opts;
 } mmb_rule_t;
 
 typedef struct {
@@ -148,6 +180,13 @@ typedef struct {
 mmb_main_t mmb_main;
 
 extern vlib_node_registration_t mmb_node;
+
+extern const u8 fields_len;
+extern const char* fields[];
+extern const u8 lens_len;
+extern const u8 lens[];
+extern const u8 conditions_len;
+extern const char* conditions[];
 
 u16 get_field_protocol(u8 field);
 
