@@ -79,13 +79,13 @@ _(ip4,IP4)                                    \
 _(ip6,IP6)                                   
 
 #define foreach_mmb_tcp_opts            \
-_(MMB_FIELD_TCP_OPT_MSS,2)            \
-_(MMB_FIELD_TCP_OPT_WSCALE,3)         \
-_(MMB_FIELD_TCP_OPT_SACKP,4)          \
-_(MMB_FIELD_TCP_OPT_SACK,5)           \
-_(MMB_FIELD_TCP_OPT_TIMESTAMP,8)      \
-_(MMB_FIELD_TCP_OPT_FAST_OPEN,34)      \
-_(MMB_FIELD_TCP_OPT_MPTCP,30)                                    
+_(MMB_FIELD_TCP_OPT_MSS,MSS,2)            \
+_(MMB_FIELD_TCP_OPT_WSCALE,WScale,3)         \
+_(MMB_FIELD_TCP_OPT_SACKP,SACK-P,4)          \
+_(MMB_FIELD_TCP_OPT_SACK,SACK,5)           \
+_(MMB_FIELD_TCP_OPT_TIMESTAMP,Timestamp,8)      \
+_(MMB_FIELD_TCP_OPT_FAST_OPEN,Fast Open,34)      \
+_(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)                                    
 
 
 static const char* blanks = "                                                "
@@ -491,7 +491,7 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
          if (vec_len(match->value) == 0)
            translate_match_bit_flags(match);
          break;
-#define _(a,b) case a: {match->field = MMB_FIELD_TCP_OPT; match->opt_kind=b;break;}
+#define _(a,b,c) case a: {match->field = MMB_FIELD_TCP_OPT; match->opt_kind=c;break;}
    foreach_mmb_tcp_opts
 #undef _
        default:
@@ -520,7 +520,7 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
          translate_target_ip4_ecn(target);
          break;
 
-#define _(a,b) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=b;break;}
+#define _(a,b,c) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=c;break;}
    foreach_mmb_tcp_opts
 #undef _
 
@@ -536,12 +536,13 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
              && target->field <= MMB_FIELD_ALL))
          return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
 
+       /* build option strip list  */
        if (vec_len(rule->opts) == 0)
          rule->whitelist = target->reverse;
-       else if (rule->whitelist != target->reverse) 
+       else if (rule->whitelist != target->reverse)
          return clib_error_return(0, "inconsistent use of ! in strip");
+       vec_add1(rule->opts, target->opt_kind);
 
-       vec_add1(rule->opts, target->opt_kind);     
      } else if (target->keyword == MMB_TARGET_MODIFY) 
        ;
    }
@@ -745,9 +746,13 @@ u8* mmb_format_field(u8* s, va_list *args) {
    if (field < MMB_FIELD_NET_PROTO 
     || field > MMB_FIELD_NET_PROTO+fields_len)
      ; 
-   else if (field == MMB_FIELD_TCP_OPT && kind) 
-     s = format(s, "%s %d", fields[field_index], kind);
-   else
+   else if (field == MMB_FIELD_TCP_OPT && kind) {
+     if (0);
+#define _(a,b,c) else if (kind == c) s = format(s, "%s %s", fields[field_index], #b);
+   foreach_mmb_tcp_opts
+#undef _
+     else s = format(s, "%s %d", fields[field_index], kind);
+   } else
      s = format(s, "%s", fields[field_index]);
 
    return s;
