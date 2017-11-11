@@ -61,6 +61,10 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
                   t->proto,
                   (t->proto == IP_PROTOCOL_TCP) ? "TCP" : (t->proto == IP_PROTOCOL_UDP) ? "UDP" : (t->proto == IP_PROTOCOL_ICMP) ? "ICMP" : "OTHER");
   }
+  else if (t->rule == ~0)
+  {
+    s = format(s, "MMB: 2 packets at a time not yet implemented\n");
+  }
   else
   {
     s = format(s, "MMB: rule %u applied to packet IP with protocol %d (%s), action %s\n",
@@ -125,6 +129,25 @@ u64 bytes_to_u64(u8 *bytes)
   return value;
 }
 
+u64 ip4addr_to_u64(u8 *bytes)
+{
+  /*
+    IPv4 address: A.B.C.D(/M)
+  
+    - byte 1 = A
+    - byte 2 = B
+    - byte 3 = C
+    - byte 4 = D
+    - byte 5 = M (32 by default)
+   */
+   //TODO: for now, we don't use the mask but will later (subnet match)
+
+   u8 mask = vec_pop(bytes);
+   u64 value = bytes_to_u64(bytes);
+   vec_add1(bytes, mask);
+   return value;
+}
+
 u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
 {
   /* Don't apply rules concerning layer 3 other than IP4 */
@@ -181,7 +204,14 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
     {
       /* IP field */
       case ETHERNET_TYPE_IP4:
-        if (!value_compare(GET_IP_FIELD(ip, match->field), bytes_to_u64(match->value), match->condition, match->reverse))
+        ;
+        u64 value;
+        if (match->field == MMB_FIELD_IP_SADDR || match->field == MMB_FIELD_IP_DADDR)
+          value = ip4addr_to_u64(match->value);
+        else
+          value = bytes_to_u64(match->value);
+
+        if (!value_compare(GET_IP_FIELD(ip, match->field), value, match->condition, match->reverse))
           return 0;
         break;
 
@@ -390,6 +420,7 @@ mmb_node_fn (vlib_main_t * vm,
         {
           mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
           t->proto = ip0->protocol;
+          t->rule = ~0;
           t->next = next0;
         }
 
@@ -397,6 +428,7 @@ mmb_node_fn (vlib_main_t * vm,
         {
           mmb_trace_t *t = vlib_add_trace (vm, node, b1, sizeof (*t));
           t->proto = ip1->protocol;
+          t->rule = ~0;
           t->next = next1;
         }
       }
