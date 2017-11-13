@@ -141,12 +141,13 @@ u64 ip4addr_to_u64(u8 *bytes)
     - byte 4 = D
     - byte 5 = M (32 by default)
    */
-   //TODO: for now, we don't use the mask but will later (subnet match)
+  
+  //TODO: for now, we don't use the mask but will later (subnet match)
 
-   u8 mask = vec_pop(bytes);
-   u64 value = bytes_to_u64(bytes);
-   vec_add1(bytes, mask);
-   return value;
+  u8 mask = vec_pop(bytes);
+  u64 value = bytes_to_u64(bytes);
+  vec_add1(bytes, mask);
+  return value;
 }
 
 u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
@@ -377,16 +378,17 @@ mmb_node_fn (vlib_main_t * vm,
     vlib_get_next_frame (vm, node, next_index,
 			 to_next, n_left_to_next);
 
-    while (n_left_from >= 4 && n_left_to_next >= 2)
+    //TODO: implement 2 pkts at a time
+    /*while (n_left_from >= 4 && n_left_to_next >= 2)
     {
       u32 next0 = MMB_NEXT_LOOKUP;
       u32 next1 = MMB_NEXT_LOOKUP;
       ip4_header_t *ip0, *ip1;
       u32 bi0, bi1;
-      vlib_buffer_t * b0, * b1;
+      vlib_buffer_t * b0, * b1;*/
           
       /* Prefetch next iteration. */
-      {
+      /*{
         vlib_buffer_t * p2, * p3;
             
         p2 = vlib_get_buffer (vm, from[2]);
@@ -397,10 +399,10 @@ mmb_node_fn (vlib_main_t * vm,
 
         CLIB_PREFETCH (p2->data, CLIB_CACHE_LINE_BYTES, STORE);
         CLIB_PREFETCH (p3->data, CLIB_CACHE_LINE_BYTES, STORE);
-      }
+      }*/
 
       /* speculatively enqueue b0 and b1 to the current next frame */
-      to_next[0] = bi0 = from[0];
+      /*to_next[0] = bi0 = from[0];
       to_next[1] = bi1 = from[1];
       from += 2;
       to_next += 2;
@@ -432,13 +434,13 @@ mmb_node_fn (vlib_main_t * vm,
           t->rule = ~0;
           t->next = next1;
         }
-      }
+      }*/
             
       /* verify speculative enqueues, maybe switch current next frame */
-      vlib_validate_buffer_enqueue_x2 (vm, node, next_index,
+      /*vlib_validate_buffer_enqueue_x2 (vm, node, next_index,
                                        to_next, n_left_to_next,
                                        bi0, bi1, next0, next1);
-    }
+    }*/
 
     while (n_left_from > 0 && n_left_to_next > 0)
     {
