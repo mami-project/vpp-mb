@@ -22,5 +22,3 @@ tr add pg-input 100
 
 mmb enable loop0
 mmb add ip-ver 4 ip-proto udp ip-daddr 192.168.1.1 udp-sport 4321 udp-dport 1234 drop
-mmb add ip-ver 4 ip-proto udp ip-daddr 192.168.1.1 drop
-mmb add ip-ver 4 ip-proto udp drop
