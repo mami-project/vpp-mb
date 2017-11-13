@@ -10,9 +10,7 @@ packet-generator new {
   interface loop0
   no-recycle
   data {
-    TCP: 192.168.1.2 -> 192.168.1.1
-    TCP: 32415 -> 80
-    SYN
+    TCP: 192.168.1.2 - 192.168.1.255 -> 192.168.1.1
     incrementing 100
   }
 }
@@ -20,6 +18,4 @@ packet-generator new {
 tr add pg-input 100
 
 mmb enable loop0
-mmb add ip-ver 4 ip-proto tcp ip-saddr 192.168.1.2 ip-daddr 192.168.1.1 tcp-sport 32415 tcp-dport 80 drop
-mmb add ip-ver 4 ip-proto tcp ip-saddr 192.168.1.2 ip-daddr 192.168.1.1 drop
-mmb add ip-ver 4 ip-proto tcp drop
+mmb add ip-ver 4 ip-proto tcp ip-daddr 192.168.1.1 drop
