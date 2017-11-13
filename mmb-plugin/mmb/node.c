@@ -123,8 +123,9 @@ u64 bytes_to_u64(u8 *bytes)
   u32 i = 0;
   u32 len = vec_len(bytes) - 1;
 
-  vec_foreach_index(i, bytes)
-    value += (bytes[i] << ((len - i) * 8));
+  vec_foreach_index(i, bytes) {
+    value += (((u64) bytes[i]) << ((u64) ((len - i) * 8)));
+  }
 
   return value;
 }
