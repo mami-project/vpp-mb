@@ -57,6 +57,7 @@ static_always_inline void resize_value(u8 field, u8 **value) {
   u8 proper_len = lens[field_toindex(field)];
   if (proper_len == 0) return;
 
+  /* left padding/truncating */
   if (user_len > proper_len)
     vec_delete(*value, user_len-proper_len, 0);
   else if (user_len < proper_len)
@@ -103,7 +104,7 @@ static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
 /* Parse an IP4 address %d.%d.%d.%d[/%d] */
 uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
   u8 **result = va_arg (*args, u8 **);
-  unsigned a[5];
+  unsigned a[5], i;
 
   if (unformat (input, "%d.%d.%d.%d/%d", &a[0], &a[1], &a[2], &a[3], &a[4])) {
     if (a[4] > 32)
@@ -115,11 +116,8 @@ uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
   if (a[0] >= 256 || a[1] >= 256 || a[2] >= 256 || a[3] >= 256)
     return 0;
 
-  vec_add1 (*result, a[0]);
-  vec_add1 (*result, a[1]);
-  vec_add1 (*result, a[2]);
-  vec_add1 (*result, a[3]);
-  vec_add1 (*result, a[4]);
+  for (i=0; i<5; i++)
+   vec_add1(*result, a[i]);
 
   return 1;
 }
@@ -270,8 +268,7 @@ u8* mmb_format_keyword(u8* s, va_list *args) {
        break;
   }
 
-  s = format(s, "%s", keyword_str);
-  return s;
+  return format(s, "%s", keyword_str);
 }
 
 static_always_inline u8 *mmb_format_ip_protocol (u8 * s, va_list *args)
@@ -349,23 +346,21 @@ static_always_inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
 u8 *mmb_format_match(u8 *s, va_list *args) {
 
   mmb_match_t *match = va_arg(*args, mmb_match_t*);
-  s = format(s, "%s%U %U %U", (match->reverse) ? "! ":"",
+  return format(s, "%s%U %U %U", (match->reverse) ? "! ":"",
                           mmb_format_field, &match->field, &match->opt_kind,
                           mmb_format_condition, &match->condition,
                           mmb_format_bytes, match->value, match->field
                           );
-  return s;
 } 
 
 u8 *mmb_format_target(u8 *s, va_list *args) {
 
   mmb_target_t *target = va_arg(*args, mmb_target_t*);
-  s = format(s, "%s%U %U %U", (target->reverse) ? "! ":"",
+  return format(s, "%s%U %U %U", (target->reverse) ? "! ":"",
                          mmb_format_keyword, &target->keyword,
                          mmb_format_field, &target->field, &target->opt_kind,
                          mmb_format_bytes, target->value, target->field
                          );
-  return s; 
 }
 
 u8 *mmb_format_rules(u8 *s, va_list *args) {

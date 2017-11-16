@@ -19,8 +19,10 @@
 #include <mmb/node.h>
 
 typedef struct {
+  u32 rule_index;
   u8  proto;
-  u32 rule;
+  ip4_address_t src_address;
+  ip4_address_t dst_address;
   u32 next;
 } mmb_trace_t;
 
@@ -48,31 +50,45 @@ static char * mmb_error_strings[] = {
 #undef _
 };
 
+static_always_inline u8* mmb_format_next_node(u8* s, va_list *args) {
+  u8 keyword = *va_arg(*args, u32*);
+  char *keyword_str = "";
+
+  switch(keyword) {
+    case MMB_NEXT_LOOKUP:
+       keyword_str = "lookup";
+       break;
+    case MMB_NEXT_DROP:
+       keyword_str =  "drop";
+       break;
+    case MMB_N_NEXT:
+       keyword_str =  "n-next";
+       break;
+    default:
+       break;
+  }
+
+  return format(s, "%s", keyword_str);
+}
+
 /* packet trace format function */
 static u8 * format_mmb_trace (u8 * s, va_list * args)
 {
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   mmb_trace_t * t = va_arg (*args, mmb_trace_t *);
-
-  if (t->rule == 0)
-  {
-    s = format(s, "MMB: no rule applied to packet IP with protocol %d (%s)\n",
-                  t->proto,
-                  (t->proto == IP_PROTOCOL_TCP) ? "TCP" : (t->proto == IP_PROTOCOL_UDP) ? "UDP" : (t->proto == IP_PROTOCOL_ICMP) ? "ICMP" : "OTHER");
-  }
-  else if (t->rule == ~0)
-  {
-    s = format(s, "MMB: 2 packets at a time not yet implemented\n");
-  }
-  else
-  {
-    s = format(s, "MMB: rule %u applied to packet IP with protocol %d (%s), action %s\n",
-                   t->rule,
-                   t->proto,
-                   (t->proto == IP_PROTOCOL_TCP) ? "TCP" : (t->proto == IP_PROTOCOL_UDP) ? "UDP" : (t->proto == IP_PROTOCOL_ICMP) ? "ICMP" : "OTHER",
-                   (t->next == MMB_NEXT_DROP) ? "DROP" : "FORWARD");
-  }
+  
+  if (t->rule_index != 0) 
+    s = format(s, "mmb: sa:%U da:%U %U pkt matched rule %u, target %U\n",
+                   format_ip4_address, t->src_address,
+                   format_ip4_address, t->dst_address,
+                   format_ip_protocol, t->proto, t->rule_index,   
+                   mmb_format_next_node, t->next);
+  else 
+    s = format(s, "mmb: sa:%U da:%U %U pkt unmatched\n", 
+                   format_ip4_address, t->src_address,
+                   format_ip4_address, t->dst_address,
+                   format_ip_protocol, t->proto);
 
   return s;
 }
@@ -423,7 +439,9 @@ mmb_node_fn (vlib_main_t * vm,
         {
           mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
           t->proto = ip0->protocol;
-          t->rule = ~0;
+          t->rule_index = ~0;
+          t->src_address = ip0->src_address;
+          t->dst_address = ip0->dst_address;
           t->next = next0;
         }
 
@@ -431,7 +449,9 @@ mmb_node_fn (vlib_main_t * vm,
         {
           mmb_trace_t *t = vlib_add_trace (vm, node, b1, sizeof (*t));
           t->proto = ip1->protocol;
-          t->rule = ~0;
+          t->rule_index = ~0;
+          t->src_address = ip1->src_address;
+          t->dst_address = ip1->dst_address;
           t->next = next1;
         }
       }*/
@@ -488,7 +508,9 @@ mmb_node_fn (vlib_main_t * vm,
       {
         mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
         t->proto = ip0->protocol;
-        t->rule = (applied_rule_index == ~0) ? 0 : applied_rule_index+1;
+        t->rule_index = (applied_rule_index == ~0) ? 0 : applied_rule_index+1;
+        t->src_address = ip0->src_address;
+        t->dst_address = ip0->dst_address;
         t->next = next0;
       }
 
