@@ -18,7 +18,7 @@
 #include <vppinfra/error.h>
 #include <mmb/node.h>
 
-static u64 ip4addr_to_u64(u8 *bytes);
+static void parse_ip4_addr_mask(u8 *bytes, u32 *ip_addr, u32 *mask);
 static u64 bytes_to_u64(u8 *bytes);
 static u8 value_compare(u64 a, u64 b, u8 condition, u8 reverse);
 static u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4);
@@ -65,24 +65,11 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   return s;
 }
 
-u64 ip4addr_to_u64(u8 *bytes)
+void parse_ip4_addr_mask(u8 *bytes, u32 *ip_addr, u32 *mask)
 {
-  /*
-    IPv4 address: A.B.C.D(/M)
-  
-    - byte 1 = A
-    - byte 2 = B
-    - byte 3 = C
-    - byte 4 = D
-    - byte 5 = M (32 by default)
-   */
-  
-  //TODO: for now, we don't use the mask but will later (subnet match)
-
-  u8 mask = vec_pop(bytes);
-  u64 value = bytes_to_u64(bytes);
-  vec_add1(bytes, mask);
-  return value;
+  *mask = vec_pop(bytes);
+  *ip_addr = bytes_to_u64(bytes);
+  vec_add1(bytes, *mask);
 }
 
 u64 bytes_to_u64(u8 *bytes)
@@ -194,15 +181,22 @@ u8 packet_matches(ip4_header_t *ip, mmb_match_t *matches, u16 l3, u8 l4)
     {
       /* IP field */
       case ETHERNET_TYPE_IP4:
-        ;
-        u64 value;
         if (match->field == MMB_FIELD_IP_SADDR || match->field == MMB_FIELD_IP_DADDR)
-          value = ip4addr_to_u64(match->value);
-        else
-          value = bytes_to_u64(match->value);
+        {
+          u32 rule_addr, rule_slash_mask, rule_netmask;
+          parse_ip4_addr_mask(match->value, &rule_addr, &rule_slash_mask);
+          rule_netmask = 0xffffffff << (32 - rule_slash_mask);
 
-        if (!value_compare(get_ip_field(ip, match->field), value, match->condition, match->reverse))
-          return 0;
+          u32 ip_addr = get_ip_field(ip, match->field);
+
+          if (!value_compare((ip_addr & rule_netmask), (rule_addr & rule_netmask), match->condition, match->reverse))
+            return 0;
+        }
+        else
+        {
+          if (!value_compare(get_ip_field(ip, match->field), bytes_to_u64(match->value), match->condition, match->reverse))
+            return 0;
+        }
         break;
 
       /* ICMP field */
@@ -448,54 +442,6 @@ mmb_node_fn (vlib_main_t * vm,
       
       /* get IP header */
       ip0 = vlib_buffer_get_current (b0);
-
-      //TODO remove after debugging
-      if (ip0->protocol == IP_PROTOCOL_TCP) {
-        //from data to struct: call parse_tcp_options to get tcp_options_t and keep it somewhere "attached" to its paquet
-        //test matching on each rule
-        //if match and target strip: do it in the struct directly
-        //from struct to data: "reserialize" struct back into u8* after the tcp header (need to update data offset as well?)
-
-        FILE *f = fopen("/home/vagrant/tcp.txt", "a");
-        if (f) {
-          tcp_header_t *tcp = ip4_next_header(ip0);
-          u8 kind, opt_len, opts_len = (tcp_doff(tcp) << 2) - sizeof(tcp_header_t);
-          u8 *data = (u8*)(tcp + 1);
-
-          fprintf(f, "TCP Packet with options length = %d\n", opts_len);
-
-          for(; opts_len > 0; opts_len -= opt_len, data += opt_len) {
-            kind = data[0];
-
-            if (kind == TCP_OPTION_EOL) {
-              fprintf(f, "EOL\n");
-              break;
-            }
-            else if (kind == TCP_OPTION_NOOP) {
-              fprintf(f, "NOOP\n");
-              opt_len = 1;
-              continue;
-            }
-            else {
-              if (opts_len < 2) {
-                fprintf(f, "Broken options\n");
-                break;
-              }
-
-              opt_len = data[1];
-              if (opt_len < 2 || opt_len > opts_len) {
-                fprintf(f, "Weird option length\n");
-                break;
-              }
-            }
-
-            fprintf(f, "Option %d size %d\n", kind, opt_len);
-          }
-
-          fclose(f);
-        }
-      }
-      //
 
       /* fetch each rule to find a match */
       uword irule = 0;
