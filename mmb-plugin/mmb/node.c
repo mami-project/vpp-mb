@@ -18,6 +18,17 @@
 #include <vppinfra/error.h>
 #include <mmb/mmb.h>
 
+#define foreach_mmb_next_node \
+  _(LOOKUP, "Lookup")         \
+  _(DROP, "Drop")
+
+typedef enum {
+#define _(n,str) MMB_NEXT_##n,
+  foreach_mmb_next_node
+#undef _
+  MMB_N_NEXT
+} mmb_next_t;
+
 typedef struct {
   u32 rule_index;
   u8  proto;
@@ -25,12 +36,6 @@ typedef struct {
   ip4_address_t dst_address;
   u32 next;
 } mmb_trace_t;
-
-typedef enum {
-  MMB_NEXT_LOOKUP,
-  MMB_NEXT_DROP,
-  MMB_N_NEXT,
-} mmb_next_t;
 
 vlib_node_registration_t mmb_node;
 
@@ -50,20 +55,16 @@ static char * mmb_error_strings[] = {
 #undef _
 };
 
-static_always_inline u8* mmb_format_next_node(u8* s, va_list *args) {
-  u8 keyword = *va_arg(*args, u32*);
+static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
+{
+  u8 keyword = va_arg(*args, u32);
   char *keyword_str = "";
 
-  switch(keyword) {
-    case MMB_NEXT_LOOKUP:
-       keyword_str = "lookup";
-       break;
-    case MMB_NEXT_DROP:
-       keyword_str =  "drop";
-       break;
-    case MMB_N_NEXT:
-       keyword_str =  "n-next";
-       break;
+  switch(keyword)
+  {
+#define _(n,string) case MMB_NEXT_##n: { keyword_str = string; break; }
+    foreach_mmb_next_node
+#undef _
     default:
        break;
   }
@@ -80,14 +81,15 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   
   if (t->rule_index != 0) 
     s = format(s, "mmb: sa:%U da:%U %U pkt matched rule %u, target %U\n",
-                   format_ip4_address, t->src_address,
-                   format_ip4_address, t->dst_address,
-                   format_ip_protocol, t->proto, t->rule_index,   
+                   format_ip4_address, t->src_address.data,
+                   format_ip4_address, t->dst_address.data,
+                   format_ip_protocol, t->proto,
+                   t->rule_index,
                    mmb_format_next_node, t->next);
   else 
     s = format(s, "mmb: sa:%U da:%U %U pkt unmatched\n", 
-                   format_ip4_address, t->src_address,
-                   format_ip4_address, t->dst_address,
+                   format_ip4_address, t->src_address.data,
+                   format_ip4_address, t->dst_address.data,
                    format_ip_protocol, t->proto);
 
   return s;
@@ -160,8 +162,8 @@ mmb_node_fn (vlib_main_t * vm,
         {
           mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
           t->proto = ip0->protocol;
-          t->src_address = ip0->src_address;
-          t->dst_address = ip0->dst_address;
+          t->src_address.as_u32 = ip0->src_address.as_u32;
+          t->dst_address.as_u32 = ip0->dst_address.as_u32;
           t->next = next0;
         }
 
@@ -169,8 +171,8 @@ mmb_node_fn (vlib_main_t * vm,
         {
           mmb_trace_t *t = vlib_add_trace (vm, node, b1, sizeof (*t));
           t->proto = ip1->protocol;
-          t->src_address = ip1->src_address;
-          t->dst_address = ip1->dst_address;
+          t->src_address.as_u32 = ip1->src_address.as_u32;
+          t->dst_address.as_u32 = ip1->dst_address.as_u32;
           t->next = next1;
         }
       }
@@ -264,8 +266,8 @@ mmb_node_fn (vlib_main_t * vm,
       {
         mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
         t->proto = ip0->protocol;
-        t->src_address = ip0->src_address;
-        t->dst_address = ip0->dst_address;
+        t->src_address.as_u32 = ip0->src_address.as_u32;
+        t->dst_address.as_u32 = ip0->dst_address.as_u32;
         t->next = next0;
       }
 
@@ -295,11 +297,9 @@ VLIB_REGISTER_NODE (mmb_node) = {
 
   .n_next_nodes = MMB_N_NEXT,
 
-  /* edit / add dispositions here */
-  //TODO: we may need to change next nodes defined below
   .next_nodes = {
         [MMB_NEXT_LOOKUP] = "ip4-lookup",
-        [MMB_NEXT_DROP]   = "error-drop", //ip4-drop
+        [MMB_NEXT_DROP]   = "error-drop",
   },
 };
 
