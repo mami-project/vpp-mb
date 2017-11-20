@@ -17,6 +17,7 @@
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
 #include <mmb/mmb.h>
+#include <mmb/node.h>
 
 typedef struct {
   u32 rule_index;
@@ -27,8 +28,9 @@ typedef struct {
 } mmb_trace_t;
 
 typedef enum {
-  MMB_NEXT_LOOKUP,
   MMB_NEXT_DROP,
+  MMB_NEXT_LOOKUP,
+  MMB_NEXT_ICMP_ERROR,
   MMB_N_NEXT,
 } mmb_next_t;
 
@@ -118,8 +120,9 @@ mmb_node_fn (vlib_main_t * vm,
 
     while (n_left_from >= 4 && n_left_to_next >= 2)
     {
-      u32 next0 = MMB_NEXT_LOOKUP;
-      u32 next1 = MMB_NEXT_LOOKUP;
+      u32 next0 = MMB_N_NEXT; // MMB_NEXT_INTERFACE_OUTPUT
+      u32 next1 = MMB_N_NEXT;
+      u32 sw_if_index0, sw_if_index1;
       ip4_header_t *ip0, *ip1;
       u32 bi0, bi1;
       vlib_buffer_t * b0, * b1;
@@ -149,8 +152,18 @@ mmb_node_fn (vlib_main_t * vm,
       b0 = vlib_get_buffer (vm, bi0);
       b1 = vlib_get_buffer (vm, bi1);
       
+      ASSERT (b0->current_data == 0);
+      ASSERT (b1->current_data == 0);
+
       ip0 = vlib_buffer_get_current (b0);
       ip1 = vlib_buffer_get_current (b1);
+
+      sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
+      sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
+
+      /* Send pkt back out the RX interface */
+      vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
+      vnet_buffer(b1)->sw_if_index[VLIB_TX] = sw_if_index1;
 
       pkts_done += 2;
 
@@ -160,8 +173,8 @@ mmb_node_fn (vlib_main_t * vm,
         {
           mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
           t->proto = ip0->protocol;
-          t->src_address = ip0->src_address;
-          t->dst_address = ip0->dst_address;
+          //t->src_address = ip0->src_address;
+          //t->dst_address = ip0->dst_address;
           t->next = next0;
         }
 
@@ -169,9 +182,9 @@ mmb_node_fn (vlib_main_t * vm,
         {
           mmb_trace_t *t = vlib_add_trace (vm, node, b1, sizeof (*t));
           t->proto = ip1->protocol;
-          t->src_address = ip1->src_address;
-          t->dst_address = ip1->dst_address;
-          t->next = next1;
+          //t->src_address = ip1->src_address;
+          //t->dst_address = ip1->dst_address;
+          t->next = next1; //TODO: next_index
         }
       }
             
@@ -185,7 +198,8 @@ mmb_node_fn (vlib_main_t * vm,
     {
       u32 bi0;
       vlib_buffer_t * b0;
-      u32 next0 = MMB_NEXT_LOOKUP;
+      u32 next0 = MMB_N_NEXT;
+      u32 sw_if_index0;
       ip4_header_t *ip0;
 
       /* speculatively enqueue b0 to the current next frame */
@@ -198,6 +212,8 @@ mmb_node_fn (vlib_main_t * vm,
 
       /* get vlib buffer */
       b0 = vlib_get_buffer (vm, bi0);
+
+      ASSERT (b0->current_data == 0);
       
       /* get IP header */
       ip0 = vlib_buffer_get_current (b0);
@@ -214,7 +230,7 @@ mmb_node_fn (vlib_main_t * vm,
               - MATCH: process each target in this rule
               - NO MATCH: go to next rule
       */
-      uword index_rule = 0;
+      /*uword index_rule = 0;
       vec_foreach_index(index_rule, rules)
       {
         mmb_rule_t *rule = &rules[index_rule];
@@ -226,7 +242,8 @@ mmb_node_fn (vlib_main_t * vm,
 
           // case: ip-proto == 1 (icmp) and current packet matches
           if (match->field == MMB_FIELD_IP_PROTO && match->condition == MMB_COND_EQ 
-              /*&& !strcmp(match->value, "0000000000000001")*/ && ip0->protocol == IP_PROTOCOL_ICMP)
+              //&& !strcmp(match->value, "0000000000000001")
+               && ip0->protocol == IP_PROTOCOL_ICMP)
           {
             uword index_target = 0;
             vec_foreach_index(index_target, rule->targets)
@@ -239,10 +256,10 @@ mmb_node_fn (vlib_main_t * vm,
             }
           }
         }
-      }
+      }*/
 
       /* apply rules on TCP and UDP packets only */
-      switch(ip0->protocol)
+     /* switch(ip0->protocol)
       {
         case IP_PROTOCOL_TCP: ;
           tcp_header_t *tcp = ip4_next_header(ip0);
@@ -256,6 +273,12 @@ mmb_node_fn (vlib_main_t * vm,
 
         default: ;
       }
+      */
+
+      sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
+
+      /* Send pkt back out the RX interface */
+      vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
 
       pkts_done += 1;
 
@@ -264,8 +287,8 @@ mmb_node_fn (vlib_main_t * vm,
       {
         mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
         t->proto = ip0->protocol;
-        t->src_address = ip0->src_address;
-        t->dst_address = ip0->dst_address;
+        //t->src_address = ip0->src_address;
+        //t->dst_address = ip0->dst_address;
         t->next = next0;
       }
 
@@ -298,8 +321,9 @@ VLIB_REGISTER_NODE (mmb_node) = {
   /* edit / add dispositions here */
   //TODO: we may need to change next nodes defined below
   .next_nodes = {
-        [MMB_NEXT_LOOKUP] = "ip4-lookup",
-        [MMB_NEXT_DROP]   = "error-drop", //ip4-drop
+        [MMB_NEXT_DROP] = "error-drop",  //ip4-drop
+        [MMB_NEXT_LOOKUP] = "interface-output",
+        [MMB_NEXT_ICMP_ERROR] = "ip4-icmp-error",
   },
 };
 

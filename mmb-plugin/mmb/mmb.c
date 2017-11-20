@@ -156,7 +156,7 @@ mmb_enable_disable_fn (vlib_main_t * vm,
   mmb_main_t *mm = &mmb_main;
   u32 sw_if_index = ~0;
     
-  int rv;
+  int rv = 0;
   while(unformat_check_input(input) != UNFORMAT_END_OF_INPUT) {
     if (!unformat(input, "%U", unformat_vnet_sw_interface, 
                   mm->vnet_main, &sw_if_index))
@@ -166,8 +166,10 @@ mmb_enable_disable_fn (vlib_main_t * vm,
   if (sw_if_index == ~0)
     return clib_error_return(0, "Please specify an interface...");
     
-  rv = mmb_enable_disable(mm, sw_if_index, enable_disable);
-
+  //rv = mmb_enable_disable(mm, sw_if_index, enable_disable);
+  vnet_feature_enable_disable ("ip4-unicast", "mmb",
+                               sw_if_index, enable_disable, 0, 0);
+  //TODO check if itf is not already enabled
   switch(rv) {
     case 0:
       break;
@@ -639,5 +641,12 @@ VLIB_INIT_FUNCTION (mmb_init);
 VNET_FEATURE_INIT (mmb, static) = {
   .arc_name = "ip4-unicast", //ip4-output
   .node_name = "mmb",
-  .runs_before = VNET_FEATURES ("ip4-lookup"), //interface-output
+  .runs_before = VNET_FEATURES("ip4-lookup"), //interface-output
 };
+
+/*VNET_FEATURE_ARC_INIT (ip4_mmb, static) =
+{
+  .arc_name = "ip4-mmb",
+  .start_nodes = VNET_FEATURES ("ip4-lookup"),
+  .arc_index_ptr = &ip4_main.lookup_main.ucast_feature_arc_index,
+};*/

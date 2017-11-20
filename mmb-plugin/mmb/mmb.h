@@ -170,6 +170,9 @@ typedef struct {
 
    mmb_rule_t *rules;  /*! Rules vector */
 
+
+   //snat_interface_t * interfaces;
+
    /* convenience */
    vnet_main_t * vnet_main;
 } mmb_main_t;
