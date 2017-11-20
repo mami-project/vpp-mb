@@ -644,9 +644,3 @@ VNET_FEATURE_INIT (mmb, static) = {
   .runs_before = VNET_FEATURES("ip4-lookup"), //interface-output
 };
 
-/*VNET_FEATURE_ARC_INIT (ip4_mmb, static) =
-{
-  .arc_name = "ip4-mmb",
-  .start_nodes = VNET_FEATURES ("ip4-lookup"),
-  .arc_index_ptr = &ip4_main.lookup_main.ucast_feature_arc_index,
-};*/

@@ -19,22 +19,10 @@
 #include <mmb/mmb.h>
 #include <mmb/node.h>
 
-typedef struct {
-  u32 rule_index;
-  u8  proto;
-  ip4_address_t src_address;
-  ip4_address_t dst_address;
-  u32 next;
-} mmb_trace_t;
-
-typedef enum {
-  MMB_NEXT_DROP,
-  MMB_NEXT_LOOKUP,
-  MMB_NEXT_ICMP_ERROR,
-  MMB_N_NEXT,
-} mmb_next_t;
-
-vlib_node_registration_t mmb_node;
+#define foreach_mmb_next_node     \
+  _(LOOKUP, "lookup")              \
+  _(DROP, "drop")                  \
+  _(ICMP_ERROR, "icmp error")       
 
 #define foreach_mmb_error \
 _(DONE, "MMB packets processed")
@@ -46,26 +34,44 @@ typedef enum {
   MMB_N_ERROR,
 } mmb_error_t;
 
+
+typedef struct {
+  u32 rule_index;
+  u8  proto;
+  ip4_address_t src_address;
+  ip4_address_t dst_address;
+  u32 next;
+
+  ip4_header_t *ip;
+} mmb_trace_t;
+
+typedef enum {
+  MMB_NEXT_DROP,
+  MMB_NEXT_LOOKUP,
+  MMB_NEXT_ICMP_ERROR,
+  MMB_N_NEXT,
+} mmb_next_t;
+
+vlib_node_registration_t mmb_node;
+
 static char * mmb_error_strings[] = {
 #define _(sym,string) string,
   foreach_mmb_error
 #undef _
 };
 
-static_always_inline u8* mmb_format_next_node(u8* s, va_list *args) {
-  u8 keyword = *va_arg(*args, u32*);
+static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
+{
+  u8 keyword = va_arg(*args, u32);
   char *keyword_str = "";
-
-  switch(keyword) {
-    case MMB_NEXT_LOOKUP:
-       keyword_str = "lookup";
-       break;
-    case MMB_NEXT_DROP:
-       keyword_str =  "drop";
-       break;
+  switch(keyword)
+  {
+#define _(n,string) case MMB_NEXT_##n: { keyword_str = string; break; }
+    foreach_mmb_next_node
+#undef _
     case MMB_N_NEXT:
-       keyword_str =  "n-next";
-       break;
+      keyword_str = "n-next";
+      break;
     default:
        break;
   }
@@ -74,32 +80,47 @@ static_always_inline u8* mmb_format_next_node(u8* s, va_list *args) {
 }
 
 /* packet trace format function */
-static u8 * format_mmb_trace (u8 * s, va_list * args)
+static u8 * format_mmb_trace(u8 * s, va_list * args)
 {
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   mmb_trace_t * t = va_arg (*args, mmb_trace_t *);
   
   if (t->rule_index != 0) 
-    s = format(s, "mmb: sa:%U da:%U %U pkt matched rule %u, target %U\n",
-                   format_ip4_address, t->src_address,
-                   format_ip4_address, t->dst_address,
-                   format_ip_protocol, t->proto, t->rule_index,   
+    s = format(s, "mmb: src:%U dst:%U %U pkt matched rule %u, target %U\n",
+                   format_ip4_address, t->src_address.data,
+                   format_ip4_address, t->dst_address.data,
+                   format_ip_protocol, t->proto,
+                   t->rule_index,
                    mmb_format_next_node, t->next);
   else 
-    s = format(s, "mmb: sa:%U da:%U %U pkt unmatched\n", 
-                   format_ip4_address, t->src_address,
-                   format_ip4_address, t->dst_address,
-                   format_ip_protocol, t->proto);
+    s = format(s, "mmb: src:%U dst:%U %U pkt unmatched, target %U\n", 
+                   format_ip4_address, t->src_address.data,
+                   format_ip4_address, t->dst_address.data,
+                   format_ip_protocol, t->proto,
+                   mmb_format_next_node, t->next);
+
+   s = format(s, "  mmb: %U", 
+                   format_ip4_header, t->ip, t->ip->length);
 
   return s;
 }
 
+static_always_inline void 
+mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * node,
+                    ip4_header_t *ip, u32 next) {
+   mmb_trace_t *t = vlib_add_trace (vm, node, b, sizeof (*t));
+   t->proto = ip->protocol;
+   t->src_address.as_u32 = ip->src_address.as_u32;
+   t->dst_address.as_u32 = ip->dst_address.as_u32;
+   t->next = next;
+
+   t->ip=ip;
+}
+
 static uword
-mmb_node_fn (vlib_main_t * vm,
-		  vlib_node_runtime_t * node,
-		  vlib_frame_t * frame)
-{
+mmb_node_fn(vlib_main_t * vm, vlib_node_runtime_t * node,
+		      vlib_frame_t * frame) {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
 
@@ -111,23 +132,22 @@ mmb_node_fn (vlib_main_t * vm,
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
 
-  while (n_left_from > 0)
-  {
+  while (n_left_from > 0) { // Outter loop
+  
     u32 n_left_to_next;
 
     vlib_get_next_frame (vm, node, next_index,
 			 to_next, n_left_to_next);
 
-    while (n_left_from >= 4 && n_left_to_next >= 2)
-    {
-      u32 next0 = MMB_N_NEXT; // MMB_NEXT_INTERFACE_OUTPUT
-      u32 next1 = MMB_N_NEXT;
+    /*while (n_left_from >= 4 && n_left_to_next >= 2) { // Loop 2 packets at a time
+      u32 next0 = MMB_NEXT_LOOKUP; // MMB_NEXT_INTERFACE_OUTPUT
+      u32 next1 = MMB_NEXT_LOOKUP;
       u32 sw_if_index0, sw_if_index1;
       ip4_header_t *ip0, *ip1;
       u32 bi0, bi1;
-      vlib_buffer_t * b0, * b1;
+      vlib_buffer_t *b0, *b1;
           
-      /* Prefetch next iteration. */
+      // Prefetch next iteration. 
       {
         vlib_buffer_t * p2, * p3;
             
@@ -141,7 +161,7 @@ mmb_node_fn (vlib_main_t * vm,
         CLIB_PREFETCH (p3->data, CLIB_CACHE_LINE_BYTES, STORE);
       }
 
-      /* speculatively enqueue b0 and b1 to the current next frame */
+      // speculatively enqueue b0 and b1 to the current next frame 
       to_next[0] = bi0 = from[0];
       to_next[1] = bi1 = from[1];
       from += 2;
@@ -158,48 +178,31 @@ mmb_node_fn (vlib_main_t * vm,
       ip0 = vlib_buffer_get_current (b0);
       ip1 = vlib_buffer_get_current (b1);
 
-      sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
-      sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
-
-      /* Send pkt back out the RX interface */
-      vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
-      vnet_buffer(b1)->sw_if_index[VLIB_TX] = sw_if_index1;
-
       pkts_done += 2;
 
-      if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
-      {
-        if (b0->flags & VLIB_BUFFER_IS_TRACED) 
-        {
-          mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
-          t->proto = ip0->protocol;
-          //t->src_address = ip0->src_address;
-          //t->dst_address = ip0->dst_address;
-          t->next = next0;
+      if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE))) {
+        if (b0->flags & VLIB_BUFFER_IS_TRACED) {
+          mmb_trace_ip_packet(vm, b0, node, ip0, next0);
         }
 
-        if (b1->flags & VLIB_BUFFER_IS_TRACED) 
-        {
-          mmb_trace_t *t = vlib_add_trace (vm, node, b1, sizeof (*t));
-          t->proto = ip1->protocol;
-          //t->src_address = ip1->src_address;
-          //t->dst_address = ip1->dst_address;
-          t->next = next1; //TODO: next_index
+        if (b1->flags & VLIB_BUFFER_IS_TRACED) {
+          mmb_trace_ip_packet(vm, b1, node, ip1, next1);
+//TODO: next_index;
         }
       }
             
-      /* verify speculative enqueues, maybe switch current next frame */
+      // verify speculative enqueues, maybe switch current next frame 
       vlib_validate_buffer_enqueue_x2 (vm, node, next_index,
                                        to_next, n_left_to_next,
                                        bi0, bi1, next0, next1);
-    }
+    } // End of loop 2 packets
+     */
 
-    while (n_left_from > 0 && n_left_to_next > 0)
-    {
+    while (n_left_from > 0 && n_left_to_next > 0) { // Loop 1 packet
       u32 bi0;
       vlib_buffer_t * b0;
-      u32 next0 = MMB_N_NEXT;
-      u32 sw_if_index0;
+      u32 next0 = MMB_NEXT_LOOKUP;
+      //u32 sw_if_index0;
       ip4_header_t *ip0;
 
       /* speculatively enqueue b0 to the current next frame */
@@ -275,31 +278,26 @@ mmb_node_fn (vlib_main_t * vm,
       }
       */
 
-      sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
+      /*sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
 
-      /* Send pkt back out the RX interface */
-      vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
+      // Send pkt back out the RX interface 
+      vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;*/
 
       pkts_done += 1;
 
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
-                        && (b0->flags & VLIB_BUFFER_IS_TRACED)))
-      {
-        mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
-        t->proto = ip0->protocol;
-        //t->src_address = ip0->src_address;
-        //t->dst_address = ip0->dst_address;
-        t->next = next0;
+                        && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
+        mmb_trace_ip_packet(vm, b0, node, ip0, next0);
       }
 
       /* verify speculative enqueue, maybe switch current next frame */
       vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
 				       to_next, n_left_to_next,
 				       bi0, next0);
-    }
+    } // End of loop 1 packet
 
     vlib_put_next_frame (vm, node, next_index, n_left_to_next);
-  }
+  } // End outter loop
 
   vlib_node_increment_counter (vm, mmb_node.index, 
                                MMB_ERROR_DONE, pkts_done);
@@ -318,12 +316,11 @@ VLIB_REGISTER_NODE (mmb_node) = {
 
   .n_next_nodes = MMB_N_NEXT,
 
-  /* edit / add dispositions here */
-  //TODO: we may need to change next nodes defined below
   .next_nodes = {
         [MMB_NEXT_DROP] = "error-drop",  //ip4-drop
-        [MMB_NEXT_LOOKUP] = "interface-output",
+        //[MMB_NEXT_LOOKUP] = "interface-output",
         [MMB_NEXT_ICMP_ERROR] = "ip4-icmp-error",
+        [MMB_NEXT_LOOKUP] = "ip4-lookup",
   },
 };
 
