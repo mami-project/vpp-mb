@@ -120,69 +120,29 @@ const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 static void mmb_free_rule(mmb_rule_t *rule);
 static clib_error_t *validate_rule();
 
-/**
- * @brief Enable/disable the mmb plugin. 
- *
- * Action function shared between message handler and debug CLI.
- */
-
-int mmb_enable_disable (mmb_main_t *mm, u32 sw_if_index,
-                                   int enable_disable) {
-  vnet_sw_interface_t * sw;
-  int rv = 0;
-
-  /* Utterly wrong? */
-  if (pool_is_free_index (mm->vnet_main->interface_main.sw_interfaces, 
-                          sw_if_index))
-    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
-
-  /* Not a physical port? */
-  sw = vnet_get_sw_interface (mm->vnet_main, sw_if_index);
-  if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
-    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
-  
-  vnet_feature_enable_disable ("ip4-unicast", "mmb",
-                               sw_if_index, enable_disable, 0, 0);
-
-  return rv;
-}
-
 static clib_error_t *
 mmb_enable_disable_fn (vlib_main_t * vm,
                    unformat_input_t * input,
                    vlib_cli_command_t * cmd,
-                   int enable_disable) {
+                   u32 *sw_if_index) {
   unformat_input_tolower(input);
   mmb_main_t *mm = &mmb_main;
-  u32 sw_if_index = ~0;
-    
-  int rv;
+  *sw_if_index = ~0;
+  
   while(unformat_check_input(input) != UNFORMAT_END_OF_INPUT) {
     if (!unformat(input, "%U", unformat_vnet_sw_interface, 
-                  mm->vnet_main, &sw_if_index))
+                  mm->vnet_main, sw_if_index))
       break;
   }
 
-  if (sw_if_index == ~0)
+  if (*sw_if_index == ~0)
     return clib_error_return(0, "Please specify an interface...");
-    
-  rv = mmb_enable_disable(mm, sw_if_index, enable_disable);
 
-  switch(rv) {
-    case 0:
-      break;
-
-    case VNET_API_ERROR_INVALID_SW_IF_INDEX:
-      return clib_error_return(0, "Invalid interface, only works on "
-                                  "physical ports");
-
-    case VNET_API_ERROR_UNIMPLEMENTED:
-      return clib_error_return(0, "Device driver doesn't support redirection");
-
-    default:
-      return clib_error_return(0, "mmb_enable_disable returned %d", rv);
-  }
-
+  /* Utterly wrong? */
+  if (pool_is_free_index (mm->vnet_main->interface_main.sw_interfaces, 
+                          *sw_if_index))
+    return clib_error_return(0, "Invalid interface, only works on "
+                                 "physical ports");
   return 0;
 }
 
@@ -190,14 +150,64 @@ static clib_error_t *
 enable_command_fn (vlib_main_t * vm,
                    unformat_input_t * input,
                    vlib_cli_command_t * cmd) {
-  return mmb_enable_disable_fn(vm, input, cmd, /* enable */ 1);
+   u8 index;
+   u32 sw_if_index, enabled_sw_if_index;
+   mmb_main_t *mm = &mmb_main;
+   clib_error_t *error;
+
+   if ( (error = mmb_enable_disable_fn(vm, input, cmd, &sw_if_index)) )
+     return error;
+
+   /* if already enabled ? */
+   vec_foreach_index(index, mm->sw_if_indexes) {
+      enabled_sw_if_index = mm->sw_if_indexes[index];
+      if (sw_if_index == enabled_sw_if_index) 
+         return clib_error_return(0, "mmb is already enabled on %U\n", 
+                       format_vnet_sw_if_index_name, 
+                       mm->vnet_main, sw_if_index);
+   }
+
+   vec_add1(mm->sw_if_indexes, sw_if_index);
+   vnet_feature_enable_disable ("ip4-unicast", "mmb",
+                                sw_if_index, 1, 0, 0);
+   vl_print(vm, "mmb enabled on %U\n", format_vnet_sw_if_index_name, 
+             mm->vnet_main, sw_if_index);
+
+   return 0;
 }
 
 static clib_error_t *
 disable_command_fn (vlib_main_t * vm,
                    unformat_input_t * input,
                    vlib_cli_command_t * cmd) {
-  return mmb_enable_disable_fn(vm, input, cmd, /* disable */ 0);
+   u8 enabled = 0, index = 0;
+   u32 sw_if_index, enabled_sw_if_index;
+   mmb_main_t *mm = &mmb_main;
+   clib_error_t *error;
+
+   if ( (error = mmb_enable_disable_fn(vm, input, cmd, &sw_if_index)) )
+     return error;
+
+   /* if already disabled ? */
+   vec_foreach_index(index, mm->sw_if_indexes) {
+      enabled_sw_if_index = mm->sw_if_indexes[index];
+      if (sw_if_index == enabled_sw_if_index) {
+         enabled = 1;
+         break;
+      }
+   }
+   if (!enabled)
+      return clib_error_return(0, "mmb is not enabled on %U\n", 
+              format_vnet_sw_if_index_name, 
+              mm->vnet_main, sw_if_index);
+
+   vec_delete(mm->sw_if_indexes, 1, index);
+   vnet_feature_enable_disable ("ip4-unicast", "mmb",
+                                sw_if_index, 0, 0, 0);
+   vl_print(vm, "mmb disabled on %U\n", format_vnet_sw_if_index_name, 
+          mm->vnet_main, sw_if_index);
+
+  return 0;
 }
 
 static clib_error_t *
