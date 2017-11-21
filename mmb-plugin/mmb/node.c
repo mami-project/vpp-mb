@@ -22,7 +22,9 @@
 #define foreach_mmb_next_node     \
   _(LOOKUP, "lookup")              \
   _(DROP, "drop")                  \
-  _(ICMP_ERROR, "icmp error")       
+  _(ICMP_ERROR, "icmp error")       \
+  _(INTERFACE_OUTPUT, "interface output")
+
 
 #define foreach_mmb_error \
 _(DONE, "MMB packets processed")
@@ -49,10 +51,9 @@ typedef enum {
   MMB_NEXT_DROP,
   MMB_NEXT_LOOKUP,
   MMB_NEXT_ICMP_ERROR,
+  MMB_NEXT_INTERFACE_OUTPUT,
   MMB_N_NEXT,
 } mmb_next_t;
-
-vlib_node_registration_t mmb_node;
 
 static char * mmb_error_strings[] = {
 #define _(sym,string) string,
@@ -139,70 +140,11 @@ mmb_node_fn(vlib_main_t * vm, vlib_node_runtime_t * node,
     vlib_get_next_frame (vm, node, next_index,
 			 to_next, n_left_to_next);
 
-    /*while (n_left_from >= 4 && n_left_to_next >= 2) { // Loop 2 packets at a time
-      u32 next0 = MMB_NEXT_LOOKUP; // MMB_NEXT_INTERFACE_OUTPUT
-      u32 next1 = MMB_NEXT_LOOKUP;
-      u32 sw_if_index0, sw_if_index1;
-      ip4_header_t *ip0, *ip1;
-      u32 bi0, bi1;
-      vlib_buffer_t *b0, *b1;
-          
-      // Prefetch next iteration. 
-      {
-        vlib_buffer_t * p2, * p3;
-            
-        p2 = vlib_get_buffer (vm, from[2]);
-        p3 = vlib_get_buffer (vm, from[3]);
-            
-        vlib_prefetch_buffer_header (p2, LOAD);
-        vlib_prefetch_buffer_header (p3, LOAD);
-
-        CLIB_PREFETCH (p2->data, CLIB_CACHE_LINE_BYTES, STORE);
-        CLIB_PREFETCH (p3->data, CLIB_CACHE_LINE_BYTES, STORE);
-      }
-
-      // speculatively enqueue b0 and b1 to the current next frame 
-      to_next[0] = bi0 = from[0];
-      to_next[1] = bi1 = from[1];
-      from += 2;
-      to_next += 2;
-      n_left_from -= 2;
-      n_left_to_next -= 2;
-
-      b0 = vlib_get_buffer (vm, bi0);
-      b1 = vlib_get_buffer (vm, bi1);
-      
-      ASSERT (b0->current_data == 0);
-      ASSERT (b1->current_data == 0);
-
-      ip0 = vlib_buffer_get_current (b0);
-      ip1 = vlib_buffer_get_current (b1);
-
-      pkts_done += 2;
-
-      if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE))) {
-        if (b0->flags & VLIB_BUFFER_IS_TRACED) {
-          mmb_trace_ip_packet(vm, b0, node, ip0, next0);
-        }
-
-        if (b1->flags & VLIB_BUFFER_IS_TRACED) {
-          mmb_trace_ip_packet(vm, b1, node, ip1, next1);
-//TODO: next_index;
-        }
-      }
-            
-      // verify speculative enqueues, maybe switch current next frame 
-      vlib_validate_buffer_enqueue_x2 (vm, node, next_index,
-                                       to_next, n_left_to_next,
-                                       bi0, bi1, next0, next1);
-    } // End of loop 2 packets
-     */
-
     while (n_left_from > 0 && n_left_to_next > 0) { // Loop 1 packet
       u32 bi0;
       vlib_buffer_t * b0;
       u32 next0 = MMB_NEXT_LOOKUP;
-      //u32 sw_if_index0;
+      u32 sw_if_index0;
       ip4_header_t *ip0;
 
       /* speculatively enqueue b0 to the current next frame */
@@ -278,11 +220,6 @@ mmb_node_fn(vlib_main_t * vm, vlib_node_runtime_t * node,
       }
       */
 
-      /*sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
-
-      // Send pkt back out the RX interface 
-      vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;*/
-
       pkts_done += 1;
 
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
@@ -304,6 +241,7 @@ mmb_node_fn(vlib_main_t * vm, vlib_node_runtime_t * node,
   return frame->n_vectors;
 }
 
+vlib_node_registration_t mmb_node;
 VLIB_REGISTER_NODE (mmb_node) = {
   .function = mmb_node_fn,
   .name = "mmb",
@@ -318,7 +256,7 @@ VLIB_REGISTER_NODE (mmb_node) = {
 
   .next_nodes = {
         [MMB_NEXT_DROP] = "error-drop",  //ip4-drop
-        //[MMB_NEXT_LOOKUP] = "interface-output",
+        [MMB_NEXT_INTERFACE_OUTPUT] = "interface-output",
         [MMB_NEXT_ICMP_ERROR] = "ip4-icmp-error",
         [MMB_NEXT_LOOKUP] = "ip4-lookup",
   },

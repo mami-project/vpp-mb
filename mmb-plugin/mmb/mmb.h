@@ -174,7 +174,7 @@ typedef struct {
    //snat_interface_t * interfaces;
 
    /* convenience */
-   vnet_main_t * vnet_main;
+   vnet_main_t *vnet_main;
 } mmb_main_t;
 
 mmb_main_t mmb_main;

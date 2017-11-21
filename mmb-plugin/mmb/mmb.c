@@ -125,28 +125,6 @@ static clib_error_t *validate_rule();
  *
  * Action function shared between message handler and debug CLI.
  */
-
-int mmb_enable_disable (mmb_main_t *mm, u32 sw_if_index,
-                                   int enable_disable) {
-  vnet_sw_interface_t * sw;
-  int rv = 0;
-
-  /* Utterly wrong? */
-  if (pool_is_free_index (mm->vnet_main->interface_main.sw_interfaces, 
-                          sw_if_index))
-    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
-
-  /* Not a physical port? */
-  sw = vnet_get_sw_interface (mm->vnet_main, sw_if_index);
-  if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
-    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
-  
-  vnet_feature_enable_disable ("ip4-unicast", "mmb",
-                               sw_if_index, enable_disable, 0, 0);
-
-  return rv;
-}
-
 static clib_error_t *
 mmb_enable_disable_fn (vlib_main_t * vm,
                    unformat_input_t * input,
@@ -166,7 +144,6 @@ mmb_enable_disable_fn (vlib_main_t * vm,
   if (sw_if_index == ~0)
     return clib_error_return(0, "Please specify an interface...");
     
-  //rv = mmb_enable_disable(mm, sw_if_index, enable_disable);
   vnet_feature_enable_disable ("ip4-unicast", "mmb",
                                sw_if_index, enable_disable, 0, 0);
   //TODO check if itf is not already enabled
@@ -182,7 +159,7 @@ mmb_enable_disable_fn (vlib_main_t * vm,
       return clib_error_return(0, "Device driver doesn't support redirection");
 
     default:
-      return clib_error_return(0, "mmb_enable_disable returned %d", rv);
+      return clib_error_return(0, "mmb_enable_disable error %d", rv);
   }
 
   return 0;
@@ -281,6 +258,18 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   vl_print(vm, "%U", mmb_format_rule, &rule);
   mmb_main_t *mm = &mmb_main;
   vec_add1(mm->rules, rule);
+
+  
+ int vnet_classify_add_del_table (vnet_classify_main_t * cm, // &vnet_classify_main
+                                  u8 * mask, 
+                                  32,
+                                  u32 memory_size, // 16*(1 + match_n_vectors)
+                                  1,
+                                  u32 match, 
+                                  u32 next_table_index,
+                                  MMB_NEXT_LOOKUP,
+                                  u32 * table_index,
+                                  1);
   return 0;
 }
 
