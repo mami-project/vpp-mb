@@ -329,72 +329,54 @@ u16 get_field_protocol(u8 field) {
    return 0;
 }
 
-static clib_error_t *derive_l4(mmb_rule_t *rule) {
-  u8 l4 = IP_PROTOCOL_RESERVED;
-  
-  inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
-    
-    u16 proto = get_field_protocol(field);
-    switch (proto) {
-      case IP_PROTOCOL_ICMP:case IP_PROTOCOL_UDP:
-      case IP_PROTOCOL_TCP:
+static_always_inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
+ 
+ u16 proto = get_field_protocol(field);
+ switch (proto) {
+   case IP_PROTOCOL_ICMP:case IP_PROTOCOL_UDP:
+   case IP_PROTOCOL_TCP:
 
-         if (*derived_l4 == IP_PROTOCOL_RESERVED) 
-           *derived_l4 = proto;
-         else if (*derived_l4 != proto)
-           return clib_error_return(0, "Multiple l4 protocols");
-      default:
-        break;
-    }
+      if (*derived_l4 == IP_PROTOCOL_RESERVED) 
+        *derived_l4 = proto;
+      else if (*derived_l4 != proto)
+        return clib_error_return(0, "Multiple l4 protocols");
+   default:
+     break;
+ }
 
-    return NULL;
-  }
-
-  clib_error_t *error;
-  uword index;
-  vec_foreach_index(index, rule->matches) {
-    mmb_match_t *match = &rule->matches[index];
-    u8 field = match->field;
-    if ( (error = update_l4(field, &l4)) )
-      return error;
-  }
-  vec_foreach_index(index, rule->targets) {
-    mmb_target_t *target = &rule->targets[index];
-    u8 field = target->field;
-    if ( (error = update_l4(field, &l4)) )
-      return error;
-  }
-
-  rule->l4 = l4;
-  return NULL;
+ return NULL;
 }
 
 clib_error_t *validate_rule(mmb_rule_t *rule) {
-   //TODO: validate
+   //TODO: more validation
    uword index = 0;
-   
    clib_error_t *error;
-   if ( (error = derive_l4(rule)) )
-     return error;
+
    rule->l3 = ETHERNET_TYPE_IP4;
+   rule->l4 = IP_PROTOCOL_RESERVED;
 
    /* matches */
    vec_foreach_index(index, rule->matches) {
      mmb_match_t *match = &rule->matches[index];
+     u8 field = match->field, reverse = match->reverse;
+     u8 condition = match->condition, *value = match->value;
 
-     switch (match->field) {
+     if ( (error = update_l4(field, &rule->l4)) )
+       return error;
+
+     switch (field) {
        case MMB_FIELD_ALL:
          /* other fields must be empty, and no other matches */
-         if (match->condition || vec_len(match->value) > 0 || match->reverse
+         if (condition || vec_len(value) > 0 || reverse
              || vec_len(rule->matches) > 1)
            return clib_error_return(0, "'all' in a <match> must be used alone");
          break;
 
        case MMB_FIELD_IP_NON_ECT:case MMB_FIELD_IP_ECT0:
        case MMB_FIELD_IP_ECT1:case MMB_FIELD_IP_CE:
-         if (vec_len(match->value) > 0)
+         if (vec_len(value) > 0)
            return clib_error_return(0, "%s does not take a condition nor a value", 
-                                    fields[field_toindex(match->field)]);
+                                    fields[field_toindex(field)]);
          translate_match_ip4_ecn(match);
          break;
 
@@ -409,12 +391,16 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
        case MMB_FIELD_TCP_SYN:case MMB_FIELD_TCP_FIN:
          /* "bit-field" or "!bit-field" means "bit-field == 1" or "bit-field == 0" */
          /* so this does NOT mean "bit-field is (not) present in current packet" */
-         if (vec_len(match->value) == 0)
+         if (vec_len(value) == 0)
            translate_match_bit_flags(match);
          break;
-#define _(a,b,c) case a: {match->field = MMB_FIELD_TCP_OPT; match->opt_kind=c;break;}
+#define _(a,b,c) case a: {match->field = MMB_FIELD_TCP_OPT;match->opt_kind=c;\
+                          rule->flags |= MMB_RULE_MATCHES_CONTAIN_OPTS;break;}
    foreach_mmb_tcp_opts
 #undef _
+       case MMB_FIELD_TCP_OPT:
+         rule->flags |= MMB_RULE_MATCHES_CONTAIN_OPTS;
+         break;
        default:
          break;
      }
@@ -423,50 +409,62 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
    /* targets */
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
+     u8 field = target->field, reverse = target->reverse;
+     u8 keyword = target->keyword, *value = target->value;
 
-     switch (target->field) {
+     if ( (error = update_l4(field, &rule->l4)) )
+       return error;
+
+     switch (field) {
        case MMB_FIELD_ALL:
-         if (target->keyword != MMB_TARGET_STRIP || vec_len(target->value))
+         if (keyword != MMB_TARGET_STRIP || vec_len(value))
            return clib_error_return(0, "'all' in a <target> can only be used"
                                      " with the 'strip' keyword and no value");
-         if (target->reverse)
+         if (reverse)
            return clib_error_return(0, "<target> has no effect");
          break;
 
        case MMB_FIELD_IP_NON_ECT:case MMB_FIELD_IP_ECT0:
        case MMB_FIELD_IP_ECT1:case MMB_FIELD_IP_CE:
-         if (vec_len(target->value) > 0)
+         if (vec_len(value) > 0)
            return clib_error_return(0, "%s does not take a condition nor a value", 
-                                    fields[field_toindex(target->field)]);
+                                    fields[field_toindex(field)]);
          translate_target_ip4_ecn(target);
          break;
 
-#define _(a,b,c) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=c;break;}
+#define _(a,b,c) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=c;\
+                          rule->flags |= MMB_RULE_TARGETS_CONTAIN_OPTS;break;}
    foreach_mmb_tcp_opts
 #undef _
 
        //TODO: other "bit fields" (see above in "matches" part)
+       case MMB_FIELD_TCP_OPT:
+         rule->flags |= MMB_RULE_TARGETS_CONTAIN_OPTS;
+         break;
        default:
          break;
      }
 
      /* Ensure that field of strip target is a tcp opt. */
-     if (target->keyword == MMB_TARGET_STRIP) {
+     if (keyword == MMB_TARGET_STRIP) {
 
-       if  (!(MMB_FIELD_TCP_OPT_MSS <= target->field 
-             && target->field <= MMB_FIELD_ALL))
+       if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
+             && field <= MMB_FIELD_ALL))
          return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
 
        /* build option strip list  */
-       if (vec_len(rule->opts) == 0)
-         rule->whitelist = target->reverse;
-       else if (rule->whitelist != target->reverse)
+       if (vec_len(rule->opts) == 0)  {
+         rule->flags |= MMB_RULE_CONTAIN_STRIPS;
+         /* first strip target, set type */
+         if (reverse)
+            rule->flags |= MMB_RULE_WHITELIST;
+       } else if (!!(rule->flags & MMB_RULE_WHITELIST) != reverse)
          return clib_error_return(0, "inconsistent use of ! in strip");
        vec_add1(rule->opts, target->opt_kind);
 
-     } else if (target->keyword == MMB_TARGET_MODIFY) 
+     } else if (keyword == MMB_TARGET_MODIFY) 
        ;
-   }
+   } 
 
    return NULL;
 }

@@ -137,7 +137,6 @@ _(MMB_FIELD_TCP_OPT_TIMESTAMP,Timestamp,8)      \
 _(MMB_FIELD_TCP_OPT_FAST_OPEN,Fast Open,34)      \
 _(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)                                    
 
-
 typedef struct {
    u8 field; /*! The field to match on */
    u8 opt_kind; /*! The kind of option, if the field is one */
@@ -154,13 +153,20 @@ typedef struct {
    u8 reverse; /*! whitelist (strip only) */
 } mmb_target_t;
 
+
+
 typedef struct {
   u16 l3;
   u8 l4;
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
 
-  u8 whitelist; /*! 1: whitelist 0: blacklist */
+/* mmb_rule_t flags */
+#define MMB_RULE_CONTAIN_STRIPS (1 << 0)
+#define MMB_RULE_WHITELIST (1 << 1)
+#define MMB_RULE_MATCHES_CONTAIN_OPTS (1 << 2)
+#define MMB_RULE_TARGETS_CONTAIN_OPTS (1 << 3)
+  u8 flags;
   u8 *opts;
 } mmb_rule_t;
 
