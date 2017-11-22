@@ -123,19 +123,19 @@ uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
 }
 
 uword mmb_unformat_value(unformat_input_t * input, va_list *args) {
-  u8 **bytes = va_arg(*args, u8**);
-  u8 found_l4 = 0;
-  u16 found_l3 = 0;
-  u32 if_sw_index = ~0;
-  u64 decimal = 0;
-  mmb_main_t mm = mmb_main;
+   u8 **bytes = va_arg(*args, u8**);
+   u8 found_l4 = 0;
+   u16 found_l3 = 0;
+   u32 if_sw_index = ~0;
+   u64 decimal = 0;
+   mmb_main_t mm = mmb_main;
 
    /* protocol names */
    if (0);
-#define _(a,b) else if (unformat (input, #a)) found_l4 = IP_PROTOCOL_##b;
+#define _(a,b) else if (unformat (input, #a" ")) found_l4 = IP_PROTOCOL_##b;
    foreach_mmb_transport_proto
 #undef _
-#define _(a,b) else if (unformat (input, #a)) found_l3 = ETHERNET_TYPE_##b;
+#define _(a,b) else if (unformat (input, #a" ")) found_l3 = ETHERNET_TYPE_##b;
    foreach_mmb_network_proto
 #undef _
 
