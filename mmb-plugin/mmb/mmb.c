@@ -66,8 +66,9 @@ VLIB_PLUGIN_REGISTER () = {
 };
 /* *INDENT-ON* */
 
-const u8 fields_len = 58;
+const u8 fields_len = 60;
 const char* fields[] = {
+  "in", "out",
   "net-proto", "ip-ver", "ip-ihl",
   "ip-dscp", "ip-ecn", "ip-non-ect",
   "ip-ect0", "ip-ect1", "ip-ce",
@@ -77,8 +78,8 @@ const char* fields[] = {
   "ip-checksum", "ip-saddr", "ip-daddr",
   "icmp-type", "icmp-code", "icmp-checksum",
   "icmp-payload", "udp-sport", "udp-dport",
-  "udp-len", "udp-checksum", "udp-payload",
-  "tcp-sport", "tcp-dport", "tcp-seq-num",
+  "udp-len", "udp-checksum", "udp-payload", /* 10 */
+  "tcp-sport", "tcp-dport", "tcp-seq-num", 
   "tcp-ack-num", "tcp-offset", "tcp-reserved",
   "tcp-urg-ptr", "tcp-cwr", "tcp-ece", 
   "tcp-urg", "tcp-ack", "tcp-push", 
@@ -90,8 +91,8 @@ const char* fields[] = {
   "all"
 };
 
-const u8 lens_len = 58;
 const u8 lens[] = {
+  4, 4,
   2, 1, 1,
   1, 1, 1,
   1, 1, 1,
@@ -101,7 +102,7 @@ const u8 lens[] = {
   2, 5, 5,
   1, 1, 2,
   0, 2, 2,
-  2, 2, 0,
+  2, 2, 0, /* 10 */
   2, 2, 4,
   4, 1, 1,
   2, 1, 1, 
@@ -119,6 +120,8 @@ const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
 static void mmb_free_rule(mmb_rule_t *rule);
 static clib_error_t *validate_rule();
+static clib_error_t *validate_matches(mmb_rule_t *rule);
+static clib_error_t *validate_targets(mmb_rule_t *rule);
 
 static clib_error_t *
 mmb_enable_disable_fn (vlib_main_t * vm,
@@ -279,6 +282,7 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   mmb_rule_t rule;
   memset(&rule, 0, sizeof(mmb_rule_t));
+  rule.in = rule.out = ~0;
   rule.matches = matches;
   rule.targets = targets;
 
@@ -328,7 +332,7 @@ static_always_inline void translate_match_bit_flags(mmb_match_t *match) {
 }
 
 u16 get_field_protocol(u8 field) {
-  if (MMB_FIELD_NET_PROTO <= field && field <= MMB_FIELD_IP_DADDR)
+  if (MMB_FIELD_IP_VER <= field && field <= MMB_FIELD_IP_DADDR)
      return ETHERNET_TYPE_IP4;
    else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD)
      return IP_PROTOCOL_ICMP;
@@ -336,7 +340,7 @@ u16 get_field_protocol(u8 field) {
      return IP_PROTOCOL_UDP;
    else if (MMB_FIELD_TCP_SPORT <= field && field <= MMB_FIELD_TCP_OPT)
      return IP_PROTOCOL_TCP;
-   return 0;
+   return IP_PROTOCOL_RESERVED;
 }
 
 static_always_inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
@@ -357,15 +361,45 @@ static_always_inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
  return NULL;
 }
 
-clib_error_t *validate_rule(mmb_rule_t *rule) {
-   //TODO: more validation
-   uword index = 0;
+static_always_inline u32 bytes_to_u32(u8 *bytes) {
+  u32 value = 0;
+  u32 index = 0;
+  const u32 len = 3;
+
+  vec_foreach_index(index, bytes) 
+    value += ((u32) bytes[index]) << (len-index)*8;
+
+  return value;
+}
+
+static_always_inline clib_error_t *
+validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
+   mmb_main_t mm = mmb_main;
+
+   if (vec_len(match->value) == 0)
+      return clib_error_return(0, "missing interface name/index"); 
+   if (match->reverse || match->condition != MMB_COND_EQ)
+      return clib_error_return(0, "invalid interface definition");
+
+   u32 sw_if_index = bytes_to_u32(match->value); 
+   if (vnet_get_sw_interface_safe (mm.vnet_main, sw_if_index) == NULL)
+      return clib_error_return(0, "invalid interface index:%u", sw_if_index);
+
+   if (field == MMB_FIELD_INTERFACE_IN && rule->in == ~0) 
+      rule->in = sw_if_index;
+   else if (field == MMB_FIELD_INTERFACE_OUT && rule->out == ~0)
+      rule->out = sw_if_index;
+   else
+      return clib_error_return(0, "multiple interfaces");
+   
+   return NULL;
+}
+
+clib_error_t *validate_matches(mmb_rule_t *rule) {
    clib_error_t *error;
+   uword index = 0;
+   uword *if_indexes = 0, *if_index;
 
-   rule->l3 = ETHERNET_TYPE_IP4;
-   rule->l4 = IP_PROTOCOL_RESERVED;
-
-   /* matches */
    vec_foreach_index(index, rule->matches) {
      mmb_match_t *match = &rule->matches[index];
      u8 field = match->field, reverse = match->reverse;
@@ -411,12 +445,35 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
        case MMB_FIELD_TCP_OPT:
          rule->flags |= MMB_RULE_MATCHES_CONTAIN_OPTS;
          break;
+       case MMB_FIELD_INTERFACE_IN:  
+       case MMB_FIELD_INTERFACE_OUT:
+          if ( (error = validate_if(rule, match, field)) )
+            return error;
+          vec_insert(if_indexes, 1, index);
+          break;        
        default:
          break;
      }
    }
 
-   /* targets */
+   /* delete interface fields */
+   vec_foreach(if_index, if_indexes) {
+     mmb_match_t *match = &rule->matches[*if_index];
+     vec_free(match->value);
+     if (vec_len(rule->matches) == 1) {
+       match->field = MMB_FIELD_ALL;
+       match->condition = 0;
+     } else  /* del */  
+       vec_delete(rule->matches, 1, *if_index);
+   }
+
+   return NULL;
+}
+
+clib_error_t *validate_targets(mmb_rule_t *rule) {
+   clib_error_t *error;
+   uword index = 0;
+
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
      u8 field = target->field, reverse = target->reverse;
@@ -433,7 +490,9 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
          if (reverse)
            return clib_error_return(0, "<target> has no effect");
          break;
-
+       case MMB_FIELD_INTERFACE_IN:
+       case MMB_FIELD_INTERFACE_OUT:
+          return clib_error_return(0, "invalid field in target");
        case MMB_FIELD_IP_NON_ECT:case MMB_FIELD_IP_ECT0:
        case MMB_FIELD_IP_ECT1:case MMB_FIELD_IP_CE:
          if (vec_len(value) > 0)
@@ -446,7 +505,6 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
                           rule->flags |= MMB_RULE_TARGETS_CONTAIN_OPTS;break;}
    foreach_mmb_tcp_opts
 #undef _
-
        //TODO: other "bit fields" (see above in "matches" part)
        case MMB_FIELD_TCP_OPT:
          rule->flags |= MMB_RULE_TARGETS_CONTAIN_OPTS;
@@ -454,10 +512,10 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
        default:
          break;
      }
-
-     /* Ensure that field of strip target is a tcp opt. */
+     
      if (keyword == MMB_TARGET_STRIP) {
 
+       /* Ensure that field of strip target is a tcp opt. */
        if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
              && field <= MMB_FIELD_ALL))
          return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
@@ -475,6 +533,20 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
      } else if (keyword == MMB_TARGET_MODIFY) 
        ;
    } 
+
+   return NULL;
+}
+
+clib_error_t *validate_rule(mmb_rule_t *rule) {
+   clib_error_t *error; //TODO: more validation
+
+   rule->l3 = ETHERNET_TYPE_IP4;
+   rule->l4 = IP_PROTOCOL_RESERVED;
+
+   if ( (error = validate_matches(rule)) )
+      return error;
+   if ( (error = validate_targets(rule)) )
+      return error; 
 
    return NULL;
 }
@@ -520,6 +592,7 @@ void mmb_free_rule(mmb_rule_t *rule) {
     vec_free(rule->targets[index].value);
   }
   vec_free(rule->targets);
+  vec_free(rule->opts);
 }
 
 /**

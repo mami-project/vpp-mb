@@ -123,16 +123,19 @@ uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
 }
 
 uword mmb_unformat_value(unformat_input_t * input, va_list *args) {
-  u8 **bytes = va_arg(*args, u8**);
-  u8 found_l4 = 0;
-  u16 found_l3 = 0;
-  u64 decimal = 0;
+   u8 **bytes = va_arg(*args, u8**);
+   u8 found_l4 = 0;
+   u16 found_l3 = 0;
+   u32 if_sw_index = ~0;
+   u64 decimal = 0;
+   mmb_main_t mm = mmb_main;
 
+   /* protocol names */
    if (0);
-#define _(a,b) else if (unformat (input, #a)) found_l4 = IP_PROTOCOL_##b;
+#define _(a,b) else if (unformat (input, #a" ")) found_l4 = IP_PROTOCOL_##b;
    foreach_mmb_transport_proto
 #undef _
-#define _(a,b) else if (unformat (input, #a)) found_l3 = ETHERNET_TYPE_##b;
+#define _(a,b) else if (unformat (input, #a" ")) found_l3 = ETHERNET_TYPE_##b;
    foreach_mmb_network_proto
 #undef _
 
@@ -144,6 +147,14 @@ uword mmb_unformat_value(unformat_input_t * input, va_list *args) {
     return 1;
   }
 
+  /* if names */
+  if (unformat(input, "%U", unformat_vnet_sw_interface, 
+               mm.vnet_main, &if_sw_index)) {
+    u64_tobytes(bytes, if_sw_index, 4);
+    return 1;
+  }
+
+  /* dec/hex value */
   if (unformat(input, "%U", mmb_unformat_ip4_address, bytes))   
     ;
   else if (unformat (input, "0x") 
@@ -226,8 +237,8 @@ u8* mmb_format_field(u8* s, va_list *args) {
    u8 kind  = *va_arg(*args, u8*);
 
    u8 field_index = field_toindex(field);
-   if (field < MMB_FIELD_NET_PROTO 
-    || field > MMB_FIELD_NET_PROTO+fields_len)
+   if (field < MMB_FIRST_FIELD 
+    || field > MMB_LAST_FIELD)
      ; 
    else if (field == MMB_FIELD_TCP_OPT && kind) {
      if (0);
@@ -271,23 +282,32 @@ u8* mmb_format_keyword(u8* s, va_list *args) {
   return format(s, "%s", keyword_str);
 }
 
-static_always_inline u8 *mmb_format_ip_protocol (u8 * s, va_list *args)
-{
+static_always_inline u8 *mmb_format_ip_protocol (u8 * s, va_list *args) {
   u8 protocol = va_arg (*args, ip_protocol_t);
   if (protocol == IP_PROTOCOL_RESERVED)
     return format(s, "all");
   return format(s, "%U", format_ip_protocol, protocol);
 }
 
+static_always_inline u8 *mmb_format_if_sw_index(u8 *s, va_list *args) {
+  u32 sw_if_index = va_arg (*args, u32);
+  mmb_main_t mm = mmb_main;
+  if (sw_if_index == ~0)
+    return format(s, "all");
+  return format(s, "%U", format_vnet_sw_if_index_name, 
+                mm.vnet_main, sw_if_index);
+}
+
 u8 *mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
-  s = format(s, "%-4U\t%-8U", format_ethernet_type, rule->l3, 
-                              mmb_format_ip_protocol, rule->l4); 
+  s = format(s, "l3:%U l4:%U in:%U out:%U ", format_ethernet_type, rule->l3, 
+             mmb_format_ip_protocol, rule->l4, mmb_format_if_sw_index, rule->in, 
+             mmb_format_if_sw_index, rule->out);
   
   uword index = 0;
   vec_foreach_index(index, rule->matches) {
     s = format(s, "%U%s", mmb_format_match, &rule->matches[index],
-                        (index != vec_len(rule->matches)-1) ? " AND ":"\t");
+                        (index != vec_len(rule->matches)-1) ? " AND ":" ");
   }
 
   vec_foreach_index(index, rule->targets) {
@@ -300,9 +320,11 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
 static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
 
-  s = format(s, "%-4U  %-8U",
+  s = format(s, "%-4U  %-8U %-16U %-16U",
                 format_ethernet_type, rule->l3, 
-                mmb_format_ip_protocol, rule->l4); 
+                mmb_format_ip_protocol, rule->l4,
+                mmb_format_if_sw_index, rule->in,
+                mmb_format_if_sw_index, rule->out); 
   
   for (uword index = 0; 
        index<clib_max(vec_len(rule->matches), vec_len(rule->targets)); 
@@ -310,11 +332,11 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
     if (index < vec_len(rule->matches)) {
       /* tabulate empty line */
       if (index) 
-        s = format(s, "%22s", "AND ");
+        s = format(s, "%56s", "AND ");
       s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
 
     } else  
-      s = format(s, "%62s", blanks);
+      s = format(s, "%96s", blanks);
 
     if (index < vec_len(rule->targets)) 
       s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
@@ -324,16 +346,15 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
   return s;
 }
 
-static_always_inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
+static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
   u8 *byte, *bytes = va_arg(*args, u8*);
   u8 field = va_arg(*args, u32);
+
   switch (field) {
     case MMB_FIELD_IP_SADDR:
     case MMB_FIELD_IP_DADDR:
       s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
-      break;
-
-    
+      break;// TODO:
     default:
       vec_foreach(byte, bytes) {
         s = format(s, "%02x", *byte);
@@ -349,7 +370,7 @@ u8 *mmb_format_match(u8 *s, va_list *args) {
   return format(s, "%s%U %U %U", (match->reverse) ? "! ":"",
                           mmb_format_field, &match->field, &match->opt_kind,
                           mmb_format_condition, &match->condition,
-                          mmb_format_bytes, match->value, match->field
+                          mmb_format_value, match->value, match->field
                           );
 } 
 
@@ -359,15 +380,15 @@ u8 *mmb_format_target(u8 *s, va_list *args) {
   return format(s, "%s%U %U %U", (target->reverse) ? "! ":"",
                          mmb_format_keyword, &target->keyword,
                          mmb_format_field, &target->field, &target->opt_kind,
-                         mmb_format_bytes, target->value, target->field
+                         mmb_format_value, target->value, target->field
                          );
 }
 
 u8 *mmb_format_rules(u8 *s, va_list *args) {
   mmb_rule_t *rules = va_arg(*args, mmb_rule_t*);
 
-  s = format(s, " Index%2sL3%4sL4%6sMatches%33sTargets\n", 
-                blanks, blanks, blanks, blanks);
+  s = format(s, " Index%2sL3%4sL4%7sin%15sout%13sMatches%33sTargets\n", 
+                blanks, blanks, blanks, blanks, blanks, blanks);
   uword rule_index = 0;
   vec_foreach_index(rule_index, rules) {
     s = format(s, " %d\t%U%s", rule_index+1, mmb_format_rule_column, 
