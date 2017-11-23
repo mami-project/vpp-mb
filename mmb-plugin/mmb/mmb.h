@@ -164,7 +164,7 @@ typedef struct {
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
 
-/* mmb_rule_t flags */
+/* mmb_rule_t flags TODO:bitfields */
 #define MMB_RULE_CONTAIN_STRIPS (1 << 0)
 #define MMB_RULE_WHITELIST (1 << 1)
 #define MMB_RULE_MATCHES_CONTAIN_OPTS (1 << 2)

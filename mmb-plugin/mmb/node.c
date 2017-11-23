@@ -19,7 +19,7 @@
 #include <mmb/mmb.h>
 
 #define foreach_mmb_next_node \
-  _(LOOKUP, "Lookup")         \
+  _(FORWARD, "Forward")         \
   _(DROP, "Drop")
 
 typedef enum {
@@ -36,8 +36,6 @@ typedef struct {
   ip4_address_t dst_address;
   u32 next;
 } mmb_trace_t;
-
-vlib_node_registration_t mmb_node;
 
 #define foreach_mmb_error \
 _(DONE, "MMB packets processed")
@@ -95,11 +93,18 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   return s;
 }
 
+/*static_always_inline mmb_rule_t* get_rules() {
+  if (is_input)
+    sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
+  else
+    sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_TX];
+  
+}*/
+
 static uword
-mmb_node_fn (vlib_main_t * vm,
-		  vlib_node_runtime_t * node,
-		  vlib_frame_t * frame)
-{
+mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
+             vlib_frame_t *frame, int is_ip6, int is_input,
+             vlib_node_registration_t *mmb_node) {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
 
@@ -107,7 +112,7 @@ mmb_node_fn (vlib_main_t * vm,
   mmb_next_t next_index;
   u32 pkts_done = 0;
 
-  from = vlib_frame_vector_args (frame);
+  from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
 
@@ -118,76 +123,11 @@ mmb_node_fn (vlib_main_t * vm,
     vlib_get_next_frame (vm, node, next_index,
 			 to_next, n_left_to_next);
 
-    while (n_left_from >= 4 && n_left_to_next >= 2)
-    {
-      u32 next0 = MMB_NEXT_LOOKUP;
-      u32 next1 = MMB_NEXT_LOOKUP;
-      ip4_header_t *ip0, *ip1;
-      u32 bi0, bi1;
-      vlib_buffer_t * b0, * b1;
-          
-      /* Prefetch next iteration. */
-      {
-        vlib_buffer_t * p2, * p3;
-            
-        p2 = vlib_get_buffer (vm, from[2]);
-        p3 = vlib_get_buffer (vm, from[3]);
-            
-        vlib_prefetch_buffer_header (p2, LOAD);
-        vlib_prefetch_buffer_header (p3, LOAD);
-
-        CLIB_PREFETCH (p2->data, CLIB_CACHE_LINE_BYTES, STORE);
-        CLIB_PREFETCH (p3->data, CLIB_CACHE_LINE_BYTES, STORE);
-      }
-
-      /* speculatively enqueue b0 and b1 to the current next frame */
-      to_next[0] = bi0 = from[0];
-      to_next[1] = bi1 = from[1];
-      from += 2;
-      to_next += 2;
-      n_left_from -= 2;
-      n_left_to_next -= 2;
-
-      b0 = vlib_get_buffer (vm, bi0);
-      b1 = vlib_get_buffer (vm, bi1);
-      
-      ip0 = vlib_buffer_get_current (b0);
-      ip1 = vlib_buffer_get_current (b1);
-
-      pkts_done += 2;
-
-      if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
-      {
-        if (b0->flags & VLIB_BUFFER_IS_TRACED) 
-        {
-          mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
-          t->proto = ip0->protocol;
-          t->src_address.as_u32 = ip0->src_address.as_u32;
-          t->dst_address.as_u32 = ip0->dst_address.as_u32;
-          t->next = next0;
-        }
-
-        if (b1->flags & VLIB_BUFFER_IS_TRACED) 
-        {
-          mmb_trace_t *t = vlib_add_trace (vm, node, b1, sizeof (*t));
-          t->proto = ip1->protocol;
-          t->src_address.as_u32 = ip1->src_address.as_u32;
-          t->dst_address.as_u32 = ip1->dst_address.as_u32;
-          t->next = next1;
-        }
-      }
-            
-      /* verify speculative enqueues, maybe switch current next frame */
-      vlib_validate_buffer_enqueue_x2 (vm, node, next_index,
-                                       to_next, n_left_to_next,
-                                       bi0, bi1, next0, next1);
-    }
-
     while (n_left_from > 0 && n_left_to_next > 0)
     {
       u32 bi0;
       vlib_buffer_t * b0;
-      u32 next0 = MMB_NEXT_LOOKUP;
+      u32 next0 = MMB_NEXT_FORWARD;
       ip4_header_t *ip0;
 
       /* speculatively enqueue b0 to the current next frame */
@@ -215,7 +155,7 @@ mmb_node_fn (vlib_main_t * vm,
            - for each match in this rule
               - MATCH: process each target in this rule
               - NO MATCH: go to next rule
-      */
+      
       uword index_rule = 0;
       vec_foreach_index(index_rule, rules)
       {
@@ -228,7 +168,8 @@ mmb_node_fn (vlib_main_t * vm,
 
           // case: ip-proto == 1 (icmp) and current packet matches
           if (match->field == MMB_FIELD_IP_PROTO && match->condition == MMB_COND_EQ 
-              /*&& !strcmp(match->value, "0000000000000001")*/ && ip0->protocol == IP_PROTOCOL_ICMP)
+              //&& !strcmp(match->value, "0000000000000001") 
+                && ip0->protocol == IP_PROTOCOL_ICMP)
           {
             uword index_target = 0;
             vec_foreach_index(index_target, rule->targets)
@@ -243,7 +184,7 @@ mmb_node_fn (vlib_main_t * vm,
         }
       }
 
-      /* apply rules on TCP and UDP packets only */
+      // apply rules on TCP and UDP packets only 
       switch(ip0->protocol)
       {
         case IP_PROTOCOL_TCP: ;
@@ -257,7 +198,7 @@ mmb_node_fn (vlib_main_t * vm,
           break;
 
         default: ;
-      }
+      }*/
 
       pkts_done += 1;
 
@@ -280,28 +221,132 @@ mmb_node_fn (vlib_main_t * vm,
     vlib_put_next_frame (vm, node, next_index, n_left_to_next);
   }
 
-  vlib_node_increment_counter (vm, mmb_node.index, 
+  vlib_node_increment_counter (vm, mmb_node->index, 
                                MMB_ERROR_DONE, pkts_done);
   return frame->n_vectors;
 }
 
-VLIB_REGISTER_NODE (mmb_node) = {
-  .function = mmb_node_fn,
-  .name = "mmb",
+vlib_node_registration_t mmb_ip4_in_node;
+static uword
+mmb_node_ip4_in_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
+                    vlib_frame_t *frame) {
+  return mmb_node_fn(vm, node, frame, 0, 1, &mmb_ip4_in_node);
+}
+
+vlib_node_registration_t mmb_ip4_out_node;
+static uword
+mmb_node_ip4_out_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
+                    vlib_frame_t *frame) {
+  return mmb_node_fn(vm, node, frame, 0, 0, &mmb_ip4_out_node);
+}
+
+vlib_node_registration_t mmb_ip6_in_node;
+static uword
+mmb_node_ip6_in_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
+                    vlib_frame_t *frame) {
+  return mmb_node_fn(vm, node, frame, 1, 1, &mmb_ip6_in_node);
+}
+
+vlib_node_registration_t mmb_ip6_out_node;
+static uword
+mmb_node_ip6_out_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
+                    vlib_frame_t *frame) {
+  return mmb_node_fn(vm, node, frame, 1, 0, &mmb_ip6_out_node);
+}
+
+VLIB_REGISTER_NODE(mmb_ip4_in_node) =
+{
+  .function = mmb_node_ip4_in_fn,
+  .name = "mmb-plugin-ip4-in",
   .vector_size = sizeof (u32),
   .format_trace = format_mmb_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
-  
   .n_errors = ARRAY_LEN(mmb_error_strings),
   .error_strings = mmb_error_strings,
 
   .n_next_nodes = MMB_N_NEXT,
-
   .next_nodes = {
-        [MMB_NEXT_LOOKUP] = "ip4-lookup",
-        [MMB_NEXT_DROP]   = "error-drop",
-  },
+    [MMB_NEXT_FORWARD]   = "ip4-lookup",
+    [MMB_NEXT_DROP]   = "error-drop",
+  }
 };
 
-VLIB_NODE_FUNCTION_MULTIARCH(mmb_node, mmb_node_fn);
+VNET_FEATURE_INIT (mmb_ip4_in_feature, static) = {
+  .arc_name = "ip4-unicast",
+  .node_name = "mmb-plugin-ip4-in",
+  .runs_before = VNET_FEATURES("ip4-lookup"), 
+};
+
+VLIB_REGISTER_NODE(mmb_ip4_out_node) =
+{
+  .function = mmb_node_ip4_out_fn,
+  .name = "mmb-plugin-ip4-out",
+  .vector_size = sizeof(u32),
+  .format_trace = format_mmb_trace,
+  .type = VLIB_NODE_TYPE_INTERNAL,
+  .n_errors = ARRAY_LEN(mmb_error_strings),
+  .error_strings = mmb_error_strings,
+
+  .n_next_nodes = MMB_N_NEXT,
+  .next_nodes = {
+    [MMB_NEXT_FORWARD]   = "interface-output",
+    [MMB_NEXT_DROP]   = "error-drop",
+  }
+};
+
+VNET_FEATURE_INIT (mmb_ip4_out_feature, static) = {
+  .arc_name = "ip4-output",
+  .node_name = "mmb-plugin-ip4-out",
+  .runs_before = VNET_FEATURES("interface-output"), 
+};
+
+
+VLIB_REGISTER_NODE(mmb_ip6_in_node) =
+{
+  .function = mmb_node_ip6_in_fn,
+  .name = "mmb-plugin-ip6-in",
+  .vector_size = sizeof(u32),
+  .format_trace = format_mmb_trace,
+  .type = VLIB_NODE_TYPE_INTERNAL,
+  .n_errors = ARRAY_LEN(mmb_error_strings),
+  .error_strings = mmb_error_strings,
+
+  .n_next_nodes = MMB_N_NEXT,
+  .next_nodes = {
+    [MMB_NEXT_FORWARD]   = "ip6-lookup",
+    [MMB_NEXT_DROP]   = "error-drop",
+  }
+};
+
+VNET_FEATURE_INIT (mmb_ip6_in_feature, static) = {
+  .arc_name = "ip6-unicast",
+  .node_name = "mmb-plugin-ip6-in",
+  .runs_before = VNET_FEATURES("ip6-lookup"), 
+};
+
+VLIB_REGISTER_NODE(mmb_ip6_out_node) =
+{
+  .function = mmb_node_ip6_out_fn,
+  .name = "mmb-plugin-ip6-out",
+  .vector_size = sizeof(u32),
+  .format_trace = format_mmb_trace,
+  .type = VLIB_NODE_TYPE_INTERNAL,
+  .n_errors = ARRAY_LEN(mmb_error_strings),
+  .error_strings = mmb_error_strings,
+
+  .n_next_nodes = MMB_N_NEXT,
+  .next_nodes = {
+    [MMB_NEXT_FORWARD]   = "interface-output",
+    [MMB_NEXT_DROP] = "error-drop",
+  }
+};
+
+VNET_FEATURE_INIT (mmb_ip6_out_feature, static) = {
+  .arc_name = "ip6-output",
+  .node_name = "mmb-plugin-ip6-out",
+  .runs_before = VNET_FEATURES("interface-output"), 
+};
+
+
+//VLIB_NODE_FUNCTION_MULTIARCH(mmb_node, mmb_node_fn);
 
