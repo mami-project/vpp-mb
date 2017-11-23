@@ -34,6 +34,7 @@ typedef struct {
   u8  proto;
   ip4_address_t src_address;
   ip4_address_t dst_address;
+  u32 sw_if_index;
   u32 next;
 } mmb_trace_t;
 
@@ -76,16 +77,19 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   mmb_trace_t * t = va_arg (*args, mmb_trace_t *);
-  
+  mmb_main_t mm = mmb_main;
+
   if (t->rule_index != 0) 
-    s = format(s, "mmb: sa:%U da:%U %U pkt matched rule %u, target %U\n",
+    s = format(s, "mmb: if_index:%U sa:%U da:%U %U pkt matched rule %u, target %U\n",
+                   format_vnet_sw_if_index_name, mm.vnet_main, t->sw_if_index,
                    format_ip4_address, t->src_address.data,
                    format_ip4_address, t->dst_address.data,
                    format_ip_protocol, t->proto,
                    t->rule_index,
                    mmb_format_next_node, t->next);
   else 
-    s = format(s, "mmb: sa:%U da:%U %U pkt unmatched\n", 
+    s = format(s, "mmb: if_index:%U sa:%U da:%U %U pkt unmatched\n", 
+                   format_vnet_sw_if_index_name, mm.vnet_main, t->sw_if_index,
                    format_ip4_address, t->src_address.data,
                    format_ip4_address, t->dst_address.data,
                    format_ip_protocol, t->proto);
@@ -100,8 +104,7 @@ static_always_inline u32 get_sw_if_index(vlib_buffer_t *b, int is_input) {
     return vnet_buffer(b)->sw_if_index[VLIB_TX];
 }
 
-static_always_inline void *
-get_ip_header(vlib_buffer_t *b, int is_input) {
+static_always_inline void *get_ip_header(vlib_buffer_t *b, int is_input) {
   u8 *p = vlib_buffer_get_current(b);
   if (!is_input)
     p += ethernet_buffer_header_size(b);
@@ -114,7 +117,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
             vlib_node_registration_t *mmb_node) {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
-  //vl_print(vm, "%u\n", get_sw_if_index(vlib_get_buffer(vm, bi0), is_input));
+
   u32 n_left_from, *from, *to_next;
   mmb_next_t next_index;
   u32 pkts_done = 0;
@@ -122,6 +125,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
+
+  u32 sw_if_index = get_sw_if_index(vlib_get_buffer(vm, from[0]), is_input);
 
   while (n_left_from > 0)
   {
@@ -212,11 +217,12 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
                         && (b0->flags & VLIB_BUFFER_IS_TRACED)))
       {
-        mmb_trace_t *t = vlib_add_trace (vm, node, b0, sizeof (*t));
+        mmb_trace_t *t = vlib_add_trace(vm, node, b0, sizeof (*t));
         t->proto = ip0->protocol;
         t->src_address.as_u32 = ip0->src_address.as_u32;
         t->dst_address.as_u32 = ip0->dst_address.as_u32;
         t->next = next0;
+        t->sw_if_index = sw_if_index;
       }
 
       /* verify speculative enqueue, maybe switch current next frame */
