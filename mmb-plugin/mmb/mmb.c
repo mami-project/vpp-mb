@@ -124,10 +124,10 @@ static clib_error_t *validate_matches(mmb_rule_t *rule);
 static clib_error_t *validate_targets(mmb_rule_t *rule);
 
 static clib_error_t *
-mmb_enable_disable_fn (vlib_main_t * vm,
-                   unformat_input_t * input,
-                   vlib_cli_command_t * cmd,
-                   u32 *sw_if_index) {
+mmb_enable_disable_fn(vlib_main_t * vm,
+                      unformat_input_t * input,
+                      vlib_cli_command_t * cmd,
+                      u32 *sw_if_index) {
   unformat_input_tolower(input);
   mmb_main_t *mm = &mmb_main;
   *sw_if_index = ~0;
@@ -149,10 +149,21 @@ mmb_enable_disable_fn (vlib_main_t * vm,
   return 0;
 }
 
+static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
+   vnet_feature_enable_disable("ip4-unicast", "mmb-plugin-ip4-in", 
+                               sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip6-unicast", "mmb-plugin-ip6-in", 
+                               sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip4-output", "mmb-plugin-ip4-out", 
+                               sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip6-output", "mmb-plugin-ip6-out", 
+                               sw_if_index, enable_disable, 0, 0);
+}
+
 static clib_error_t *
-enable_command_fn (vlib_main_t * vm,
-                   unformat_input_t * input,
-                   vlib_cli_command_t * cmd) {
+enable_command_fn(vlib_main_t * vm,
+                  unformat_input_t * input,
+                  vlib_cli_command_t * cmd) {
    u8 index;
    u32 sw_if_index, enabled_sw_if_index;
    mmb_main_t *mm = &mmb_main;
@@ -171,8 +182,7 @@ enable_command_fn (vlib_main_t * vm,
    }
 
    vec_add1(mm->sw_if_indexes, sw_if_index);
-   vnet_feature_enable_disable ("ip4-unicast", "mmb",
-                                sw_if_index, 1, 0, 0);
+   mmb_enable_disable(sw_if_index, 1);
    vl_print(vm, "mmb enabled on %U\n", format_vnet_sw_if_index_name, 
              mm->vnet_main, sw_if_index);
 
@@ -205,8 +215,7 @@ disable_command_fn (vlib_main_t * vm,
               mm->vnet_main, sw_if_index);
 
    vec_delete(mm->sw_if_indexes, 1, index);
-   vnet_feature_enable_disable ("ip4-unicast", "mmb",
-                                sw_if_index, 0, 0, 0);
+   mmb_enable_disable(sw_if_index, 0);
    vl_print(vm, "mmb disabled on %U\n", format_vnet_sw_if_index_name, 
           mm->vnet_main, sw_if_index);
 
@@ -725,13 +734,4 @@ static clib_error_t * mmb_init(vlib_main_t * vm) {
 }
 
 VLIB_INIT_FUNCTION (mmb_init);
-
-/**
- * @brief Hook the mmb plugin into the VPP graph hierarchy.
- */
-VNET_FEATURE_INIT (mmb, static) = {
-  .arc_name = "ip4-unicast", //ip4-output
-  .node_name = "mmb",
-  .runs_before = VNET_FEATURES("ip4-lookup"), //interface-output
-};
 
