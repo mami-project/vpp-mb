@@ -152,9 +152,9 @@ mmb_enable_disable_fn(vlib_main_t * vm,
 static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
    vnet_feature_enable_disable("ip4-unicast", "mmb-plugin-ip4-in", 
                                sw_if_index, enable_disable, 0, 0);
-   vnet_feature_enable_disable("ip6-unicast", "mmb-plugin-ip6-out", 
+   vnet_feature_enable_disable("ip6-unicast", "mmb-plugin-ip6-in", 
                                sw_if_index, enable_disable, 0, 0);
-   vnet_feature_enable_disable("ip4-output", "mmb-plugin-ip4-in", 
+   vnet_feature_enable_disable("ip4-output", "mmb-plugin-ip4-out", 
                                sw_if_index, enable_disable, 0, 0);
    vnet_feature_enable_disable("ip6-output", "mmb-plugin-ip6-out", 
                                sw_if_index, enable_disable, 0, 0);
