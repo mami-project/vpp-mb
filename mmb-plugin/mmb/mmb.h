@@ -39,10 +39,8 @@
 #define MMB_TARGET_STRIP         21
 #define MMB_TARGET_MODIFY        22
 
-#define MMB_FIELD_PROTO_IP       70
-#define MMB_FIELD_PROTO_ICMP     71
-#define MMB_FIELD_PROTO_TCP      72
-#define MMB_FIELD_PROTO_UDP      73
+#define MMB_FIELD_INTERFACE_IN   108
+#define MMB_FIELD_INTERFACE_OUT  109
 
 #define MMB_FIELD_NET_PROTO      110
 #define MMB_FIELD_IP_VER         111
@@ -109,10 +107,15 @@
 
 #define MMB_FIELD_ALL                167
 
-#define field_toindex(macro) macro-MMB_FIELD_NET_PROTO
-#define field_tomacro(index) index+MMB_FIELD_NET_PROTO
-#define cond_toindex(macro) macro-MMB_COND_EQ
-#define cond_tomacro(index) index+MMB_COND_EQ
+#define MMB_FIRST_FIELD MMB_FIELD_INTERFACE_IN
+#define MMB_LAST_FIELD MMB_FIELD_ALL
+#define MMB_FIRST_COND MMB_COND_EQ
+#define MMB_LAST_COND MMB_COND_GT
+
+#define field_toindex(macro) macro-MMB_FIRST_FIELD
+#define field_tomacro(index) index+MMB_FIRST_FIELD
+#define cond_toindex(macro) macro-MMB_FIRST_COND
+#define cond_tomacro(index) index+MMB_FIRST_COND
 
 #define MMB_MAX_FIELD_LEN 32
 
@@ -153,11 +156,11 @@ typedef struct {
    u8 reverse; /*! whitelist (strip only) */
 } mmb_target_t;
 
-
-
 typedef struct {
   u16 l3;
   u8 l4;
+  u32 in;
+  u32 out;
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
 
@@ -176,9 +179,7 @@ typedef struct {
 
    mmb_rule_t *rules;  /*! Rules vector */
 
-
-   //snat_interface_t * interfaces;
-
+   u32 *sw_if_indexes;
    /* convenience */
    vnet_main_t *vnet_main;
 } mmb_main_t;
@@ -189,7 +190,6 @@ extern vlib_node_registration_t mmb_node;
 
 extern const u8 fields_len;
 extern const char* fields[];
-extern const u8 lens_len;
 extern const u8 lens[];
 extern const u8 conditions_len;
 extern const char* conditions[];
