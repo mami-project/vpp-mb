@@ -93,22 +93,29 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   return s;
 }
 
-/*static_always_inline mmb_rule_t* get_rules() {
+static_always_inline u32 get_sw_if_index(vlib_buffer_t *b, int is_input) {
   if (is_input)
-    sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
+    return vnet_buffer(b)->sw_if_index[VLIB_RX];
   else
-    sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_TX];
-  
-}*/
+    return vnet_buffer(b)->sw_if_index[VLIB_TX];
+}
+
+static_always_inline void *
+get_ip_header(vlib_buffer_t *b, int is_input) {
+  u8 *p = vlib_buffer_get_current(b);
+  if (!is_input)
+    p += ethernet_buffer_header_size(b);
+  return p;
+}
 
 static uword
 mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
-             vlib_frame_t *frame, int is_ip6, int is_input,
-             vlib_node_registration_t *mmb_node) {
+            vlib_frame_t *frame, int is_ip6, int is_input,
+            vlib_node_registration_t *mmb_node) {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
-
-  u32 n_left_from, * from, * to_next;
+  //vl_print(vm, "%u\n", get_sw_if_index(vlib_get_buffer(vm, bi0), is_input));
+  u32 n_left_from, *from, *to_next;
   mmb_next_t next_index;
   u32 pkts_done = 0;
 
@@ -126,7 +133,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
     while (n_left_from > 0 && n_left_to_next > 0)
     {
       u32 bi0;
-      vlib_buffer_t * b0;
+      vlib_buffer_t *b0;
       u32 next0 = MMB_NEXT_FORWARD;
       ip4_header_t *ip0;
 
@@ -139,10 +146,10 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       n_left_to_next -= 1;
 
       /* get vlib buffer */
-      b0 = vlib_get_buffer (vm, bi0);
+      b0 = vlib_get_buffer(vm, bi0);
       
       /* get IP header */
-      ip0 = vlib_buffer_get_current (b0);
+      ip0 = get_ip_header(b0, is_input);
 
       /* example: modify TTL and update checksum */
       //ip0->ttl -= pkts_count+1;
