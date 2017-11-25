@@ -3,6 +3,7 @@
 
 #include <mmb/mmb.h>
 
+
 #define foreach_mmb_next_node \
   _(LOOKUP, "Lookup")         \
   _(DROP, "Drop")
@@ -13,6 +14,7 @@ typedef enum {
 #undef _
   MMB_N_NEXT
 } mmb_next_t;
+
 
 #define foreach_mmb_error \
   _(DONE, "MMB packets processed")
@@ -30,6 +32,7 @@ static char * mmb_error_strings[] = {
 #undef _
 };
 
+
 typedef struct {
   u32 rule_index;
   u8  proto;
@@ -37,6 +40,29 @@ typedef struct {
   ip4_address_t dst_address;
   u32 next;
 } mmb_trace_t;
+
+typedef struct {
+  u64 flags[4]; // 4 ranges for bits [0-63] [64-127] [128-191] [192-255]
+  u8 data_length[255];
+  u8 data_offset[255];
+  u8* data;
+} mmb_tcp_options_t;
+
+
+static void mmb_target_modify(ip4_header_t *, mmb_target_t *, u8 *);
+static void mmb_target_strip(mmb_tcp_options_t *, mmb_target_t *, u8 *);
+static void mmb_rewrite_tcp_options(u8 *, mmb_tcp_options_t *);
+static u8 rule_requires_tcp_options(mmb_rule_t *);
+static void recompute_l4_checksum(vlib_main_t *, vlib_buffer_t *, ip4_header_t *);
+static void recompute_l3_checksum(ip4_header_t *);
+static u64 mmb_bytes_to_u64(u8 *);
+static void mmb_parse_ip4_cidr_address(u8 *, u32 *, u32 *);
+static u8 mmb_value_compare(u64, u64, u8, u8);
+static u8 mmb_parse_tcp_options(tcp_header_t *, mmb_tcp_options_t *);
+static u8 packet_matches(ip4_header_t *, mmb_rule_t *, mmb_tcp_options_t *);
+static u32 packet_apply_targets(ip4_header_t *, mmb_target_t *, mmb_tcp_options_t *, u8 *);
+
+vlib_node_registration_t mmb_node;
 
 
 /************************
@@ -337,7 +363,6 @@ u64 get_tcp_field(tcp_header_t *tcph, u8 field)
     case MMB_FIELD_TCP_PAYLOAD:
       //TODO
       break;
-    //TODO: options
     default:
       break;
   }
@@ -406,10 +431,31 @@ void set_tcp_field(tcp_header_t *tcph, u8 field, u64 value)
     case MMB_FIELD_TCP_PAYLOAD:
       //TODO
       break;
-    //TODO: options
     default:
       break;
   }
+}
+
+
+/************************
+ *      TCP options
+ ***********************/
+
+u8 tcp_option_exists(mmb_tcp_options_t *options, u8 kind)
+{
+  u64 flag_mask = 1L << (kind & 63);
+  return (options->flags[kind >> 6] & flag_mask) != 0;
+}
+
+void tcp_option_set(mmb_tcp_options_t *options, u8 kind, u8 *value)
+{
+  //TODO add if not present ? ignore ?
+}
+
+void tcp_option_strip(mmb_tcp_options_t *options, u8 kind)
+{
+  u64 flag_mask = 1L << (kind & 63);
+  options->flags[kind >> 6] &= ~flag_mask;
 }
 
 #endif /* __included_mmb_node_h__ */
