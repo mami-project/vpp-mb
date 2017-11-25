@@ -122,28 +122,42 @@ uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
   return 1;
 }
 
+static_always_inline uword mmb_unformat_transport_protocol(
+            unformat_input_t * input, va_list *args) {
+   u8 *l4 = va_arg(*args, u8*);
+   if (0);
+#define _(a,b) else if (unformat(input, "%_"#a)) {*l4 = IP_PROTOCOL_##b;\
+                 return unformat_peek_input(input) == ' ';}
+   foreach_mmb_transport_proto
+#undef _
+   return 0;
+}
+
+static_always_inline uword mmb_unformat_network_protocol(
+            unformat_input_t * input, va_list *args) {
+   u16 *l3 = va_arg(*args, u16*);
+   if (0);
+#define _(a,b) else if (unformat(input, "%_"#a)) {*l3 = ETHERNET_TYPE_##b;\
+                 return unformat_peek_input(input) == ' ';}
+   foreach_mmb_network_proto
+#undef _
+   return 0;
+}
+
 uword mmb_unformat_value(unformat_input_t * input, va_list *args) {
    u8 **bytes = va_arg(*args, u8**);
-   u8 found_l4 = 0;
-   u16 found_l3 = 0;
+   u8 l4 = 0;
+   u16 l3 = 0;
    u32 if_sw_index = ~0;
    u64 decimal = 0;
    mmb_main_t mm = mmb_main;
 
    /* protocol names */
-   if (0);
-#define _(a,b) else if (unformat (input, #a" ")) found_l4 = IP_PROTOCOL_##b;
-   foreach_mmb_transport_proto
-#undef _
-#define _(a,b) else if (unformat (input, #a" ")) found_l3 = ETHERNET_TYPE_##b;
-   foreach_mmb_network_proto
-#undef _
-
-  if (found_l4) {
-    u64_tobytes(bytes, found_l4, 1);
+  if (unformat(input, "%U", mmb_unformat_transport_protocol, &l4)) {
+    u64_tobytes(bytes, l4, 1);
     return 1;
-  } else if (found_l3) {
-    u64_tobytes(bytes, found_l3, 2);
+  } else if (unformat(input, "%U", mmb_unformat_network_protocol, &l3)) {
+    u64_tobytes(bytes, l3, 2);
     return 1;
   }
 

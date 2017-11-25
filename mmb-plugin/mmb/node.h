@@ -5,7 +5,7 @@
 
 
 #define foreach_mmb_next_node \
-  _(LOOKUP, "Lookup")         \
+  _(FORWARD, "Forward")         \
   _(DROP, "Drop")
 
 typedef enum {
@@ -17,13 +17,13 @@ typedef enum {
 
 
 #define foreach_mmb_error \
-  _(DONE, "MMB packets processed")
+_(DONE, "MMB packets processed")
 
 typedef enum {
 #define _(sym,str) MMB_ERROR_##sym,
   foreach_mmb_error
 #undef _
-  MMB_N_ERROR
+  MMB_N_ERROR,
 } mmb_error_t;
 
 static char * mmb_error_strings[] = {
@@ -38,6 +38,7 @@ typedef struct {
   u8  proto;
   ip4_address_t src_address;
   ip4_address_t dst_address;
+  u32 sw_if_index;
   u32 next;
 } mmb_trace_t;
 
