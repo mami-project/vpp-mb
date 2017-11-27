@@ -115,6 +115,30 @@ const u8 lens[] = {
   0
 };
 
+const u8 fixed_len[] = {
+  1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  0, 1, 1,
+  1, 1, 0, /* 10 */
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1, 
+  1, 1, 1, 
+  1, 1, 1,
+  0, 1, 1, 
+  1, 0, 1, 
+  0, 0, 0,
+  1
+};
+
 const u8 conditions_len = 6;
 const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
@@ -350,6 +374,13 @@ u16 get_field_protocol(u8 field) {
    else if (MMB_FIELD_TCP_SPORT <= field && field <= MMB_FIELD_TCP_OPT)
      return IP_PROTOCOL_TCP;
    return IP_PROTOCOL_RESERVED;
+}
+
+u8 is_fixed_length(u8 field) {
+   u8 index = field_toindex(field);
+   if (index < fields_len)
+      return fixed_len[index];
+   return 0;
 }
 
 static_always_inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
