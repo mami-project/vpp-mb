@@ -177,7 +177,7 @@ typedef struct {
    /* API message ID base */
    u16 msg_id_base;
 
-   mmb_rule_t *rules;  /*! Rules vector */
+   mmb_rule_t *rules;  /*! Rules vector, per if, per dir */
 
    u32 *sw_if_indexes;
    /* convenience */
