@@ -50,18 +50,24 @@ void unformat_input_tolower(unformat_input_t *input) {
   str_tolower(input->buffer);
 }
 
-static_always_inline void resize_value(u8 field, u8 **value) {
+/**
+ * resize value offixed length field,
+ *
+ * @return vec_len(value) 
+ */
+static_always_inline int resize_value(u8 field, u8 **value) {
   u8 user_len = vec_len(*value);
-  if (user_len == 0) return;
-
   u8 proper_len = lens[field_toindex(field)];
-  if (proper_len == 0) return;
+
+  if (!is_fixed_length(field)) return user_len;
+  if (user_len == 0) return 0;
 
   /* left padding/truncating */
   if (user_len > proper_len)
     vec_delete(*value, user_len-proper_len, 0);
   else if (user_len < proper_len)
     vec_insert(*value, proper_len-user_len, 0);
+  return vec_len(*value);
 }
 
 uword mmb_unformat_field(unformat_input_t * input, va_list *args) {
@@ -242,7 +248,8 @@ uword mmb_unformat_match(unformat_input_t * input, va_list *args) {
    else 
      return 0;
 
-   resize_value(match->field, &match->value);
+   if (resize_value(match->field, &match->value) == 0)
+      match->condition = 0;
    return 1;
 }
 

@@ -195,5 +195,6 @@ extern const u8 conditions_len;
 extern const char* conditions[];
 
 u16 get_field_protocol(u8 field);
+u8 is_fixed_length(u8 field);
 
 #endif /* __included_mmb_h__ */
