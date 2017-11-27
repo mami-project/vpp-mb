@@ -256,6 +256,9 @@ uword mmb_unformat_match(unformat_input_t * input, va_list *args) {
 
    if (resize_value(match->field, &match->value) == 0)
       match->condition = 0;
+   else if (!is_fixed_length(match->field) && match->condition != MMB_COND_EQ 
+                                    && match->condition != MMB_COND_NEQ)
+      return 0;
    return 1;
 }
 
@@ -422,7 +425,7 @@ static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
     case MMB_FIELD_IP_SADDR:
     case MMB_FIELD_IP_DADDR:
       s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
-      break;// TODO:
+      break;// TODO:ports in text ?
     default: /* 40 chars = 20 bytes = field (var) + cond (4) + [..] */
       vec_foreach_index(index, bytes) {
         if (index >= MMB_DISPLAY_MAX_BYTES-padding) {
