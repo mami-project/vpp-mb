@@ -18,10 +18,13 @@
  * @author K.Edeline
  */
 
+#include <vppinfra/string.h>
 #include <vlib/vlib.h>
 #include <ctype.h>
 
 #include <mmb/mmb_format.h>
+
+#define MMB_DISPLAY_MAX_BYTES 14
 
 static uword mmb_unformat_field(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_condition(unformat_input_t *input, va_list *args);
@@ -107,7 +110,10 @@ static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
     vec_add1(*bytes, value>>(i*8)); 
 }
 
-/* Parse an IP4 address %d.%d.%d.%d[/%d] */
+/** 
+ * Parse an IP4 address %d.%d.%d.%d[/%d] 
+ *
+ **/
 uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
   u8 **result = va_arg (*args, u8 **);
   unsigned a[5], i;
@@ -350,7 +356,7 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
     s = format(s, "%U%s", mmb_format_target, &rule->targets[index],  
                         (index != vec_len(rule->targets)-1) ? ", ":"");
   }
-
+  
   vec_foreach_index(index, rule->opts) {
     mmb_target_t strip_target = mmb_target_from_opt(rule, index);
     s = format(s, "%s%U", (index != vec_len(rule->opts)-1) ? ", ":" ",
@@ -396,21 +402,38 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
   return s;
 }
 
+static_always_inline u32 mmb_field_str_len(u8 field) {
+   u32 padding = strlen(fields[field_toindex(field)]);
+   if (padding % 2 == 1) 
+      padding++;
+   padding /= 2;
+   if (field==MMB_FIELD_TCP_OPT) 
+      padding += 4;
+
+   return padding;
+}
+
 static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
-  u8 *byte, *bytes = va_arg(*args, u8*);
+  u8 *bytes = va_arg(*args, u8*);
   u8 field = va_arg(*args, u32);
+  u32 index, padding=mmb_field_str_len(field);
 
   switch (field) {
     case MMB_FIELD_IP_SADDR:
     case MMB_FIELD_IP_DADDR:
       s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
       break;// TODO:
-    default:
-      vec_foreach(byte, bytes) {
-        s = format(s, "%02x", *byte);
+    default: /* 40 chars = 20 bytes = field (var) + cond (4) + [..] */
+      vec_foreach_index(index, bytes) {
+        if (index >= MMB_DISPLAY_MAX_BYTES-padding) {
+          s = format(s, "[..]");
+          break;
+        }
+        s = format(s, "%02x", bytes[index]);
       }
     break;
   }
+
   return s;
 }
 

@@ -137,7 +137,7 @@ _(MMB_FIELD_TCP_OPT_WSCALE,WScale,3)         \
 _(MMB_FIELD_TCP_OPT_SACKP,SACK-P,4)          \
 _(MMB_FIELD_TCP_OPT_SACK,SACK,5)           \
 _(MMB_FIELD_TCP_OPT_TIMESTAMP,Timestamp,8)      \
-_(MMB_FIELD_TCP_OPT_FAST_OPEN,Fast Open,34)      \
+_(MMB_FIELD_TCP_OPT_FAST_OPEN,FastOpen,34)      \
 _(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)                                    
 
 typedef struct {
