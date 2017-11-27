@@ -44,7 +44,7 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   mmb_main_t mm = mmb_main;
 
   if (t->rule_index != 0) 
-    s = format(s, "mmb: if_index:%U sa:%U da:%U %U pkt matched rule %u, target %U\n",
+    s = format(s, "mmb: if:%U sa:%U da:%U %U pkt matched rule %u, target %U\n",
                    format_vnet_sw_if_index_name, mm.vnet_main, t->sw_if_index,
                    format_ip4_address, t->src_address.data,
                    format_ip4_address, t->dst_address.data,
@@ -52,7 +52,7 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
                    t->rule_index,
                    mmb_format_next_node, t->next);
   else 
-    s = format(s, "mmb: if_index:%U sa:%U da:%U %U pkt unmatched\n", 
+    s = format(s, "mmb: if:%U sa:%U da:%U %U pkt unmatched\n", 
                    format_vnet_sw_if_index_name, mm.vnet_main, t->sw_if_index,
                    format_ip4_address, t->src_address.data,
                    format_ip4_address, t->dst_address.data,
@@ -442,23 +442,20 @@ void mmb_rewrite_tcp_options(u8 *data, mmb_tcp_options_t *tcp_options)
   //TODO update tcph->data_offset, length on IP (? -> watch out fragmentation)
 }
 
-static_always_inline u32 get_sw_if_index(vlib_buffer_t *b, int is_input) {
-  if (is_input)
-    return vnet_buffer(b)->sw_if_index[VLIB_RX];
-  else
-    return vnet_buffer(b)->sw_if_index[VLIB_TX];
+static_always_inline u32 get_sw_if_index(vlib_buffer_t *b, int is_output) {
+  return vnet_buffer(b)->sw_if_index[is_output];
 }
 
-static_always_inline void *get_ip_header(vlib_buffer_t *b, int is_input) {
+static_always_inline void *get_ip_header(vlib_buffer_t *b, int is_output) {
   u8 *p = vlib_buffer_get_current(b);
-  if (!is_input)
+  if (is_output)
     p += ethernet_buffer_header_size(b);
   return p;
 }
 
 static uword
 mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
-            vlib_frame_t *frame, int is_ip6, int is_input,
+            vlib_frame_t *frame, int is_ip6, int is_output,
             vlib_node_registration_t *mmb_node) {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
@@ -471,7 +468,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
 
-  u32 sw_if_index = get_sw_if_index(vlib_get_buffer(vm, from[0]), is_input);
+  u32 sw_if_index = get_sw_if_index(vlib_get_buffer(vm, from[0]), is_output);
 
   while (n_left_from > 0)
   {
@@ -498,7 +495,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       /* get vlib buffer, IP header */
       b0 = vlib_get_buffer (vm, bi0);
-      ip0 = vlib_buffer_get_current (b0);
+      ip0 = get_ip_header(b0, is_output);
 
       mmb_tcp_options_t tcp_options;
       u32 i, applied_rule_index = ~0;
@@ -572,28 +569,28 @@ vlib_node_registration_t mmb_ip4_in_node;
 static uword
 mmb_node_ip4_in_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
-  return mmb_node_fn(vm, node, frame, 0, 1, &mmb_ip4_in_node);
+  return mmb_node_fn(vm, node, frame, 0, 0, &mmb_ip4_in_node);
 }
 
 vlib_node_registration_t mmb_ip4_out_node;
 static uword
 mmb_node_ip4_out_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
-  return mmb_node_fn(vm, node, frame, 0, 0, &mmb_ip4_out_node);
+  return mmb_node_fn(vm, node, frame, 0, 1, &mmb_ip4_out_node);
 }
 
 vlib_node_registration_t mmb_ip6_in_node;
 static uword
 mmb_node_ip6_in_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
-  return mmb_node_fn(vm, node, frame, 1, 1, &mmb_ip6_in_node);
+  return mmb_node_fn(vm, node, frame, 1, 0, &mmb_ip6_in_node);
 }
 
 vlib_node_registration_t mmb_ip6_out_node;
 static uword
 mmb_node_ip6_out_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
-  return mmb_node_fn(vm, node, frame, 1, 0, &mmb_ip6_out_node);
+  return mmb_node_fn(vm, node, frame, 1, 1, &mmb_ip6_out_node);
 }
 
 VLIB_REGISTER_NODE(mmb_ip4_in_node) =

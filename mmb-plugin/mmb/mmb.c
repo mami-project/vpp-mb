@@ -404,6 +404,8 @@ validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
    return NULL;
 }
 
+#define vec_insert_elt_last(V,E) vec_insert_elts(V,E,1,vec_len(V))
+
 clib_error_t *validate_matches(mmb_rule_t *rule) {
    clib_error_t *error;
    uword index = 0;
@@ -458,7 +460,7 @@ clib_error_t *validate_matches(mmb_rule_t *rule) {
        case MMB_FIELD_INTERFACE_OUT:
           if ( (error = validate_if(rule, match, field)) )
             return error;
-          vec_insert(if_indexes, 1, index);
+          vec_insert_elt_last(if_indexes, &index);
           break;        
        default:
          break;
@@ -482,6 +484,7 @@ clib_error_t *validate_matches(mmb_rule_t *rule) {
 clib_error_t *validate_targets(mmb_rule_t *rule) {
    clib_error_t *error;
    uword index = 0;
+   uword *strip_indexes = 0, *strip_index;
 
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
@@ -538,11 +541,18 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
        } else if (!!(rule->flags & MMB_RULE_WHITELIST) != reverse)
          return clib_error_return(0, "inconsistent use of ! in strip");
        vec_add1(rule->opts, target->opt_kind);
-
+       vec_insert_elt_last(strip_indexes, &index);
      } else if (keyword == MMB_TARGET_MODIFY) 
        ;
    } 
 
+   /* delete strips from targets */ 
+   vec_foreach(strip_index, strip_indexes) {
+     mmb_target_t *target = &rule->targets[*strip_index];
+     vec_free(target->value);
+     vec_delete(rule->targets, 1, *strip_index);
+   }
+   
    return NULL;
 }
 
