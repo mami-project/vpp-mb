@@ -58,6 +58,7 @@ doc/*
 scripts/install.sh
 scripts/upload2vm.sh
 scripts/dev.sh
+scripts/pings.sh
 lib/*
 
 
