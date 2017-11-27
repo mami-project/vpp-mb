@@ -10,7 +10,7 @@ function parse_mmb_trace {
 
       if [[ ${line:0:1} != " " ]] ; then 
          if [[ "$line" == *"${block_name}"* ]]; then
-            #echo "$line"
+            echo "$line"
             mmb_block=1
          else
             mmb_block=0
@@ -24,24 +24,18 @@ function parse_mmb_trace {
    done <<< "$str"
 }
 
-echo
-echo "Processing... Please wait..."
+# populate ARP table
+ping 10.10.2.2 -c 5
 
-{
-  # populate ARP table
-  ping 10.10.2.2 -c 5
-
-  # Init tracer on MB and Bob
-  sudo vppctl -s /run/vpp/cli-vpp1.sock trace add af-packet-input 10
-  #sudo vppctl -s /run/vpp/cli-vpp2.sock trace add af-packet-input 10
-  #sudo vppctl -s /run/vpp/cli-vpp2.sock clear trace
-  sudo vppctl -s /run/vpp/cli-vpp1.sock clear trace
-} &> /dev/null
+# Init tracer on MB and Bob
+sudo vppctl -s /run/vpp/cli-vpp1.sock trace add af-packet-input 10
+#sudo vppctl -s /run/vpp/cli-vpp2.sock trace add af-packet-input 10
+#sudo vppctl -s /run/vpp/cli-vpp2.sock clear trace
+sudo vppctl -s /run/vpp/cli-vpp1.sock clear trace
 
 # udp pings
-{
-  sudo traceroute -4 10.10.2.2 -f 30 -m 30 -q 2 -p 80
-} &> /dev/null
+sudo traceroute -4 10.10.2.2 -f 30 -m 30 -q 2 -p 80
+
 
 # get&clean trace
 #bob_trace="$(sudo vppctl -s /run/vpp/cli-vpp2.sock show trace)"
@@ -62,9 +56,7 @@ echo
 parse_mmb_trace "${mb_trace}"
 
 # icmp pings
-{
-  sudo traceroute -I -4 10.10.2.2 -f 30 -m 30 -q 2 -p 80
-} &> /dev/null
+sudo traceroute -I -4 10.10.2.2 -f 30 -m 30 -q 2 -p 80
 
 # get&clean trace
 #bob_trace="$(sudo vppctl -s /run/vpp/cli-vpp2.sock show trace)"
@@ -85,9 +77,7 @@ echo
 parse_mmb_trace "${mb_trace}"
 
 # tcp pings
-{
-  sudo traceroute -T -4 10.10.2.2 -f 30 -m 30 -q 2 -p 80
-} &> /dev/null
+sudo traceroute -T -4 10.10.2.2 -f 30 -m 30 -q 2 -p 80
 
 # get&clean trace
 #bob_trace="$(sudo vppctl -s /run/vpp/cli-vpp2.sock show trace)"
