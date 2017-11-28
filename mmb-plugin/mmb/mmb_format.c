@@ -112,16 +112,17 @@ static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
 
 /** 
  * Parse an IP4 address %d.%d.%d.%d[/%d] 
- *
+ * 
+ * (modified from vnet/ip/ip4_format.c)
  **/
-uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
-  u8 **result = va_arg (*args, u8 **);
+uword mmb_unformat_ip4_address(unformat_input_t *input, va_list *args) {
+  u8 **result = va_arg(*args, u8**);
   unsigned a[5], i;
 
-  if (unformat (input, "%d.%d.%d.%d/%d", &a[0], &a[1], &a[2], &a[3], &a[4])) {
+  if (unformat(input, "%d.%d.%d.%d/%d", &a[0], &a[1], &a[2], &a[3], &a[4])) {
     if (a[4] > 32)
       return 0;
-  } else if (unformat (input, "%d.%d.%d.%d", &a[0], &a[1], &a[2], &a[3])) 
+  } else if (unformat(input, "%d.%d.%d.%d", &a[0], &a[1], &a[2], &a[3])) 
     a[4] = 32;
   else return 0;
 
@@ -129,9 +130,106 @@ uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
     return 0;
 
   for (i=0; i<5; i++)
-   vec_add1(*result, a[i]);
+    vec_add1(*result, a[i]);
 
   return 1;
+}
+
+/** Parse an IP6 address. 
+ *  
+ * (modified from vnet/ip/ip6_format.c)
+ **/
+uword
+mmb_unformat_ip6_address(unformat_input_t *input, va_list *args) {
+  u16 **result = va_arg(*args, u16**);
+  u8 **bytes = (u8**)result; /* is this ok ? */
+  u16 hex_quads[8];
+  uword hex_quad, n_hex_quads, hex_digit, n_hex_digits;
+  uword c, n_colon, double_colon_index;
+
+  n_hex_quads = hex_quad = n_hex_digits = n_colon = 0;
+  double_colon_index = ARRAY_LEN(hex_quads);
+  while ((c = unformat_get_input(input)) != UNFORMAT_END_OF_INPUT) {
+      hex_digit = 16;
+      if (c >= '0' && c <= '9')
+         hex_digit = c - '0';
+      else if (c >= 'a' && c <= 'f')
+	      hex_digit = c + 10 - 'a';
+      else if (c >= 'A' && c <= 'F')
+	      hex_digit = c + 10 - 'A';
+      else if (c == ':' && n_colon < 2)
+	      n_colon++;
+      else {
+	      unformat_put_input(input);
+	      break;
+      }
+
+      /* Too many hex quads. */
+      if (n_hex_quads >= ARRAY_LEN(hex_quads))
+	      return 0;
+
+      if (hex_digit < 16) {
+	      hex_quad = (hex_quad << 4) | hex_digit;
+
+	      /* Hex quad must fit in 16 bits. */
+	      if (n_hex_digits >= 4)
+	         return 0;
+
+	      n_colon = 0;
+	      n_hex_digits++;
+      }
+
+      /* Save position of :: */
+      if (n_colon == 2) {
+	      /* More than one :: ? */
+	      if (double_colon_index < ARRAY_LEN(hex_quads))
+	         return 0;
+	      double_colon_index = n_hex_quads;
+      }
+
+      if (n_colon > 0 && n_hex_digits > 0) {
+	      hex_quads[n_hex_quads++] = hex_quad;
+	      hex_quad = 0;
+	      n_hex_digits = 0;
+	   }
+   }
+
+   if (n_hex_digits > 0)
+      hex_quads[n_hex_quads++] = hex_quad;
+
+   {
+      word i;
+
+      /* Expand :: to appropriate number of zero hex quads. */
+      if (double_colon_index < ARRAY_LEN(hex_quads)) {
+         word n_zero = ARRAY_LEN(hex_quads) - n_hex_quads;
+
+         for (i = n_hex_quads - 1; i >= (signed) double_colon_index; i--)
+            hex_quads[n_zero + i] = hex_quads[i];
+
+	      for (i = 0; i < n_zero; i++) {
+            ASSERT((double_colon_index + i) < ARRAY_LEN(hex_quads));
+	         hex_quads[double_colon_index + i] = 0;
+         }
+
+	      n_hex_quads = ARRAY_LEN(hex_quads);
+      }
+
+      /* Too few hex quads given. */
+      if (n_hex_quads < ARRAY_LEN(hex_quads))
+         return 0;
+
+      for (i = 0; i < ARRAY_LEN(hex_quads); i++)
+         vec_add1(*result, clib_host_to_net_u16(hex_quads[i]));
+
+      /* parse mask */
+      vec_validate(*bytes, 16);
+      u32 mask = 128;
+      unformat(input, "/%d", &mask);
+      (*bytes)[16] = mask;
+
+      return 1;
+   }
 }
 
 static_always_inline uword mmb_unformat_transport_protocol(
@@ -183,6 +281,8 @@ uword mmb_unformat_value(unformat_input_t * input, va_list *args) {
   /* dec/hex value */
   if (unformat(input, "%U", mmb_unformat_ip4_address, bytes))   
     ;
+  else if (unformat(input, "%U", mmb_unformat_ip6_address, bytes))
+   ;
   else if (unformat (input, "0x") 
     || unformat (input, "x")) {
     /* hex value */ 
@@ -340,19 +440,34 @@ static_always_inline u8 *mmb_format_if_sw_index(u8 *s, va_list *args) {
                 mm.vnet_main, sw_if_index);
 }
 
-static_always_inline mmb_target_t mmb_target_from_opt(mmb_rule_t *rule, 
-                                                           uword strip_index) {
+static_always_inline mmb_target_t target_from_strip(mmb_rule_t *rule, 
+                                                    uword strip_index) {
    mmb_target_t strip_target;
    if (rule->l4 == IP_PROTOCOL_TCP)
       strip_target = (mmb_target_t) {
             .keyword = MMB_TARGET_STRIP,
             .field = MMB_FIELD_TCP_OPT,
-            .opt_kind = rule->opts[strip_index],
+            .opt_kind = rule->opt_strips[strip_index],
             .reverse = rule->whitelist,
             .value = 0
       };
 
    return strip_target;
+}
+
+static_always_inline mmb_target_t target_from_add(mmb_rule_t *rule, 
+                                                  uword add_index) {
+   mmb_target_t add_target;
+   if (rule->l4 == IP_PROTOCOL_TCP)
+      add_target = (mmb_target_t) {
+            .keyword = MMB_TARGET_ADD,
+            .field = MMB_FIELD_TCP_OPT,
+            .opt_kind = rule->opt_adds[add_index].kind,
+            .reverse = 0,
+            .value = rule->opt_adds[add_index].value
+      };
+
+   return add_target;
 }
 
 u8 *mmb_format_rule(u8 *s, va_list *args) {
@@ -368,14 +483,28 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
   }
 
   vec_foreach_index(index, rule->targets) {
-    s = format(s, "%U%s", mmb_format_target, &rule->targets[index],  
-                        (index != vec_len(rule->targets)-1) ? ", ":"");
+    s = format(s, "%U%s", mmb_format_target, &rule->targets[index],
+                      (index != vec_len(rule->targets)-1) ? ", ":"");
   }
-  
-  vec_foreach_index(index, rule->opts) {
-    mmb_target_t strip_target = mmb_target_from_opt(rule, index);
-    s = format(s, "%s%U", (index != vec_len(rule->opts)-1) ? ", ":" ",
+
+  vec_foreach_index(index, rule->opt_strips) {
+    mmb_target_t strip_target = target_from_strip(rule, index);
+    s = format(s, "%s%U", (vec_len(rule->targets)>0) ? ", ":"",
                          mmb_format_target, &strip_target);
+  }
+
+  vec_foreach_index(index, rule->opt_mods) {
+    s = format(s, "%s%U", (vec_len(rule->targets)>0 
+                            || vec_len(rule->opt_strips)>0) ? ", ":"",
+                         mmb_format_target, &rule->opt_mods[index]);
+  }
+
+  vec_foreach_index(index, rule->opt_adds) {
+    mmb_target_t opt_target = target_from_add(rule, index);
+    s = format(s, "%s%U", 
+               (vec_len(rule->opt_strips)>0 || vec_len(rule->targets)>0 
+                   || vec_len(rule->opt_mods)>0 ) ? ", ":"",
+                mmb_format_target, &opt_target);
   }
 
   return s;
@@ -389,10 +518,11 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
                 mmb_format_ip_protocol, rule->l4,
                 mmb_format_if_sw_index, rule->in,
                 mmb_format_if_sw_index, rule->out); 
-  uword index, strip_index=0;
+  uword index, strip_index=0, add_index=0, mod_index=0;
   for (index=0; 
        index<clib_max(vec_len(rule->matches), 
-                      vec_len(rule->targets)+vec_len(rule->opts)); 
+                      vec_len(rule->targets)+vec_len(rule->opt_strips)
+                      +vec_len(rule->opt_adds)+vec_len(rule->opt_mods)); 
        index++) {
     if (index < vec_len(rule->matches)) {
       /* tabulate empty line */
@@ -403,15 +533,21 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
     } else  
       s = format(s, "%96s", blanks);
 
-    if (index < vec_len(rule->targets)) 
+   if (index < vec_len(rule->targets)) 
       s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
-    else if (strip_index < vec_len(rule->opts)) {
-      mmb_target_t strip_target = mmb_target_from_opt(rule, strip_index);
+   else if (strip_index < vec_len(rule->opt_strips)) { 
+      mmb_target_t strip_target = target_from_strip(rule, strip_index);
       s = format(s, "%-40U", mmb_format_target, &strip_target);
       strip_index++;
+    } else if (mod_index < vec_len(rule->opt_mods)) {
+      s = format(s, "%-40U", mmb_format_target, &rule->opt_mods[mod_index]);
+      mod_index++;
+    } else if (add_index < vec_len(rule->opt_adds)) {
+      mmb_target_t opt_target = target_from_add(rule, add_index);
+      s = format(s, "%-40U", mmb_format_target, &opt_target);
+      add_index++;
     }
     s = format(s, "\n");
-
   }
 
   return s;
@@ -434,10 +570,21 @@ static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
   u32 index, padding=mmb_field_str_len(field);
 
   switch (field) {
-    case MMB_FIELD_IP_SADDR:
-    case MMB_FIELD_IP_DADDR:
-      s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
+    case MMB_FIELD_IP4_SADDR:
+    case MMB_FIELD_IP4_DADDR:
+      if (bytes[4] == 32)
+         s = format(s, "%U", format_ip4_address, bytes);
+      else
+         s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
+      break;
+    case MMB_FIELD_IP6_SADDR:
+    case MMB_FIELD_IP6_DADDR:
+      if (bytes[16] == 128)
+         s = format(s, "%U", format_ip6_address, (ip6_address_t*) bytes);
+      else
+         s = format(s, "%U", format_ip6_address_and_length, (ip6_address_t*) bytes, bytes[16]);
       break;// TODO:ports in text ?
+
     default: /* 40 chars = 20 bytes = field (var) + cond (4) + [..] */
       vec_foreach_index(index, bytes) {
         if (index >= MMB_DISPLAY_MAX_BYTES-padding) {
