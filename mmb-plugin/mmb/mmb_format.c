@@ -115,14 +115,14 @@ static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
  * 
  * (modified from vnet/ip/ip4_format.c)
  **/
-uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
-  u8 **result = va_arg (*args, u8 **);
+uword mmb_unformat_ip4_address(unformat_input_t *input, va_list *args) {
+  u8 **result = va_arg(*args, u8**);
   unsigned a[5], i;
 
-  if (unformat (input, "%d.%d.%d.%d/%d", &a[0], &a[1], &a[2], &a[3], &a[4])) {
+  if (unformat(input, "%d.%d.%d.%d/%d", &a[0], &a[1], &a[2], &a[3], &a[4])) {
     if (a[4] > 32)
       return 0;
-  } else if (unformat (input, "%d.%d.%d.%d", &a[0], &a[1], &a[2], &a[3])) 
+  } else if (unformat(input, "%d.%d.%d.%d", &a[0], &a[1], &a[2], &a[3])) 
     a[4] = 32;
   else return 0;
 
@@ -140,9 +140,9 @@ uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
  * (modified from vnet/ip/ip6_format.c)
  **/
 uword
-mmb_unformat_ip6_address(unformat_input_t * input, va_list * args) {
+mmb_unformat_ip6_address(unformat_input_t *input, va_list *args) {
   u16 **result = va_arg(*args, u16**);
-  u8 **bytes = (u8**)result;
+  u8 **bytes = (u8**)result; /* is this ok ? */
   u16 hex_quads[8];
   uword hex_quad, n_hex_quads, hex_digit, n_hex_digits;
   uword c, n_colon, double_colon_index;
@@ -447,7 +447,7 @@ static_always_inline mmb_target_t target_from_strip(mmb_rule_t *rule,
       strip_target = (mmb_target_t) {
             .keyword = MMB_TARGET_STRIP,
             .field = MMB_FIELD_TCP_OPT,
-            .opt_kind = rule->strips[strip_index],
+            .opt_kind = rule->opt_strips[strip_index],
             .reverse = rule->whitelist,
             .value = 0
       };
@@ -462,9 +462,9 @@ static_always_inline mmb_target_t target_from_add(mmb_rule_t *rule,
       add_target = (mmb_target_t) {
             .keyword = MMB_TARGET_ADD,
             .field = MMB_FIELD_TCP_OPT,
-            .opt_kind = rule->adds[add_index].kind,
+            .opt_kind = rule->opt_adds[add_index].kind,
             .reverse = 0,
-            .value = rule->adds[add_index].value
+            .value = rule->opt_adds[add_index].value
       };
 
    return add_target;
@@ -482,21 +482,28 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
                         (index != vec_len(rule->matches)-1) ? " AND ":" ");
   }
 
-  vec_foreach_index(index, rule->strips) {
-    mmb_target_t strip_target = target_from_strip(rule, index);
-    s = format(s, "%U%s", mmb_format_target, &strip_target,
-                         (index != vec_len(rule->strips)-1) ? ", ":"");
-  }
-
   vec_foreach_index(index, rule->targets) {
-    s = format(s, "%s%U", (vec_len(rule->strips)>0) ? ", ":"",
-                         mmb_format_target, &rule->targets[index]);
+    s = format(s, "%U%s", mmb_format_target, &rule->targets[index],
+                      (index != vec_len(rule->targets)-1) ? ", ":"");
   }
 
-  vec_foreach_index(index, rule->adds) {
+  vec_foreach_index(index, rule->opt_strips) {
+    mmb_target_t strip_target = target_from_strip(rule, index);
+    s = format(s, "%s%U", (vec_len(rule->targets)>0) ? ", ":"",
+                         mmb_format_target, &strip_target);
+  }
+
+  vec_foreach_index(index, rule->opt_mods) {
+    s = format(s, "%s%U", (vec_len(rule->targets)>0 
+                            || vec_len(rule->opt_strips)>0) ? ", ":"",
+                         mmb_format_target, &rule->opt_mods[index]);
+  }
+
+  vec_foreach_index(index, rule->opt_adds) {
     mmb_target_t opt_target = target_from_add(rule, index);
     s = format(s, "%s%U", 
-               (vec_len(rule->strips)>0 || vec_len(rule->targets)>0) ? ", ":"",
+               (vec_len(rule->opt_strips)>0 || vec_len(rule->targets)>0 
+                   || vec_len(rule->opt_mods)>0 ) ? ", ":"",
                 mmb_format_target, &opt_target);
   }
 
@@ -511,10 +518,11 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
                 mmb_format_ip_protocol, rule->l4,
                 mmb_format_if_sw_index, rule->in,
                 mmb_format_if_sw_index, rule->out); 
-  uword index, strip_index=0, add_index=0;
+  uword index, strip_index=0, add_index=0, mod_index=0;
   for (index=0; 
        index<clib_max(vec_len(rule->matches), 
-                      vec_len(rule->targets)+vec_len(rule->strips)+vec_len(rule->adds)); 
+                      vec_len(rule->targets)+vec_len(rule->opt_strips)
+                      +vec_len(rule->opt_adds)+vec_len(rule->opt_mods)); 
        index++) {
     if (index < vec_len(rule->matches)) {
       /* tabulate empty line */
@@ -525,19 +533,21 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
     } else  
       s = format(s, "%96s", blanks);
 
-   if (strip_index < vec_len(rule->strips)) {
+   if (index < vec_len(rule->targets)) 
+      s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
+   else if (strip_index < vec_len(rule->opt_strips)) { 
       mmb_target_t strip_target = target_from_strip(rule, strip_index);
       s = format(s, "%-40U", mmb_format_target, &strip_target);
       strip_index++;
-    } else  if (index < vec_len(rule->targets)) 
-      s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
-    else if (add_index < vec_len(rule->adds)) {
+    } else if (mod_index < vec_len(rule->opt_mods)) {
+      s = format(s, "%-40U", mmb_format_target, &rule->opt_mods[mod_index]);
+      mod_index++;
+    } else if (add_index < vec_len(rule->opt_adds)) {
       mmb_target_t opt_target = target_from_add(rule, add_index);
       s = format(s, "%-40U", mmb_format_target, &opt_target);
       add_index++;
     }
     s = format(s, "\n");
-
   }
 
   return s;

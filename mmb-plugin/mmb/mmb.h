@@ -186,8 +186,9 @@ typedef struct {
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
 
-  u8 *strips;
-  mmb_transport_option_t *adds;
+  u8                     *opt_strips;
+  mmb_target_t           *opt_mods;
+  mmb_transport_option_t *opt_adds;
 
   u8 has_strips:1;
   u8 whitelist:1;

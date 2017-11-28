@@ -605,7 +605,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
 
        /* build option strip list  */
-       if (vec_len(rule->strips) == 0)  {
+       if (vec_len(rule->opt_strips) == 0)  {
          rule->has_strips = 1;
          /* first strip target, set type */
          if (reverse)
@@ -616,7 +616,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
        if (field == MMB_FIELD_ALL) /* strip all */
          target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
 
-       vec_add1(rule->strips, target->opt_kind);
+       vec_add1(rule->opt_strips, target->opt_kind);
        vec_insert_elt_last(rm_indexes, &index);
        //vec_free(target->value);
      } else if (keyword == MMB_TARGET_ADD) { 
@@ -633,9 +633,15 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
 
        /* add transport opt to add-list and register for deletion */
        mmb_transport_option_t opt = to_transport_option(target);
-       vec_add1(rule->adds, opt);
+       vec_add1(rule->opt_adds, opt);
        rule->has_adds = 1;
        vec_insert_elt_last(rm_indexes, &index);
+     } else if (keyword == MMB_TARGET_MODIFY) { 
+        if  (MMB_FIELD_TCP_OPT_MSS <= field 
+             && field < MMB_FIELD_ALL) {
+          vec_add1(rule->opt_mods, *target);
+          vec_insert_elt_last(rm_indexes, &index);
+        }
      }
    } 
 
@@ -705,11 +711,11 @@ void mmb_free_rule(mmb_rule_t *rule) {
     vec_free(rule->targets[index].value);
   }
   vec_free(rule->targets);
-  vec_free(rule->strips);
-  vec_foreach_index(index, rule->adds) {
-    vec_free(rule->adds[index].value);
+  vec_free(rule->opt_strips);
+  vec_foreach_index(index, rule->opt_adds) {
+    vec_free(rule->opt_adds[index].value);
   }
-  vec_free(rule->adds);
+  vec_free(rule->opt_adds);
 }
 
 /**
