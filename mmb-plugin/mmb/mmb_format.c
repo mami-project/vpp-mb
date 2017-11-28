@@ -225,6 +225,13 @@ uword mmb_unformat_target(unformat_input_t * input, va_list *args) {
                     &target->field, &target->opt_kind, 
                     mmb_unformat_value, &target->value))
      target->keyword=MMB_TARGET_MODIFY; 
+   else if (unformat(input, "add %U %U", mmb_unformat_field, 
+                      &target->field, &target->opt_kind, 
+                      mmb_unformat_value, &target->value)) 
+     target->keyword=MMB_TARGET_ADD;
+   else if (unformat(input, "add %U", mmb_unformat_field, 
+                      &target->field, &target->opt_kind)) 
+     target->keyword=MMB_TARGET_ADD;
    else if (unformat(input, "drop"))
      target->keyword=MMB_TARGET_DROP; 
    else 
@@ -271,10 +278,12 @@ u8* mmb_format_field(u8* s, va_list *args) {
     || field > MMB_LAST_FIELD)
      ; 
    else if (field == MMB_FIELD_TCP_OPT && kind) {
-     if (0);
+     if (0);//TODO: print kind 0 in strip
 #define _(a,b,c) else if (kind == c) s = format(s, "%s %s", fields[field_index], #b);
    foreach_mmb_tcp_opts
 #undef _
+     else if (kind == MMB_FIELD_TCP_OPT_ALL)
+       s = format(s, "%s all", fields[field_index]);
      else s = format(s, "%s %d", fields[field_index], kind);
    } else
      s = format(s, "%s", fields[field_index]);
@@ -304,6 +313,9 @@ u8* mmb_format_keyword(u8* s, va_list *args) {
        break;
     case MMB_TARGET_STRIP:
        keyword_str =  "strip";
+       break;
+    case MMB_TARGET_ADD:
+       keyword_str =  "add";
        break;
     default:
        break;

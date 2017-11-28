@@ -532,6 +532,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
                                      " with the 'strip' keyword and no value");
          if (reverse)
            return clib_error_return(0, "<target> has no effect");
+         
          break;
        case MMB_FIELD_INTERFACE_IN:
        case MMB_FIELD_INTERFACE_OUT:
@@ -565,19 +566,37 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
 
        /* build option strip list  */
        if (vec_len(rule->opts) == 0)  {
-         rule->flags |= MMB_RULE_CONTAIN_STRIPS;
+         rule->contain_strips |= MMB_RULE_CONTAIN_STRIPS;
          /* first strip target, set type */
          if (reverse)
             rule->flags |= MMB_RULE_WHITELIST;
        } else if (!!(rule->flags & MMB_RULE_WHITELIST) != reverse)
          return clib_error_return(0, "inconsistent use of ! in strip");
+
+       if (field == MMB_FIELD_ALL) /* strip all */
+         target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
+
        vec_add1(rule->opts, target->opt_kind);
        vec_insert_elt_last(strip_indexes, &index);
-     } else if (keyword == MMB_TARGET_MODIFY) 
-       ;
+
+     } else if (keyword == MMB_TARGET_ADD) { 
+        /* Ensure that field of strip target is a tcp opt. */
+       if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
+             && field < MMB_FIELD_ALL))
+         return clib_error_return(0, "add <field> must be a tcp option");
+         // TODO: 
+         // separate in struct, flag to bits, 
+       /* empty value should be fixed len and len = 0 */
+       if (vec_len(value) == 0 
+             && !(is_fixed_length(field) && lens[field_toindex(field)]==0) )
+         return clib_error_return(0, "add <field> missing value");
+
+       rule->flags |= MMB_RULE_CONTAIN_ADDS;
+       //vec_insert_elt_last(strip_indexes, &index); uncomment to rm adds from targets
+     }
    } 
 
-   /* delete strips from targets */ 
+   /* delete strips and adds from targets */ 
    vec_foreach(strip_index, strip_indexes) {
      mmb_target_t *target = &rule->targets[*strip_index];
      vec_free(target->value);

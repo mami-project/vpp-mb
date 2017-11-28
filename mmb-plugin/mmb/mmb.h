@@ -38,6 +38,7 @@
 #define MMB_TARGET_DROP          20
 #define MMB_TARGET_STRIP         21
 #define MMB_TARGET_MODIFY        22
+#define MMB_TARGET_ADD           23
 
 #define MMB_FIELD_INTERFACE_IN   108
 #define MMB_FIELD_INTERFACE_OUT  109
@@ -107,6 +108,9 @@
 
 #define MMB_FIELD_ALL                167
 
+/* opt_kind macro for 'strip all' */
+#define MMB_FIELD_TCP_OPT_ALL        255
+
 #define MMB_FIRST_FIELD MMB_FIELD_INTERFACE_IN
 #define MMB_LAST_FIELD MMB_FIELD_ALL
 #define MMB_FIRST_COND MMB_COND_EQ
@@ -163,13 +167,11 @@ typedef struct {
   u32 out;
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
-
-/* mmb_rule_t flags TODO:bitfields */
 #define MMB_RULE_CONTAIN_STRIPS (1 << 0)
 #define MMB_RULE_WHITELIST (1 << 1)
 #define MMB_RULE_MATCHES_CONTAIN_OPTS (1 << 2)
 #define MMB_RULE_TARGETS_CONTAIN_OPTS (1 << 3)
-  u8 flags;
+#define MMB_RULE_CONTAIN_ADDS (1 << 4)
   u8 *opts;
 } mmb_rule_t;
 
