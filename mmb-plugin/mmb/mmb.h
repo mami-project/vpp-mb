@@ -167,12 +167,14 @@ typedef struct {
   u32 out;
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
-#define MMB_RULE_CONTAIN_STRIPS (1 << 0)
-#define MMB_RULE_WHITELIST (1 << 1)
-#define MMB_RULE_MATCHES_CONTAIN_OPTS (1 << 2)
-#define MMB_RULE_TARGETS_CONTAIN_OPTS (1 << 3)
 #define MMB_RULE_CONTAIN_ADDS (1 << 4)
   u8 *opts;
+
+  u8 has_strips:1;
+  u8 whitelist:1;
+  u8 has_adds:1;
+  u8 opts_in_matches:1;
+  u8 opts_in_targets:1;
 } mmb_rule_t;
 
 typedef struct {

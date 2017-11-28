@@ -348,7 +348,7 @@ static_always_inline mmb_target_t mmb_target_from_opt(mmb_rule_t *rule,
             .keyword = MMB_TARGET_STRIP,
             .field = MMB_FIELD_TCP_OPT,
             .opt_kind = rule->opts[strip_index],
-            .reverse = !!(rule->flags & MMB_RULE_WHITELIST),
+            .reverse = rule->whitelist,
             .value = 0
       };
 
