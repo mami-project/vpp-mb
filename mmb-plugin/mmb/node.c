@@ -176,7 +176,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
           mmb_match_t *match = &rule->matches[index_match];
 
           // case: ip-proto == 1 (icmp) and current packet matches
-          if (match->field == MMB_FIELD_IP_PROTO && match->condition == MMB_COND_EQ 
+          if (match->field == MMB_FIELD_IP4_PROTO && match->condition == MMB_COND_EQ 
               //&& !strcmp(match->value, "0000000000000001") 
                 && ip0->protocol == IP_PROTOCOL_ICMP)
           {

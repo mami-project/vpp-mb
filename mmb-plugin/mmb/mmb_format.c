@@ -112,7 +112,8 @@ static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
 
 /** 
  * Parse an IP4 address %d.%d.%d.%d[/%d] 
- *
+ * 
+ * (modified from vnet/ip/ip4_format.c)
  **/
 uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
   u8 **result = va_arg (*args, u8 **);
@@ -129,9 +130,106 @@ uword mmb_unformat_ip4_address (unformat_input_t * input, va_list *args) {
     return 0;
 
   for (i=0; i<5; i++)
-   vec_add1(*result, a[i]);
+    vec_add1(*result, a[i]);
 
   return 1;
+}
+
+/** Parse an IP6 address. 
+ *  
+ * (modified from vnet/ip/ip6_format.c)
+ **/
+uword
+mmb_unformat_ip6_address(unformat_input_t * input, va_list * args) {
+  u16 **result = va_arg(*args, u16**);
+  u8 **bytes = (u8**)result;
+  u16 hex_quads[8];
+  uword hex_quad, n_hex_quads, hex_digit, n_hex_digits;
+  uword c, n_colon, double_colon_index;
+
+  n_hex_quads = hex_quad = n_hex_digits = n_colon = 0;
+  double_colon_index = ARRAY_LEN(hex_quads);
+  while ((c = unformat_get_input(input)) != UNFORMAT_END_OF_INPUT) {
+      hex_digit = 16;
+      if (c >= '0' && c <= '9')
+         hex_digit = c - '0';
+      else if (c >= 'a' && c <= 'f')
+	      hex_digit = c + 10 - 'a';
+      else if (c >= 'A' && c <= 'F')
+	      hex_digit = c + 10 - 'A';
+      else if (c == ':' && n_colon < 2)
+	      n_colon++;
+      else {
+	      unformat_put_input(input);
+	      break;
+      }
+
+      /* Too many hex quads. */
+      if (n_hex_quads >= ARRAY_LEN(hex_quads))
+	      return 0;
+
+      if (hex_digit < 16) {
+	      hex_quad = (hex_quad << 4) | hex_digit;
+
+	      /* Hex quad must fit in 16 bits. */
+	      if (n_hex_digits >= 4)
+	         return 0;
+
+	      n_colon = 0;
+	      n_hex_digits++;
+      }
+
+      /* Save position of :: */
+      if (n_colon == 2) {
+	      /* More than one :: ? */
+	      if (double_colon_index < ARRAY_LEN(hex_quads))
+	         return 0;
+	      double_colon_index = n_hex_quads;
+      }
+
+      if (n_colon > 0 && n_hex_digits > 0) {
+	      hex_quads[n_hex_quads++] = hex_quad;
+	      hex_quad = 0;
+	      n_hex_digits = 0;
+	   }
+   }
+
+   if (n_hex_digits > 0)
+      hex_quads[n_hex_quads++] = hex_quad;
+
+   {
+      word i;
+
+      /* Expand :: to appropriate number of zero hex quads. */
+      if (double_colon_index < ARRAY_LEN(hex_quads)) {
+         word n_zero = ARRAY_LEN(hex_quads) - n_hex_quads;
+
+         for (i = n_hex_quads - 1; i >= (signed) double_colon_index; i--)
+            hex_quads[n_zero + i] = hex_quads[i];
+
+	      for (i = 0; i < n_zero; i++) {
+            ASSERT((double_colon_index + i) < ARRAY_LEN(hex_quads));
+	         hex_quads[double_colon_index + i] = 0;
+         }
+
+	      n_hex_quads = ARRAY_LEN(hex_quads);
+      }
+
+      /* Too few hex quads given. */
+      if (n_hex_quads < ARRAY_LEN(hex_quads))
+         return 0;
+
+      for (i = 0; i < ARRAY_LEN(hex_quads); i++)
+         vec_add1(*result, clib_host_to_net_u16(hex_quads[i]));
+
+      /* parse mask */
+      vec_validate(*bytes, 16);
+      u32 mask = 128;
+      unformat(input, "/%d", &mask);
+      (*bytes)[16] = mask;
+
+      return 1;
+   }
 }
 
 static_always_inline uword mmb_unformat_transport_protocol(
@@ -183,6 +281,8 @@ uword mmb_unformat_value(unformat_input_t * input, va_list *args) {
   /* dec/hex value */
   if (unformat(input, "%U", mmb_unformat_ip4_address, bytes))   
     ;
+  else if (unformat(input, "%U", mmb_unformat_ip6_address, bytes))
+   ;
   else if (unformat (input, "0x") 
     || unformat (input, "x")) {
     /* hex value */ 
@@ -460,10 +560,21 @@ static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
   u32 index, padding=mmb_field_str_len(field);
 
   switch (field) {
-    case MMB_FIELD_IP_SADDR:
-    case MMB_FIELD_IP_DADDR:
-      s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
+    case MMB_FIELD_IP4_SADDR:
+    case MMB_FIELD_IP4_DADDR:
+      if (bytes[4] == 32)
+         s = format(s, "%U", format_ip4_address, bytes);
+      else
+         s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
+      break;
+    case MMB_FIELD_IP6_SADDR:
+    case MMB_FIELD_IP6_DADDR:
+      if (bytes[16] == 128)
+         s = format(s, "%U", format_ip6_address, (ip6_address_t*) bytes);
+      else
+         s = format(s, "%U", format_ip6_address_and_length, (ip6_address_t*) bytes, bytes[16]);
       break;// TODO:ports in text ?
+
     default: /* 40 chars = 20 bytes = field (var) + cond (4) + [..] */
       vec_foreach_index(index, bytes) {
         if (index >= MMB_DISPLAY_MAX_BYTES-padding) {

@@ -40,73 +40,82 @@
 #define MMB_TARGET_MODIFY        22
 #define MMB_TARGET_ADD           23
 
+/* field macros */
 #define MMB_FIELD_INTERFACE_IN   108
 #define MMB_FIELD_INTERFACE_OUT  109
 
-#define MMB_FIELD_NET_PROTO      110
-#define MMB_FIELD_IP_VER         111
-#define MMB_FIELD_IP_IHL         112
-#define MMB_FIELD_IP_DSCP        113
-#define MMB_FIELD_IP_ECN         114
-#define MMB_FIELD_IP_NON_ECT     115
-#define MMB_FIELD_IP_ECT0        116
-#define MMB_FIELD_IP_ECT1        117
-#define MMB_FIELD_IP_CE          118
-#define MMB_FIELD_IP_LEN         119
-#define MMB_FIELD_IP_ID          120
-#define MMB_FIELD_IP_FLAGS       121
-#define MMB_FIELD_IP_RES         122
-#define MMB_FIELD_IP_DF          123
-#define MMB_FIELD_IP_MF          124
-#define MMB_FIELD_IP_FRAG_OFFSET 125
-#define MMB_FIELD_IP_TTL         126
-#define MMB_FIELD_IP_PROTO       127
-#define MMB_FIELD_IP_CHECKSUM    128
-#define MMB_FIELD_IP_SADDR       129
-#define MMB_FIELD_IP_DADDR       130
+#define MMB_FIELD_NET_PROTO         110
+#define MMB_FIELD_IP4_VER           111
+#define MMB_FIELD_IP4_IHL           112
+#define MMB_FIELD_IP4_DSCP          113
+#define MMB_FIELD_IP4_ECN           114
+#define MMB_FIELD_IP4_NON_ECT       115
+#define MMB_FIELD_IP4_ECT0          116
+#define MMB_FIELD_IP4_ECT1          117
+#define MMB_FIELD_IP4_CE            118
+#define MMB_FIELD_IP4_LEN           119
+#define MMB_FIELD_IP4_ID            120
+#define MMB_FIELD_IP4_FLAGS         121
+#define MMB_FIELD_IP4_RES           122
+#define MMB_FIELD_IP4_DF            123
+#define MMB_FIELD_IP4_MF            124
+#define MMB_FIELD_IP4_FRAG_OFFSET   125
+#define MMB_FIELD_IP4_TTL           126
+#define MMB_FIELD_IP4_PROTO         127
+#define MMB_FIELD_IP4_CHECKSUM      128
+#define MMB_FIELD_IP4_SADDR         129
+#define MMB_FIELD_IP4_DADDR         130
 
-#define MMB_FIELD_ICMP_TYPE      131
-#define MMB_FIELD_ICMP_CODE      132
-#define MMB_FIELD_ICMP_CHECKSUM  133
-#define MMB_FIELD_ICMP_PAYLOAD   134
+#define MMB_FIELD_IP6_VER           131
+#define MMB_FIELD_IP6_TRAFFIC_CLASS 132
+#define MMB_FIELD_IP6_FLOW_LABEL    133
+#define MMB_FIELD_IP6_LEN           134
+#define MMB_FIELD_IP6_NEXT          135
+#define MMB_FIELD_IP6_HOP_LIMIT     136
+#define MMB_FIELD_IP6_SADDR         137
+#define MMB_FIELD_IP6_DADDR         138
 
-#define MMB_FIELD_UDP_SPORT      135
-#define MMB_FIELD_UDP_DPORT      136
-#define MMB_FIELD_UDP_LEN        137
-#define MMB_FIELD_UDP_CHECKSUM   138
-#define MMB_FIELD_UDP_PAYLOAD    139
+#define MMB_FIELD_ICMP_TYPE      139
+#define MMB_FIELD_ICMP_CODE      140
+#define MMB_FIELD_ICMP_CHECKSUM  141
+#define MMB_FIELD_ICMP_PAYLOAD   142
 
-#define MMB_FIELD_TCP_SPORT      140
-#define MMB_FIELD_TCP_DPORT      141
-#define MMB_FIELD_TCP_SEQ_NUM    142
-#define MMB_FIELD_TCP_ACK_NUM    143
-#define MMB_FIELD_TCP_OFFSET     144
-#define MMB_FIELD_TCP_RESERVED   145
-#define MMB_FIELD_TCP_FLAGS      146
-#define MMB_FIELD_TCP_CWR        147
-#define MMB_FIELD_TCP_ECE        148
-#define MMB_FIELD_TCP_URG        149
-#define MMB_FIELD_TCP_ACK        150
-#define MMB_FIELD_TCP_PUSH       151
-#define MMB_FIELD_TCP_RST        152
-#define MMB_FIELD_TCP_SYN        153
-#define MMB_FIELD_TCP_FIN        154
-#define MMB_FIELD_TCP_WINDOW     155
-#define MMB_FIELD_TCP_CHECKSUM   156
-#define MMB_FIELD_TCP_URG_PTR    157
+#define MMB_FIELD_UDP_SPORT      143
+#define MMB_FIELD_UDP_DPORT      144
+#define MMB_FIELD_UDP_LEN        145
+#define MMB_FIELD_UDP_CHECKSUM   146
+#define MMB_FIELD_UDP_PAYLOAD    147
 
-#define MMB_FIELD_TCP_PAYLOAD    158
+#define MMB_FIELD_TCP_SPORT      148
+#define MMB_FIELD_TCP_DPORT      149
+#define MMB_FIELD_TCP_SEQ_NUM    150
+#define MMB_FIELD_TCP_ACK_NUM    151
+#define MMB_FIELD_TCP_OFFSET     152
+#define MMB_FIELD_TCP_RESERVED   153
+#define MMB_FIELD_TCP_FLAGS      154
+#define MMB_FIELD_TCP_CWR        155
+#define MMB_FIELD_TCP_ECE        156
+#define MMB_FIELD_TCP_URG        157
+#define MMB_FIELD_TCP_ACK        158
+#define MMB_FIELD_TCP_PUSH       159
+#define MMB_FIELD_TCP_RST        160
+#define MMB_FIELD_TCP_SYN        161
+#define MMB_FIELD_TCP_FIN        162
+#define MMB_FIELD_TCP_WINDOW     163
+#define MMB_FIELD_TCP_CHECKSUM   164
+#define MMB_FIELD_TCP_URG_PTR    165
+#define MMB_FIELD_TCP_PAYLOAD    166
 
-#define MMB_FIELD_TCP_OPT_MSS        159
-#define MMB_FIELD_TCP_OPT_WSCALE     160
-#define MMB_FIELD_TCP_OPT_SACKP      161
-#define MMB_FIELD_TCP_OPT_SACK       162
-#define MMB_FIELD_TCP_OPT_TIMESTAMP  163
-#define MMB_FIELD_TCP_OPT_FAST_OPEN  164
-#define MMB_FIELD_TCP_OPT_MPTCP      165
-#define MMB_FIELD_TCP_OPT            166
+#define MMB_FIELD_TCP_OPT_MSS        167
+#define MMB_FIELD_TCP_OPT_WSCALE     168
+#define MMB_FIELD_TCP_OPT_SACKP      169
+#define MMB_FIELD_TCP_OPT_SACK       170
+#define MMB_FIELD_TCP_OPT_TIMESTAMP  171
+#define MMB_FIELD_TCP_OPT_FAST_OPEN  172
+#define MMB_FIELD_TCP_OPT_MPTCP      173
+#define MMB_FIELD_TCP_OPT            174
 
-#define MMB_FIELD_ALL                167
+#define MMB_FIELD_ALL                175
 
 /* opt_kind macro for 'strip all' */
 #define MMB_FIELD_TCP_OPT_ALL        255
@@ -116,12 +125,15 @@
 #define MMB_FIRST_COND MMB_COND_EQ
 #define MMB_LAST_COND MMB_COND_GT
 
+/* mapping macros */
 #define field_toindex(macro) macro-MMB_FIRST_FIELD
 #define field_tomacro(index) index+MMB_FIRST_FIELD
 #define cond_toindex(macro) macro-MMB_FIRST_COND
 #define cond_tomacro(index) index+MMB_FIRST_COND
 
-#define MMB_MAX_FIELD_LEN 32
+/* other macros */
+#define MMB_MAX_FIELD_LEN 64
+#define MMB_DEFAULT_ETHERNET_TYPE ETHERNET_TYPE_IP4
 
 /* cli-name,protocol-name */
 #define foreach_mmb_transport_proto       \
