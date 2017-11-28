@@ -512,10 +512,19 @@ clib_error_t *validate_matches(mmb_rule_t *rule) {
    return NULL;
 }
 
+static_always_inline mmb_transport_option_t to_transport_option(mmb_target_t *target) {
+   mmb_transport_option_t opt;
+   memset(&opt, 0, sizeof(mmb_transport_option_t));
+   opt.l4 = IP_PROTOCOL_TCP;
+   opt.kind = target->opt_kind;
+   opt.value = target->value;
+   return opt;
+}
+
 clib_error_t *validate_targets(mmb_rule_t *rule) {
    clib_error_t *error;
    uword index = 0;
-   uword *strip_indexes = 0, *strip_index;
+   uword *rm_indexes = 0, *rm_index;
 
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
@@ -565,7 +574,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
 
        /* build option strip list  */
-       if (vec_len(rule->opts) == 0)  {
+       if (vec_len(rule->strips) == 0)  {
          rule->has_strips = 1;
          /* first strip target, set type */
          if (reverse)
@@ -576,31 +585,32 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
        if (field == MMB_FIELD_ALL) /* strip all */
          target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
 
-       vec_add1(rule->opts, target->opt_kind);
-       vec_insert_elt_last(strip_indexes, &index);
-
+       vec_add1(rule->strips, target->opt_kind);
+       vec_insert_elt_last(rm_indexes, &index);
+       //vec_free(target->value);
      } else if (keyword == MMB_TARGET_ADD) { 
+
         /* Ensure that field of strip target is a tcp opt. */
        if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
              && field < MMB_FIELD_ALL))
          return clib_error_return(0, "add <field> must be a tcp option");
-         // TODO: 
-         // separate in struct, flag to bits, 
+
        /* empty value should be fixed len and len = 0 */
        if (vec_len(value) == 0 
              && !(is_fixed_length(field) && lens[field_toindex(field)]==0) )
          return clib_error_return(0, "add <field> missing value");
 
+       /* add transport opt to add-list and register for deletion */
+       mmb_transport_option_t opt = to_transport_option(target);
+       vec_add1(rule->adds, opt);
        rule->has_adds = 1;
-       //vec_insert_elt_last(strip_indexes, &index); uncomment to rm adds from targets
+       vec_insert_elt_last(rm_indexes, &index);
      }
    } 
 
    /* delete strips and adds from targets */ 
-   vec_foreach(strip_index, strip_indexes) {
-     mmb_target_t *target = &rule->targets[*strip_index];
-     vec_free(target->value);
-     vec_delete(rule->targets, 1, *strip_index);
+   vec_foreach(rm_index, rm_indexes) {
+     vec_delete(rule->targets, 1, *rm_index);
    }
    
    return NULL;
@@ -661,7 +671,11 @@ void mmb_free_rule(mmb_rule_t *rule) {
     vec_free(rule->targets[index].value);
   }
   vec_free(rule->targets);
-  vec_free(rule->opts);
+  vec_free(rule->strips);
+  vec_foreach_index(index, rule->adds) {
+    vec_free(rule->adds[index].value);
+  }
+  vec_free(rule->adds);
 }
 
 /**

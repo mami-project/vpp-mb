@@ -145,6 +145,12 @@ _(MMB_FIELD_TCP_OPT_FAST_OPEN,FastOpen,34)      \
 _(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)                                    
 
 typedef struct {
+   u8 l4;
+   u8 kind;
+   u8 *value;
+} mmb_transport_option_t;
+
+typedef struct {
    u8 field; /*! The field to match on */
    u8 opt_kind; /*! The kind of option, if the field is one */
    u8 condition; /*! The constraint condition (optional) */
@@ -167,14 +173,16 @@ typedef struct {
   u32 out;
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
-#define MMB_RULE_CONTAIN_ADDS (1 << 4)
-  u8 *opts;
+
+  u8 *strips;
+  mmb_transport_option_t *adds;
 
   u8 has_strips:1;
   u8 whitelist:1;
   u8 has_adds:1;
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
+
 } mmb_rule_t;
 
 typedef struct {

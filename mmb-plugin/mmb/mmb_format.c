@@ -340,19 +340,34 @@ static_always_inline u8 *mmb_format_if_sw_index(u8 *s, va_list *args) {
                 mm.vnet_main, sw_if_index);
 }
 
-static_always_inline mmb_target_t mmb_target_from_opt(mmb_rule_t *rule, 
-                                                           uword strip_index) {
+static_always_inline mmb_target_t target_from_strip(mmb_rule_t *rule, 
+                                                    uword strip_index) {
    mmb_target_t strip_target;
    if (rule->l4 == IP_PROTOCOL_TCP)
       strip_target = (mmb_target_t) {
             .keyword = MMB_TARGET_STRIP,
             .field = MMB_FIELD_TCP_OPT,
-            .opt_kind = rule->opts[strip_index],
+            .opt_kind = rule->strips[strip_index],
             .reverse = rule->whitelist,
             .value = 0
       };
 
    return strip_target;
+}
+
+static_always_inline mmb_target_t target_from_add(mmb_rule_t *rule, 
+                                                  uword add_index) {
+   mmb_target_t add_target;
+   if (rule->l4 == IP_PROTOCOL_TCP)
+      add_target = (mmb_target_t) {
+            .keyword = MMB_TARGET_ADD,
+            .field = MMB_FIELD_TCP_OPT,
+            .opt_kind = rule->adds[add_index].kind,
+            .reverse = 0,
+            .value = rule->adds[add_index].value
+      };
+
+   return add_target;
 }
 
 u8 *mmb_format_rule(u8 *s, va_list *args) {
@@ -367,15 +382,22 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
                         (index != vec_len(rule->matches)-1) ? " AND ":" ");
   }
 
-  vec_foreach_index(index, rule->targets) {
-    s = format(s, "%U%s", mmb_format_target, &rule->targets[index],  
-                        (index != vec_len(rule->targets)-1) ? ", ":"");
+  vec_foreach_index(index, rule->strips) {
+    mmb_target_t strip_target = target_from_strip(rule, index);
+    s = format(s, "%U%s", mmb_format_target, &strip_target,
+                         (index != vec_len(rule->strips)-1) ? ", ":"");
   }
-  
-  vec_foreach_index(index, rule->opts) {
-    mmb_target_t strip_target = mmb_target_from_opt(rule, index);
-    s = format(s, "%s%U", (index != vec_len(rule->opts)-1) ? ", ":" ",
-                         mmb_format_target, &strip_target);
+
+  vec_foreach_index(index, rule->targets) {
+    s = format(s, "%s%U", (vec_len(rule->strips)>0) ? ", ":"",
+                         mmb_format_target, &rule->targets[index]);
+  }
+
+  vec_foreach_index(index, rule->adds) {
+    mmb_target_t opt_target = target_from_add(rule, index);
+    s = format(s, "%s%U", 
+               (vec_len(rule->strips)>0 || vec_len(rule->targets)>0) ? ", ":"",
+                mmb_format_target, &opt_target);
   }
 
   return s;
@@ -389,10 +411,10 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
                 mmb_format_ip_protocol, rule->l4,
                 mmb_format_if_sw_index, rule->in,
                 mmb_format_if_sw_index, rule->out); 
-  uword index, strip_index=0;
+  uword index, strip_index=0, add_index=0;
   for (index=0; 
        index<clib_max(vec_len(rule->matches), 
-                      vec_len(rule->targets)+vec_len(rule->opts)); 
+                      vec_len(rule->targets)+vec_len(rule->strips)+vec_len(rule->adds)); 
        index++) {
     if (index < vec_len(rule->matches)) {
       /* tabulate empty line */
@@ -403,12 +425,16 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
     } else  
       s = format(s, "%96s", blanks);
 
-    if (index < vec_len(rule->targets)) 
-      s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
-    else if (strip_index < vec_len(rule->opts)) {
-      mmb_target_t strip_target = mmb_target_from_opt(rule, strip_index);
+   if (strip_index < vec_len(rule->strips)) {
+      mmb_target_t strip_target = target_from_strip(rule, strip_index);
       s = format(s, "%-40U", mmb_format_target, &strip_target);
       strip_index++;
+    } else  if (index < vec_len(rule->targets)) 
+      s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
+    else if (add_index < vec_len(rule->adds)) {
+      mmb_target_t opt_target = target_from_add(rule, add_index);
+      s = format(s, "%-40U", mmb_format_target, &opt_target);
+      add_index++;
     }
     s = format(s, "\n");
 
