@@ -480,12 +480,12 @@ clib_error_t *validate_matches(mmb_rule_t *rule) {
          if (vec_len(value) == 0)
            translate_match_bit_flags(match);
          break;
-#define _(a,b,c) case a: {match->field = MMB_FIELD_TCP_OPT;match->opt_kind=c;\
-                          rule->flags |= MMB_RULE_MATCHES_CONTAIN_OPTS;break;}
+#define _(a,b,c) case a: {match->field=MMB_FIELD_TCP_OPT; match->opt_kind=c;\
+                          rule->opts_in_matches=1; break;}
    foreach_mmb_tcp_opts
 #undef _
        case MMB_FIELD_TCP_OPT:
-         rule->flags |= MMB_RULE_MATCHES_CONTAIN_OPTS;
+         rule->opts_in_matches=1;
          break;
        case MMB_FIELD_INTERFACE_IN:  
        case MMB_FIELD_INTERFACE_OUT:
@@ -532,6 +532,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
                                      " with the 'strip' keyword and no value");
          if (reverse)
            return clib_error_return(0, "<target> has no effect");
+         
          break;
        case MMB_FIELD_INTERFACE_IN:
        case MMB_FIELD_INTERFACE_OUT:
@@ -545,12 +546,12 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          break;
 
 #define _(a,b,c) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=c;\
-                          rule->flags |= MMB_RULE_TARGETS_CONTAIN_OPTS;break;}
+                          rule->opts_in_targets=1; break;}
    foreach_mmb_tcp_opts
 #undef _
        //TODO: other "bit fields" (see above in "matches" part)
        case MMB_FIELD_TCP_OPT:
-         rule->flags |= MMB_RULE_TARGETS_CONTAIN_OPTS;
+         rule->opts_in_targets=1;
          break;
        default:
          break;
@@ -565,19 +566,37 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
 
        /* build option strip list  */
        if (vec_len(rule->opts) == 0)  {
-         rule->flags |= MMB_RULE_CONTAIN_STRIPS;
+         rule->has_strips = 1;
          /* first strip target, set type */
          if (reverse)
-            rule->flags |= MMB_RULE_WHITELIST;
-       } else if (!!(rule->flags & MMB_RULE_WHITELIST) != reverse)
+            rule->whitelist = 1;
+       } else if (rule->whitelist != reverse)
          return clib_error_return(0, "inconsistent use of ! in strip");
+
+       if (field == MMB_FIELD_ALL) /* strip all */
+         target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
+
        vec_add1(rule->opts, target->opt_kind);
        vec_insert_elt_last(strip_indexes, &index);
-     } else if (keyword == MMB_TARGET_MODIFY) 
-       ;
+
+     } else if (keyword == MMB_TARGET_ADD) { 
+        /* Ensure that field of strip target is a tcp opt. */
+       if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
+             && field < MMB_FIELD_ALL))
+         return clib_error_return(0, "add <field> must be a tcp option");
+         // TODO: 
+         // separate in struct, flag to bits, 
+       /* empty value should be fixed len and len = 0 */
+       if (vec_len(value) == 0 
+             && !(is_fixed_length(field) && lens[field_toindex(field)]==0) )
+         return clib_error_return(0, "add <field> missing value");
+
+       rule->has_adds = 1;
+       //vec_insert_elt_last(strip_indexes, &index); uncomment to rm adds from targets
+     }
    } 
 
-   /* delete strips from targets */ 
+   /* delete strips and adds from targets */ 
    vec_foreach(strip_index, strip_indexes) {
      mmb_target_t *target = &rule->targets[*strip_index];
      vec_free(target->value);
