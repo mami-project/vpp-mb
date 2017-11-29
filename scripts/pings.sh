@@ -1,27 +1,16 @@
 #!/bin/bash
 
 # print mmb trace blocks
-function parse_mmb_trace {
-   str=$1
-   block_name="mmb"
-   IFS=$'\n' # make newlines the only separator
-   mmb_block=0
-   while read -r line; do
-
-      if [[ ${line:0:1} != " " ]] ; then 
-         if [[ "$line" == *"${block_name}"* ]]; then
-            echo "$line"
-            mmb_block=1
-         else
-            mmb_block=0
-         fi
-
-      elif [[ ${mmb_block} == 1 ]]; then
-        echo "$line"
-        mmb_block=0
-      fi
-
-   done <<< "$str"
+function parse_mmb_trace
+{
+  str=$1
+  block_name="mmb"
+  IFS=$'\n' # make newlines the only separator
+  while read -r line; do
+    if [[ "${line:0:2}" == "  " ]] && [[ "${line:2}" == "${block_name}: "* ]]; then
+      echo "$line"
+    fi
+  done <<< "$str"
 }
 
 # populate ARP table

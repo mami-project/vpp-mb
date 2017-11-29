@@ -58,6 +58,9 @@ doc/*
 scripts/install.sh
 scripts/upload2vm.sh
 scripts/dev.sh
+scripts/merge_branches.sh
+scripts/pull_all.sh
+scripts/mypings.sh
 lib/*
 
 
