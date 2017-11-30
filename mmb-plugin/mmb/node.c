@@ -18,6 +18,43 @@
 #include <vppinfra/error.h>
 #include <mmb/node.h>
 
+static u64 get_ip_field(ip4_header_t *, u8);
+static u64 get_icmp_field(icmp46_header_t *, u8);
+static u64 get_udp_field(udp_header_t *, u8);
+static u64 get_tcp_field(tcp_header_t *, u8);
+static void set_ip_field(ip4_header_t *, u8, u64);
+static void set_icmp_field(icmp46_header_t *, u8, u64);
+static void set_udp_field(udp_header_t *, u8, u64);
+static void set_tcp_field(tcp_header_t *, u8, u64);
+
+static u8 rule_requires_tcp_options(mmb_rule_t *);
+static u8 tcp_option_exists(mmb_tcp_options_t *, u8);
+static u8 mmb_parse_tcp_options(tcp_header_t *, mmb_tcp_options_t *);
+static u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *);
+static u8 mmb_padding_tcp_options(u8 *, u8);
+
+static u64 mmb_bytes_to_u64(u8 *);
+static u64 mmb_n_bytes_to_u64(u8 *, u8);
+static void mmb_parse_ip4_cidr_address(u8 *, u32 *, u32 *);
+static u8 mmb_value_compare(u64, u64, u8, u8);
+static u8 mmb_value_starts_with(u8 *, u8, u8 *);
+static void recompute_l3_checksum(ip4_header_t *);
+static void recompute_l4_checksum(vlib_main_t *, vlib_buffer_t *, ip4_header_t *);
+
+static u8 packet_matches(ip4_header_t *, mmb_rule_t *, mmb_tcp_options_t *);
+
+static u32 packet_apply_targets(ip4_header_t *, mmb_rule_t *, mmb_tcp_options_t *, u8 *);
+static u8 mmb_target_modify_field(ip4_header_t *, mmb_target_t *);
+static u8 mmb_target_add_option(u8 *, u8, mmb_transport_option_t *);
+static u8 mmb_target_modify_option(mmb_tcp_options_t *, u8, u8 *);
+static u8 mmb_target_strip_option(mmb_tcp_options_t *, u8);
+
+vlib_node_registration_t mmb_node;
+
+/************************
+ *   MMB Node format
+ ***********************/
+
 static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
 {
   u8 keyword = va_arg(*args, u32);
@@ -61,6 +98,514 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   return s;
 }
 
+/************************
+ *      IP fields
+ ***********************/
+
+u64 get_ip_field(ip4_header_t *iph, u8 field)
+{
+  u64 value = ~0;
+
+  switch(field)
+  {
+    case MMB_FIELD_IP4_VER:
+      value = iph->ip_version_and_header_length >> 4;
+      break;
+    case MMB_FIELD_IP4_IHL:
+      value = iph->ip_version_and_header_length & 0xf;
+      break;
+    case MMB_FIELD_IP4_DSCP:
+      value = iph->tos >> 2;
+      break;
+    case MMB_FIELD_IP4_ECN:
+      value = iph->tos & 0x3;
+      break;
+    case MMB_FIELD_IP4_LEN:
+      value = clib_net_to_host_u16(iph->length);
+      break;
+    case MMB_FIELD_IP4_ID:
+      value = clib_net_to_host_u16(iph->fragment_id);
+      break;
+    case MMB_FIELD_IP4_FLAGS:
+      value = clib_net_to_host_u16(iph->flags_and_fragment_offset) >> 13;
+      break;
+    case MMB_FIELD_IP4_RES:
+      value = clib_net_to_host_u16(iph->flags_and_fragment_offset) >> 15;
+      break;
+    case MMB_FIELD_IP4_DF:
+      value = (clib_net_to_host_u16(iph->flags_and_fragment_offset) >> 14) & 0x1;
+      break;
+    case MMB_FIELD_IP4_MF:
+      value = (clib_net_to_host_u16(iph->flags_and_fragment_offset) >> 13) & 0x1;
+      break;
+    case MMB_FIELD_IP4_FRAG_OFFSET:
+      value = clib_net_to_host_u16(iph->flags_and_fragment_offset) & 0x1fff;
+      break;
+    case MMB_FIELD_IP4_TTL:
+      value = iph->ttl;
+      break;
+    case MMB_FIELD_IP4_PROTO:
+      value = iph->protocol;
+      break;
+    case MMB_FIELD_IP4_CHECKSUM:
+      value = clib_net_to_host_u16(iph->checksum);
+      break;
+    case MMB_FIELD_IP4_SADDR:
+      value = clib_net_to_host_u32(iph->src_address.as_u32);
+      break;
+    case MMB_FIELD_IP4_DADDR:
+      value = clib_net_to_host_u32(iph->dst_address.as_u32);
+      break;
+    default:
+      break;
+  }
+
+  return value;
+}
+
+void set_ip_field(ip4_header_t *iph, u8 field, u64 value)
+{
+  switch(field)
+  {
+    case MMB_FIELD_IP4_VER:
+      iph->ip_version_and_header_length = (iph->ip_version_and_header_length & 0xf) | (value << 4);
+      break;
+    case MMB_FIELD_IP4_IHL:
+      iph->ip_version_and_header_length = (iph->ip_version_and_header_length & 0xf0) | value;
+      break;
+    case MMB_FIELD_IP4_DSCP:
+      iph->tos = (iph->tos & 0x3) | (value << 2);
+      break;
+    case MMB_FIELD_IP4_ECN:
+      iph->tos = (iph->tos & 0xfc) | value;
+      break;
+    case MMB_FIELD_IP4_LEN:
+      iph->length = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_IP4_ID:
+      iph->fragment_id = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_IP4_FLAGS:
+      iph->flags_and_fragment_offset = clib_host_to_net_u16((clib_net_to_host_u16(iph->flags_and_fragment_offset) & 0x1fff) | (value << 13));
+      break;
+    case MMB_FIELD_IP4_RES:
+      iph->flags_and_fragment_offset = clib_host_to_net_u16((clib_net_to_host_u16(iph->flags_and_fragment_offset) & 0x7fff) | (value << 15));
+      break;
+    case MMB_FIELD_IP4_DF:
+      iph->flags_and_fragment_offset = clib_host_to_net_u16((clib_net_to_host_u16(iph->flags_and_fragment_offset) & 0xbfff) | (value << 14));
+      break;
+    case MMB_FIELD_IP4_MF:
+      iph->flags_and_fragment_offset = clib_host_to_net_u16((clib_net_to_host_u16(iph->flags_and_fragment_offset) & 0xdfff) | (value << 13));
+      break;
+    case MMB_FIELD_IP4_FRAG_OFFSET:
+      iph->flags_and_fragment_offset = clib_host_to_net_u16((clib_net_to_host_u16(iph->flags_and_fragment_offset) & 0xe000) | value);
+      break;
+    case MMB_FIELD_IP4_TTL:
+      iph->ttl = value;
+      break;
+    case MMB_FIELD_IP4_PROTO:
+      iph->protocol = value;
+      break;
+    case MMB_FIELD_IP4_CHECKSUM:
+      iph->checksum = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_IP4_SADDR:
+      iph->src_address.as_u32 = clib_host_to_net_u32(value);
+      break;
+    case MMB_FIELD_IP4_DADDR:
+      iph->dst_address.as_u32 = clib_host_to_net_u32(value);
+      break;
+    default:
+      break;
+  }
+}
+
+/************************
+ *     ICMP fields
+ ***********************/
+
+u64 get_icmp_field(icmp46_header_t *icmph, u8 field)
+{
+  u64 value = ~0;
+
+  switch(field)
+  {
+    case MMB_FIELD_ICMP_TYPE:
+      value = icmph->type;
+      break;
+    case MMB_FIELD_ICMP_CODE:
+      value = icmph->code;
+      break;
+    case MMB_FIELD_ICMP_CHECKSUM:
+      value = clib_net_to_host_u16(icmph->checksum);
+      break;
+    default:
+      break;
+  }
+
+  return value;
+}
+
+void set_icmp_field(icmp46_header_t *icmph, u8 field, u64 value)
+{
+  switch(field)
+  {
+    case MMB_FIELD_ICMP_TYPE:
+      icmph->type = value;
+      break;
+    case MMB_FIELD_ICMP_CODE:
+      icmph->code = value;
+      break;
+    case MMB_FIELD_ICMP_CHECKSUM:
+      icmph->checksum = clib_host_to_net_u16(value);
+      break;
+    default:
+      break;
+  }
+}
+
+/************************
+ *      UDP fields
+ ***********************/
+
+u64 get_udp_field(udp_header_t *udph, u8 field)
+{
+  u64 value = ~0;
+
+  switch(field)
+  {
+    case MMB_FIELD_UDP_SPORT:
+      value = clib_net_to_host_u16(udph->src_port);
+      break;
+    case MMB_FIELD_UDP_DPORT:
+      value = clib_net_to_host_u16(udph->dst_port);
+      break;
+    case MMB_FIELD_UDP_LEN:
+      value = clib_net_to_host_u16(udph->length);
+      break;
+    case MMB_FIELD_UDP_CHECKSUM:
+      value = clib_net_to_host_u16(udph->checksum);
+      break;
+    default:
+      break;
+  }
+
+  return value;
+}
+
+void set_udp_field(udp_header_t *udph, u8 field, u64 value)
+{
+  switch(field)
+  {
+    case MMB_FIELD_UDP_SPORT:
+      udph->src_port = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_UDP_DPORT:
+      udph->dst_port = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_UDP_LEN:
+      udph->length = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_UDP_CHECKSUM:
+      udph->checksum = clib_host_to_net_u16(value);
+      break;
+    default:
+      break;
+  }
+}
+
+/************************
+ *      TCP fields
+ ***********************/
+
+u64 get_tcp_field(tcp_header_t *tcph, u8 field)
+{
+  u64 value = ~0;
+
+  switch(field)
+  {
+    case MMB_FIELD_TCP_SPORT:
+      value = clib_net_to_host_u16(tcph->src_port);
+      break;
+    case MMB_FIELD_TCP_DPORT:
+      value = clib_net_to_host_u16(tcph->dst_port);
+      break;
+    case MMB_FIELD_TCP_SEQ_NUM:
+      value = clib_net_to_host_u32(tcph->seq_number);
+      break;
+    case MMB_FIELD_TCP_ACK_NUM:
+      value = clib_net_to_host_u32(tcph->ack_number);
+      break;
+    case MMB_FIELD_TCP_OFFSET:
+      value = tcph->data_offset_and_reserved >> 4;
+      break;
+    case MMB_FIELD_TCP_RESERVED:
+      value = tcph->data_offset_and_reserved & 0xf;
+      break;
+    case MMB_FIELD_TCP_FLAGS:
+      value = tcph->flags;
+      break;
+    case MMB_FIELD_TCP_CWR:
+      value = tcph->flags >> 7;
+      break;
+    case MMB_FIELD_TCP_ECE:
+      value = (tcph->flags >> 6) & 0x1;
+      break;
+    case MMB_FIELD_TCP_URG:
+      value = (tcph->flags >> 5) & 0x1;
+      break;
+    case MMB_FIELD_TCP_ACK:
+      value = (tcph->flags >> 4) & 0x1;
+      break;
+    case MMB_FIELD_TCP_PUSH:
+      value = (tcph->flags >> 3) & 0x1;
+      break;
+    case MMB_FIELD_TCP_RST:
+      value = (tcph->flags >> 2) & 0x1;
+      break;
+    case MMB_FIELD_TCP_SYN:
+      value = (tcph->flags >> 1) & 0x1;
+      break;
+    case MMB_FIELD_TCP_FIN:
+      value = tcph->flags & 0x1;
+      break;
+    case MMB_FIELD_TCP_WINDOW:
+      value = clib_net_to_host_u16(tcph->window);
+      break;
+    case MMB_FIELD_TCP_CHECKSUM:
+      value = clib_net_to_host_u16(tcph->checksum);
+      break;
+    case MMB_FIELD_TCP_URG_PTR:
+      value = clib_net_to_host_u16(tcph->urgent_pointer);
+      break;
+    default:
+      break;
+  }
+
+  return value;
+}
+
+void set_tcp_field(tcp_header_t *tcph, u8 field, u64 value)
+{
+  switch(field)
+  {
+    case MMB_FIELD_TCP_SPORT:
+      tcph->src_port = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_TCP_DPORT:
+      tcph->dst_port = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_TCP_SEQ_NUM:
+      tcph->seq_number = clib_host_to_net_u32(value);
+      break;
+    case MMB_FIELD_TCP_ACK_NUM:
+      tcph->ack_number = clib_host_to_net_u32(value);
+      break;
+    case MMB_FIELD_TCP_OFFSET:
+      tcph->data_offset_and_reserved = (tcph->data_offset_and_reserved & 0xf) | (value << 4);
+      break;
+    case MMB_FIELD_TCP_RESERVED:
+      tcph->data_offset_and_reserved = (tcph->data_offset_and_reserved & 0xf0) | value;
+      break;
+    case MMB_FIELD_TCP_FLAGS:
+      tcph->flags = value;
+      break;
+    case MMB_FIELD_TCP_CWR:
+      tcph->flags = (tcph->flags & 0x7f) | (value << 7);
+      break;
+    case MMB_FIELD_TCP_ECE:
+      tcph->flags = (tcph->flags & 0xbf) | (value << 6);
+      break;
+    case MMB_FIELD_TCP_URG:
+      tcph->flags = (tcph->flags & 0xdf) | (value << 5);
+      break;
+    case MMB_FIELD_TCP_ACK:
+      tcph->flags = (tcph->flags & 0xef) | (value << 4);
+      break;
+    case MMB_FIELD_TCP_PUSH:
+      tcph->flags = (tcph->flags & 0xf7) | (value << 3);
+      break;
+    case MMB_FIELD_TCP_RST:
+      tcph->flags = (tcph->flags & 0xfb) | (value << 2);
+      break;
+    case MMB_FIELD_TCP_SYN:
+      tcph->flags = (tcph->flags & 0xfd) | (value << 1);
+      break;
+    case MMB_FIELD_TCP_FIN:
+      tcph->flags = (tcph->flags & 0xfe) | value;
+      break;
+    case MMB_FIELD_TCP_WINDOW:
+      tcph->window = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_TCP_CHECKSUM:
+      tcph->checksum = clib_host_to_net_u16(value);
+      break;
+    case MMB_FIELD_TCP_URG_PTR:
+      tcph->urgent_pointer = clib_host_to_net_u16(value);
+      break;
+    default:
+      break;
+  }
+}
+
+/************************
+ *      TCP options
+ ***********************/
+
+u8 tcp_option_exists(mmb_tcp_options_t *options, u8 kind)
+{
+  u64 flag_mask = 1UL << (kind & 63);
+  return (options->found[kind >> 6] & flag_mask) != 0;
+}
+
+u8 rule_requires_tcp_options(mmb_rule_t *rule)
+{
+  return (rule->opts_in_matches || rule->opts_in_targets);
+}
+
+u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
+{
+  u8 offset, opt_len, kind;
+  u8 opts_len = (tcp_doff(tcph) << 2) - sizeof(tcp_header_t);
+
+  const u8 *data = (const u8 *)(tcph + 1);
+  options->data = (u8 *)(tcph + 1);
+
+  options->found[0] = 0UL;
+  options->found[1] = 0UL;
+  options->found[2] = 0UL;
+  options->found[3] = 0UL;
+
+  options->parsed = 0;
+
+  options->idx = 0;
+  vec_validate(options->idx, 254);
+
+  for(offset = 0; opts_len > 0; opts_len -= opt_len, data += opt_len, offset += opt_len)
+  {
+    kind = data[0];
+
+    if (kind == TCP_OPTION_EOL)
+      break;
+    else if (kind == TCP_OPTION_NOOP)
+    {
+      opt_len = 1;
+      continue;
+    }
+    else
+    {
+      /* Broken options */
+      if (opts_len < 2)
+        return 0;
+
+      opt_len = data[1];
+      if (opt_len < 2 || opt_len > opts_len)
+        return 0;
+    }
+
+    mmb_tcp_option_t option;
+    option.is_stripped = 0;
+    option.offset = offset;
+    option.data_length = opt_len-2;
+    option.new_value = 0;
+
+    options->found[kind >> 6] |= 1UL << (kind & 63);
+    vec_add1(options->parsed, option);
+    options->idx[kind] = (u8) vec_len(options->parsed)-1;
+  }
+
+  return 1;
+}
+
+//TODO work in progress (still some parts to be tested)
+u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
+{
+  u8 offset = 0; //position where we write
+  u8 shift = 0; //cumulative shift offset to the right (after a resize)
+
+  u8 *data = opts->data;
+
+  u8 i;
+  vec_foreach_index(i, opts->parsed)
+  {
+    mmb_tcp_option_t *opt = &opts->parsed[i];
+
+    if (opt->is_stripped)
+      continue;
+
+    if (vec_len(opt->new_value) > 0)
+    {
+      /* MODIFIED */
+      u8 old_size = opt->data_length;
+      u8 new_size = vec_len(opt->new_value);
+
+      if (old_size == new_size)
+      {
+        clib_memcpy(&data[offset], &data[opt->offset+shift], 2);
+        clib_memcpy(&data[offset+2], &opt->new_value[0], new_size); //TODO check if memcpy works with vec
+        offset += new_size+2;
+      }
+      else if (old_size > new_size)
+      {
+        clib_memcpy(&data[offset], &data[opt->offset+shift], 1);
+        data[offset+1] = new_size;
+        clib_memcpy(&data[offset+2], &opt->new_value[0], new_size); //TODO check if memcpy works with vec
+        offset += new_size+2;
+      }
+      else
+      {
+        /* New size is bigger than old size -> check that we have to make room or not */
+        if (i+1 < vec_len(opts->parsed))
+        {
+          mmb_tcp_option_t *next_opt = &opts->parsed[i+1];
+          if ((offset + new_size+2) > (next_opt->offset + shift))
+          {
+            u8 local_shift = (offset + new_size+2) - (next_opt->offset + shift);
+            memmove(&data[offset+new_size+2+1], &data[offset+new_size+2], 50); //TODO shift magic
+            shift += local_shift;
+          }
+
+          clib_memcpy(&data[offset], &data[opt->offset+shift], 2);
+          clib_memcpy(&data[offset+2], &opt->new_value[0], new_size); //TODO check if memcpy works with vec
+          offset += new_size+2;
+        }
+        else
+        {
+          clib_memcpy(&data[offset], &data[opt->offset+shift], 2);
+          clib_memcpy(&data[offset+2], &opt->new_value[0], new_size); //TODO check if memcpy works with vec
+          offset += new_size+2;
+        }
+      }
+    }
+    else
+    {
+      /* NOT MODIFIED, rewrite */
+      clib_memcpy(&data[offset], &data[opt->offset], opt->data_length+2);
+      offset += opt->data_length+2;
+    }
+  }
+
+  return offset;
+  //TODO check that options don't overflow 40 bytes (opts_len)
+}
+
+u8 mmb_padding_tcp_options(u8 *data, u8 offset)
+{
+  // Terminate TCP options
+  if (offset % 4)
+    data[offset++] = TCP_OPTION_EOL;
+
+  // Padding to reach a u32 boundary
+  while(offset % 4)
+    data[offset++] = TCP_OPTION_NOOP;
+
+  return offset;
+}
+
+/************************
+ *  Utility functions
+ ***********************/
+
 void mmb_parse_ip4_cidr_address(u8 *bytes, u32 *ip_addr, u32 *mask)
 {
   *mask = vec_pop(bytes);
@@ -70,12 +615,17 @@ void mmb_parse_ip4_cidr_address(u8 *bytes, u32 *ip_addr, u32 *mask)
 
 u64 mmb_bytes_to_u64(u8 *bytes)
 {
+  return mmb_n_bytes_to_u64(bytes, vec_len(bytes));
+}
+
+u64 mmb_n_bytes_to_u64(u8 *data, u8 length)
+{
   u64 value = 0;
-  u32 len = vec_len(bytes) - 1;
+  u32 len = length-1;
 
   u32 i;
-  vec_foreach_index(i, bytes) {
-    value += ((u64) bytes[i]) << ((len - i) * 8);
+  for(i = 0; i < length; i++) {
+    value += ((u64) *data++) << ((len - i) * 8);
   }
 
   return value;
@@ -121,54 +671,23 @@ u8 mmb_value_compare(u64 a, u64 b, u8 condition, u8 reverse)
   return res;
 }
 
-u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
+u8 mmb_value_starts_with(u8 *pkt_data, u8 pkt_data_length, u8 *value)
 {
-  u8 offset, opt_len, kind;
-  u8 opts_len = (tcp_doff(tcph) << 2) - sizeof(tcp_header_t);
+  /* Packet data can't start with value if the latter is bigger */
+  if (vec_len(value) > pkt_data_length)
+    return 0;
 
-  u8 *data = (u8*)(tcph + 1);
-  options->data = (u8*)(tcph + 1);
-
-  options->flags[0] = 0L;
-  options->flags[1] = 0L;
-  options->flags[2] = 0L;
-  options->flags[3] = 0L;
-
-  for(offset = 0; opts_len > 0; opts_len -= opt_len, data += opt_len, offset += opt_len)
+  /* Compare each value byte to packet data ones */
+  u32 i;
+  vec_foreach_index(i, value)
   {
-    kind = data[0];
-
-    if (kind == TCP_OPTION_EOL)
-      break;
-    else if (kind == TCP_OPTION_NOOP)
-    {
-      opt_len = 1;
-      continue;
-    }
-    else
-    {
-      /* Broken options */
-      if (opts_len < 2)
-        return 0;
-
-      opt_len = data[1];
-      if (opt_len < 2 || opt_len > opts_len)
-        return 0;
-    }
-
-    //TODO: pre-generate masks ?
-    options->flags[kind >> 6] |= 1L << (kind & 63);
-    options->data_length[kind] = opt_len-2;
-    options->data_offset[kind] = offset+2;
+    /* Mismatch -> can't start with */
+    if (pkt_data[i] != value[i])
+      return 0;
   }
 
+  /* Packet data starts with value */
   return 1;
-}
-
-u8 rule_requires_tcp_options(mmb_rule_t *rule)
-{
-  return (rule->flags & MMB_RULE_MATCHES_CONTAIN_OPTS) 
-          || (rule->flags & MMB_RULE_TARGETS_CONTAIN_OPTS);
 }
 
 void recompute_l4_checksum(vlib_main_t *vm, vlib_buffer_t *buffer, ip4_header_t *iph)
@@ -202,6 +721,23 @@ void recompute_l3_checksum(ip4_header_t *iph)
   iph->checksum = ip4_header_checksum(iph);
 }
 
+static_always_inline u32 get_sw_if_index(vlib_buffer_t *b, int is_output)
+{
+  return vnet_buffer(b)->sw_if_index[is_output];
+}
+
+static_always_inline void *get_ip_header(vlib_buffer_t *b, int is_output)
+{
+  u8 *p = vlib_buffer_get_current(b);
+  if (is_output)
+    p += ethernet_buffer_header_size(b);
+  return p;
+}
+
+/************************
+ *  MATCHING functions
+ ***********************/
+
 //TODO: review & split code of packet_matches function
 u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_options)
 {
@@ -232,7 +768,7 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
         if (match->condition == 0 && match->reverse == 1)
           return 0;
 
-        if (match->field == MMB_FIELD_IP_SADDR || match->field == MMB_FIELD_IP_DADDR)
+        if (match->field == MMB_FIELD_IP4_SADDR || match->field == MMB_FIELD_IP4_DADDR)
         {
           u32 rule_addr, rule_slash_mask, rule_netmask;
           mmb_parse_ip4_cidr_address(match->value, &rule_addr, &rule_slash_mask);
@@ -257,7 +793,16 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
           return 0;
 
         icmp46_header_t *icmph = ip4_next_header(iph);
-        if (!mmb_value_compare(get_icmp_field(icmph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+        if (match->field == MMB_FIELD_ICMP_PAYLOAD)
+        {
+          u8 cond = mmb_value_starts_with((u8 *)(icmph + 1), /*TODO length*/4, match->value);
+          if (match->reverse)
+            cond = 1-cond;
+
+          if (!cond)
+            return 0;
+        }
+        else if (!mmb_value_compare(get_icmp_field(icmph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
           return 0;
         break;
 
@@ -268,7 +813,16 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
           return 0;
 
         udp_header_t *udph = ip4_next_header(iph);
-        if (!mmb_value_compare(get_udp_field(udph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+        if (match->field == MMB_FIELD_UDP_PAYLOAD)
+        {
+          u8 cond = mmb_value_starts_with((u8 *)(udph + 1), /*TODO length*/4, match->value);
+          if (match->reverse)
+            cond = 1-cond;
+
+          if (!cond)
+            return 0;
+        }
+        else if (!mmb_value_compare(get_udp_field(udph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
           return 0;
         break;
 
@@ -276,7 +830,19 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
       case IP_PROTOCOL_TCP:
         if (match->field == MMB_FIELD_TCP_OPT)
         {
-          if (match->condition == 0)
+          if (match->opt_kind == 0)
+          {
+            //TODO replace opt_kind=0 by opt_kind=ALL (to distinguish option 0 and this case)
+
+            /* do we have TCP options in this packet ? */
+            u8 cond = vec_len(tcp_options->parsed) > 0;
+            if (match->reverse)
+              cond = 1-cond;
+
+            if (!cond)
+              return 0;
+          }
+          else if (match->condition == 0)
           {
             /* only search for the existence of an option */
             u8 cond = tcp_option_exists(tcp_options, match->opt_kind);
@@ -292,11 +858,27 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
             if (!tcp_option_exists(tcp_options, match->opt_kind))
               return 0;
 
-            //TODO values bigger than 64 bits
-            // - case 1 (option value in packet is bigger than 64 bits): tcp_options->data_length[match->opt_kind] > 8
-            // - case 2 (option value in rule is bigger than 64 bits): vec_len(value) > 8
-            
-            // Option Values comparison not yet implemented, by default it is accepted for now
+            u8 opt_idx = tcp_options->idx[match->opt_kind];
+            u8 opt_offset = tcp_options->parsed[opt_idx].offset;
+            u8 opt_length = tcp_options->parsed[opt_idx].data_length;
+            u8 *opt_data_ptr = &tcp_options->data[opt_offset+2];
+
+            if (vec_len(match->value) > 8)
+            {
+              u8 cond = mmb_value_starts_with(opt_data_ptr, opt_length, match->value);
+              if (match->reverse)
+                cond = 1-cond;
+
+              if (!cond)
+                return 0;
+            }
+            else
+            {
+              if (!mmb_value_compare(mmb_n_bytes_to_u64(opt_data_ptr, opt_length), 
+                                            mmb_bytes_to_u64(match->value), 
+                                            match->condition, match->reverse))
+                return 0;
+            }
           }
         }
         else
@@ -306,7 +888,16 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
             return 0;
 
           tcp_header_t *tcph = ip4_next_header(iph);
-          if (!mmb_value_compare(get_tcp_field(tcph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+          if (match->field == MMB_FIELD_TCP_PAYLOAD)
+          {
+            u8 cond = mmb_value_starts_with((u8 *)(tcph + 1), /*TODO length*/4, match->value);//TODO skip options if any (+1 not enough)
+            if (match->reverse)
+              cond = 1-cond;
+
+            if (!cond)
+              return 0;
+          }
+          else if (!mmb_value_compare(get_tcp_field(tcph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
             return 0;
         }
         break;
@@ -321,14 +912,19 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
   return 1;
 }
 
-u32 packet_apply_targets(ip4_header_t *iph, mmb_target_t *targets, mmb_tcp_options_t *tcp_options, u8 *l4_modified)
+/************************
+ *   TARGET functions
+ ***********************/
+
+u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_options, u8 *l4_modified)
 {
   u32 i;
-  u8 is_stripped = 0;
+  u8 opts_len, opts_modified = 0;
 
-  vec_foreach_index(i, targets)
+  /* TARGETS (drop, modify -other than options-) */
+  vec_foreach_index(i, rule->targets)
   {
-    mmb_target_t *target = &targets[i];
+    mmb_target_t *target = &rule->targets[i];
 
     switch(target->keyword)
     {
@@ -336,29 +932,56 @@ u32 packet_apply_targets(ip4_header_t *iph, mmb_target_t *targets, mmb_tcp_optio
         return MMB_NEXT_DROP;
 
       case MMB_TARGET_MODIFY:
-        /*if (target->field == MMB_FIELD_TCP_OPT)
-          target_modify_option();//TODO
-        else*/
-          mmb_target_modify(iph, target, l4_modified);
-        break;
-
-      case MMB_TARGET_STRIP:
-        mmb_target_strip(tcp_options, target, &is_stripped);
+          *l4_modified |= mmb_target_modify_field(iph, target);
         break;
     }
   }
 
-  if (is_stripped)
+  /* STRIPS (options only) */
+  vec_foreach_index(i, rule->opt_strips)
   {
-    tcp_header_t *tcph = ip4_next_header(iph);
-    mmb_rewrite_tcp_options((u8 *)(tcph + 1), tcp_options);
-    *l4_modified = 1;
+    u8 *opt_kind = &rule->opt_strips[i];
+    //TODO waiting for new bitmap strip system
+    opts_modified |= mmb_target_strip_option(tcp_options, *opt_kind);
   }
 
-  return MMB_NEXT_LOOKUP;
+  /* MODS (options only) */
+  vec_foreach_index(i, rule->opt_mods)
+  {
+    mmb_target_t *opt_modified = &rule->opt_mods[i];
+    opts_modified |= mmb_target_modify_option(tcp_options, opt_modified->opt_kind, opt_modified->value);
+  }
+
+  /* Rewrite TCP options (if needed) */
+  if (opts_modified)
+    opts_len = mmb_rewrite_tcp_options(tcp_options);
+  else
+  {
+    tcp_header_t *tcph = ip4_next_header(iph);
+    opts_len = (tcp_doff(tcph) << 2) - sizeof(tcp_header_t);
+  }
+
+  /* ADDS (options only) */
+  vec_foreach_index(i, rule->opt_adds)
+  {
+    mmb_transport_option_t *opt_added = &rule->opt_adds[i];
+    opts_len = mmb_target_add_option(tcp_options->data, opts_len, opt_added);
+    opts_modified = 1;
+  }
+
+  /* Padding for options (if needed) */
+  if (opts_modified)
+  {
+    tcp_header_t *tcph = ip4_next_header(iph);
+    opts_len = mmb_padding_tcp_options((u8 *)(tcph + 1), opts_len);
+    //TODO update tcph->data_offset, length on IP (? -> watch out fragmentation)
+  }
+
+  *l4_modified |= opts_modified;
+  return MMB_NEXT_FORWARD;
 }
 
-void mmb_target_modify(ip4_header_t *iph, mmb_target_t *target, u8 *l4_modified)
+u8 mmb_target_modify_field(ip4_header_t *iph, mmb_target_t *target)
 {
   u16 field_protocol = get_field_protocol(target->field);
 
@@ -366,92 +989,64 @@ void mmb_target_modify(ip4_header_t *iph, mmb_target_t *target, u8 *l4_modified)
   {
     case ETHERNET_TYPE_IP4:
       set_ip_field(iph, target->field, mmb_bytes_to_u64(target->value));
-      break;
+      return 0;
 
     case IP_PROTOCOL_ICMP:
       set_icmp_field(ip4_next_header(iph), target->field, mmb_bytes_to_u64(target->value));
-      *l4_modified = 1;
-      break;
+      return 1;
 
     case IP_PROTOCOL_UDP:
       set_udp_field(ip4_next_header(iph), target->field, mmb_bytes_to_u64(target->value));
-      *l4_modified = 1;
-      break;
+      return 1;
 
     case IP_PROTOCOL_TCP:
       set_tcp_field(ip4_next_header(iph), target->field, mmb_bytes_to_u64(target->value));
-      *l4_modified = 1;
-      break;
+      return 1;
   }
+
+  return 0;
 }
 
-/*void mmb_target_modify_option()
+u8 mmb_target_add_option(u8 *data, u8 offset, mmb_transport_option_t *option)
 {
-  //TODO
-}*/
+  u8 data_size = vec_len(option->value);
 
-void mmb_target_strip(mmb_tcp_options_t *tcp_options, mmb_target_t *target, u8 *is_stripped)
+  data[offset++] = option->kind;
+  data[offset++] = data_size;
+
+  clib_memcpy(&data[offset], option->value, data_size);
+  offset += data_size+2;
+
+  return offset;
+}
+
+u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options, u8 kind, u8 *new_value)
 {
-  if (tcp_option_exists(tcp_options, target->opt_kind))
+  if (tcp_option_exists(tcp_options, kind))
   {
-    tcp_option_strip(tcp_options, target->opt_kind);
-    *is_stripped = 1;
+    tcp_options->parsed[tcp_options->idx[kind]].new_value = new_value;
+    return 1;
   }
+
+  return 0;
 }
 
-void mmb_rewrite_tcp_options(u8 *data, mmb_tcp_options_t *tcp_options)
+u8 mmb_target_strip_option(mmb_tcp_options_t *tcp_options, u8 kind)
 {
-  u8 i;
-  u32 opts_len = 0;
-
-  for(i = 0; i < 255; i++)
+  if (tcp_option_exists(tcp_options, kind))
   {
-    if (tcp_option_exists(tcp_options, i))
-    {
-      /* Kind */
-      *data++ = i;
-      
-      /* Total Length */
-      *data++ = tcp_options->data_length[i]+2;
+    u8 idx = tcp_options->idx[kind];
+    tcp_options->parsed[idx].is_stripped = 1;
 
-      /* Data */
-      if (tcp_options->data_length[i] > 0)
-      {
-        clib_memcpy(data, &tcp_options->data[tcp_options->data_offset[i]], tcp_options->data_length[i]);
-        data += tcp_options->data_length[i];
-      }
-
-      opts_len += tcp_options->data_length[i]+2;
-    }
+    return 1;
   }
 
-  /* Terminate TCP options */
-  if (opts_len % 4)
-  {
-    *data++ = TCP_OPTION_EOL;
-    opts_len++;
-  }
-
-  /* Padding to reach a u32 boundary */
-  while(opts_len % 4)
-  {
-    *data++ = TCP_OPTION_NOOP;
-    opts_len++;
-  }
-
-  //TODO update tcph->data_offset, length on IP (? -> watch out fragmentation)
+  return 0;
 }
 
-static_always_inline u32 get_sw_if_index(vlib_buffer_t *b, int is_output) {
-  return vnet_buffer(b)->sw_if_index[is_output];
-}
-
-static_always_inline void *get_ip_header(vlib_buffer_t *b, int is_output) {
-  u8 *p = vlib_buffer_get_current(b);
-  if (is_output)
-    p += ethernet_buffer_header_size(b);
-  return p;
-}
+/************************
+ *  Node entry function
+ ***********************/
 
 static uword
 mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
@@ -522,7 +1117,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
         {
           /* MATCH: apply targets to packet */
           u8 l4_modified = 0;
-          next0 = packet_apply_targets(ip0, rule->targets, &tcp_options, &l4_modified);
+          next0 = packet_apply_targets(ip0, rule, &tcp_options, &l4_modified);
 
           /* Recompute checksum(s) if needed */
           if (l4_modified)
@@ -564,6 +1159,10 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
                                MMB_ERROR_DONE, pkts_done);
   return frame->n_vectors;
 }
+
+/*************************************
+ * IP4/IP6 In/Out Nodes configuration
+ *************************************/
 
 vlib_node_registration_t mmb_ip4_in_node;
 static uword
@@ -685,7 +1284,4 @@ VNET_FEATURE_INIT (mmb_ip6_out_feature, static) = {
   .node_name = "mmb-plugin-ip6-out",
   .runs_before = VNET_FEATURES("interface-output"), 
 };
-
-
-//VLIB_NODE_FUNCTION_MULTIARCH(mmb_node, mmb_node_fn);
 
