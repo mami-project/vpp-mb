@@ -1,5 +1,5 @@
-VPP Modular Middlebox (MMB 0.1)
-===============================
+VPP Modular Middlebox
+=====================
 
 ## Vagrant
 
