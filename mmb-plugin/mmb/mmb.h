@@ -131,10 +131,6 @@
 #define cond_toindex(macro) macro-MMB_FIRST_COND
 #define cond_tomacro(index) index+MMB_FIRST_COND
 
-/* other macros */
-#define MMB_MAX_FIELD_LEN 64
-#define MMB_DEFAULT_ETHERNET_TYPE ETHERNET_TYPE_IP4
-
 /* cli-name,protocol-name */
 #define foreach_mmb_transport_proto       \
 _(tcp,TCP)                                    \
@@ -186,7 +182,7 @@ typedef struct {
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
 
-  u8                     *opt_strips;
+  uword                  *opt_strips;
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
 

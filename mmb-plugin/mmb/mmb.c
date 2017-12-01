@@ -59,6 +59,10 @@
 /* List of message types that this plugin understands */
 #define foreach_mmb_plugin_api_msg
 
+/* internal macros */
+#define MMB_MAX_FIELD_LEN 64
+#define MMB_DEFAULT_ETHERNET_TYPE ETHERNET_TYPE_IP4
+
 /* *INDENT-OFF* */
 VLIB_PLUGIN_REGISTER () = {
     .version = MMB_PLUGIN_BUILD_VER,
@@ -293,6 +297,13 @@ flush_rules_command_fn (vlib_main_t * vm,
   return 0;
 }
 
+static_always_inline void init_rule(mmb_rule_t *rule) {
+  memset(rule, 0, sizeof(mmb_rule_t));
+  rule->in = rule->out = ~0;
+  clib_bitmap_alloc(rule->opt_strips, 255);
+  clib_bitmap_zero(rule->opt_strips);
+}
+
 static clib_error_t *
 add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
                      vlib_cli_command_t * cmd) {
@@ -325,8 +336,7 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   }
 
   mmb_rule_t rule;
-  memset(&rule, 0, sizeof(mmb_rule_t));
-  rule.in = rule.out = ~0;
+  init_rule(&rule);
   rule.matches = matches;
   rule.targets = targets;
 
@@ -605,20 +615,22 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
 
        /* build option strip list  */
-       if (vec_len(rule->opt_strips) == 0)  {
-         rule->has_strips = 1;
+       if (!rule->has_strips)  {
+         rule->has_strips = 1; 
          /* first strip target, set type */
-         if (reverse)
+         if (reverse) {
             rule->whitelist = 1;
+            /* flip bitmap to 1s XXX: typo in func name !!*/
+            clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
+         }
        } else if (rule->whitelist != reverse)
          return clib_error_return(0, "inconsistent use of ! in strip");
 
        if (field == MMB_FIELD_ALL) /* strip all */
          target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
 
-       vec_add1(rule->opt_strips, target->opt_kind);
+       clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
        vec_insert_elt_last(rm_indexes, &index);
-       //vec_free(target->value);
      } else if (keyword == MMB_TARGET_ADD) { 
 
         /* Ensure that field of strip target is a tcp opt. */
@@ -711,7 +723,7 @@ void mmb_free_rule(mmb_rule_t *rule) {
     vec_free(rule->targets[index].value);
   }
   vec_free(rule->targets);
-  vec_free(rule->opt_strips);
+  clib_bitmap_free(rule->opt_strips);
   vec_foreach_index(index, rule->opt_adds) {
     vec_free(rule->opt_adds[index].value);
   }
