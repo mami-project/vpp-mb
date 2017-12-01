@@ -26,6 +26,8 @@
 
 #define MMB_DISPLAY_MAX_BYTES 14
 
+#define bitmap_size(ai) vec_len(ai)*BITS(uword)
+
 static uword mmb_unformat_field(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_condition(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_value(unformat_input_t *input, va_list *args);
@@ -54,7 +56,7 @@ void unformat_input_tolower(unformat_input_t *input) {
 }
 
 /**
- * resize value offixed length field,
+ * resize value of fixed length field,
  *
  * @return vec_len(value) 
  */
@@ -544,8 +546,6 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
 
   return s;
 }
-
-#define bitmap_size(ai) vec_len(ai)*BITS(uword)
 
 static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);

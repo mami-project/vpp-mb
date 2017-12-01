@@ -70,7 +70,7 @@ VLIB_PLUGIN_REGISTER () = {
 };
 /* *INDENT-ON* */
 
-const u8 fields_len = 68;
+const u8 fields_len = 70;
 const char* fields[] = {
   "in", "out",
   "net-proto", "ip-ver", "ip-ihl",
@@ -80,10 +80,11 @@ const char* fields[] = {
   "ip-res", "ip-df", "ip-mf",
   "ip-frag-offset", "ip-ttl", "ip-proto",
   "ip-checksum", "ip-saddr", "ip-daddr",
+  "ip-payload",
 
   "ip6-ver", "ip6-traffic-class", "ip6-flow-label",
   "ip6-len", "ip6-next", "ip6-hop-limit",
-  "ip6-saddr", "ip6-daddr",                    /* 10 */
+  "ip6-saddr", "ip6-daddr", "ip6-payload",          /* 10 */
 
   "icmp-type", "icmp-code", "icmp-checksum",
   "icmp-payload", "udp-sport", "udp-dport",
@@ -109,9 +110,11 @@ const u8 lens[] = {
   1, 1, 1,
   2, 1, 1,
   2, 5, 5,
+  0,
   1, 1, 3,
   2, 1, 1,
-  17, 17,   /* 10 */
+  17,17,0,   /* 10 */
+
   1, 1, 2,
   0, 2, 2,
   2, 2, 0, 
@@ -136,9 +139,10 @@ const u8 fixed_len[] = {
   1, 1, 1,
   1, 1, 1,
   1, 1, 1,
+  0,
   1, 1, 1,
   1, 1, 1,
-  1, 1,    /* 10 */
+  1, 1, 0,  /* 10 */
   1, 1, 1,
   0, 1, 1,
   1, 1, 0, 
@@ -386,9 +390,9 @@ static_always_inline void translate_match_bit_flags(mmb_match_t *match) {
 }
 
 u16 get_field_protocol(u8 field) {
-  if (MMB_FIELD_IP4_VER <= field && field <= MMB_FIELD_IP4_DADDR)
+  if (MMB_FIELD_IP4_VER <= field && field <= MMB_FIELD_IP4_PAYLOAD)
      return ETHERNET_TYPE_IP4;
-  if (MMB_FIELD_IP6_VER <= field && field <= MMB_FIELD_IP6_DADDR)
+  if (MMB_FIELD_IP6_VER <= field && field <= MMB_FIELD_IP6_PAYLOAD)
      return ETHERNET_TYPE_IP6;
    else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD)
      return IP_PROTOCOL_ICMP;
