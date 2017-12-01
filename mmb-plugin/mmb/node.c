@@ -33,6 +33,8 @@ static u8 mmb_parse_tcp_options(tcp_header_t *, mmb_tcp_options_t *);
 static u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *);
 static u8 mmb_padding_tcp_options(u8 *, u8);
 
+static u8 mmb_true_condition(u8, u8);
+static u8 mmb_memcpy(u8 *, u8 *, u8);
 static u64 mmb_bytes_to_u64(u8 *);
 static u64 mmb_n_bytes_to_u64(u8 *, u8);
 static void mmb_parse_ip4_cidr_address(u8 *, u32 *, u32 *);
@@ -42,6 +44,11 @@ static void recompute_l3_checksum(ip4_header_t *);
 static void recompute_l4_checksum(vlib_main_t *, vlib_buffer_t *, ip4_header_t *);
 
 static u8 packet_matches(ip4_header_t *, mmb_rule_t *, mmb_tcp_options_t *);
+static u8 mmb_matching_ip4(ip4_header_t *, mmb_match_t *);
+static u8 mmb_matching_icmp(ip4_header_t *, mmb_match_t *);
+static u8 mmb_matching_udp(ip4_header_t *, mmb_match_t *);
+static u8 mmb_matching_tcp(ip4_header_t *, mmb_match_t *);
+static u8 mmb_matching_tcp_options(mmb_tcp_options_t *, mmb_match_t *);
 
 static u32 packet_apply_targets(ip4_header_t *, mmb_rule_t *, mmb_tcp_options_t *, u8 *);
 static u8 mmb_target_modify_field(ip4_header_t *, mmb_target_t *);
@@ -477,7 +484,6 @@ u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
   options->found[3] = 0UL;
 
   options->parsed = 0;
-
   options->idx = 0;
   vec_validate(options->idx, 254);
 
@@ -517,7 +523,7 @@ u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
   return 1;
 }
 
-//TODO work in progress (still some parts to be tested)
+//TODO test in local
 u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
 {
   u8 offset = 0; //position where we write
@@ -541,47 +547,43 @@ u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
 
       if (old_size == new_size)
       {
-        clib_memcpy(&data[offset], &data[opt->offset+shift], 2);
-        clib_memcpy(&data[offset+2], &opt->new_value[0], new_size); //TODO check if memcpy works with vec
-        offset += new_size+2;
+        offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 2);
+        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_size);
       }
       else if (old_size > new_size)
       {
-        clib_memcpy(&data[offset], &data[opt->offset+shift], 1);
-        data[offset+1] = new_size;
-        clib_memcpy(&data[offset+2], &opt->new_value[0], new_size); //TODO check if memcpy works with vec
-        offset += new_size+2;
+        offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 1);
+        offset += mmb_memcpy(&data[offset], &new_size, 1);
+        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_size);
       }
       else
       {
-        /* New size is bigger than old size -> check that we have to make room or not */
+        /* New size is bigger than old size -> check if we have to make room */
         if (i+1 < vec_len(opts->parsed))
         {
           mmb_tcp_option_t *next_opt = &opts->parsed[i+1];
           if ((offset + new_size+2) > (next_opt->offset + shift))
           {
             u8 local_shift = (offset + new_size+2) - (next_opt->offset + shift);
-            memmove(&data[offset+new_size+2+1], &data[offset+new_size+2], 50); //TODO shift magic
+            //TODO shift magic
+            memmove(&data[offset+new_size+2+1], &data[offset+new_size+2], 50);
             shift += local_shift;
           }
 
-          clib_memcpy(&data[offset], &data[opt->offset+shift], 2);
-          clib_memcpy(&data[offset+2], &opt->new_value[0], new_size); //TODO check if memcpy works with vec
-          offset += new_size+2;
+          offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 2);
+          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_size);
         }
         else
         {
-          clib_memcpy(&data[offset], &data[opt->offset+shift], 2);
-          clib_memcpy(&data[offset+2], &opt->new_value[0], new_size); //TODO check if memcpy works with vec
-          offset += new_size+2;
+          offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 2);
+          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_size);
         }
       }
     }
     else
     {
       /* NOT MODIFIED, rewrite */
-      clib_memcpy(&data[offset], &data[opt->offset], opt->data_length+2);
-      offset += opt->data_length+2;
+      offset += mmb_memcpy(&data[offset], &data[opt->offset], opt->data_length+2);
     }
   }
 
@@ -605,6 +607,17 @@ u8 mmb_padding_tcp_options(u8 *data, u8 offset)
 /************************
  *  Utility functions
  ***********************/
+
+u8 mmb_true_condition(u8 condition, u8 reverse)
+{
+  return condition != reverse;
+}
+
+u8 mmb_memcpy(u8 *dst, u8 *from, u8 length)
+{
+  clib_memcpy(dst, from, length);
+  return length;
+}
 
 void mmb_parse_ip4_cidr_address(u8 *bytes, u32 *ip_addr, u32 *mask)
 {
@@ -738,7 +751,6 @@ static_always_inline void *get_ip_header(vlib_buffer_t *b, int is_output)
  *  MATCHING functions
  ***********************/
 
-//TODO: review & split code of packet_matches function
 u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_options)
 {
   u8 l4 = rule->l4;
@@ -764,65 +776,19 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
     {
       /* IP field */
       case ETHERNET_TYPE_IP4:
-        /* "!ip-field" is always false for an IP packet */
-        if (match->condition == 0 && match->reverse == 1)
+        if (!mmb_matching_ip4(iph, match))
           return 0;
-
-        if (match->field == MMB_FIELD_IP4_SADDR || match->field == MMB_FIELD_IP4_DADDR)
-        {
-          u32 rule_addr, rule_slash_mask, rule_netmask;
-          mmb_parse_ip4_cidr_address(match->value, &rule_addr, &rule_slash_mask);
-          rule_netmask = 0xffffffff << (32 - rule_slash_mask);
-
-          u32 ip_addr = get_ip_field(iph, match->field);
-
-          if (!mmb_value_compare((ip_addr & rule_netmask), (rule_addr & rule_netmask), match->condition, match->reverse))
-            return 0;
-        }
-        else
-        {
-          if (!mmb_value_compare(get_ip_field(iph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
-            return 0;
-        }
         break;
 
       /* ICMP field */
       case IP_PROTOCOL_ICMP:
-        /* "!icmp-field" is always false for an ICMP packet */
-        if (match->condition == 0 && match->reverse == 1)
-          return 0;
-
-        icmp46_header_t *icmph = ip4_next_header(iph);
-        if (match->field == MMB_FIELD_ICMP_PAYLOAD)
-        {
-          u8 cond = mmb_value_starts_with((u8 *)(icmph + 1), /*TODO length*/4, match->value);
-          if (match->reverse)
-            cond = 1-cond;
-
-          if (!cond)
-            return 0;
-        }
-        else if (!mmb_value_compare(get_icmp_field(icmph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+        if (!mmb_matching_icmp(iph, match))
           return 0;
         break;
 
       /* UDP field */
       case IP_PROTOCOL_UDP:
-        /* "!udp-field" is always false for a UDP packet */
-        if (match->condition == 0 && match->reverse == 1)
-          return 0;
-
-        udp_header_t *udph = ip4_next_header(iph);
-        if (match->field == MMB_FIELD_UDP_PAYLOAD)
-        {
-          u8 cond = mmb_value_starts_with((u8 *)(udph + 1), /*TODO length*/4, match->value);
-          if (match->reverse)
-            cond = 1-cond;
-
-          if (!cond)
-            return 0;
-        }
-        else if (!mmb_value_compare(get_udp_field(udph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+        if (!mmb_matching_udp(iph, match))
           return 0;
         break;
 
@@ -830,76 +796,11 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
       case IP_PROTOCOL_TCP:
         if (match->field == MMB_FIELD_TCP_OPT)
         {
-          if (match->opt_kind == 0)
-          {
-            //TODO replace opt_kind=0 by opt_kind=ALL (to distinguish option 0 and this case)
-
-            /* do we have TCP options in this packet ? */
-            u8 cond = vec_len(tcp_options->parsed) > 0;
-            if (match->reverse)
-              cond = 1-cond;
-
-            if (!cond)
-              return 0;
-          }
-          else if (match->condition == 0)
-          {
-            /* only search for the existence of an option */
-            u8 cond = tcp_option_exists(tcp_options, match->opt_kind);
-            if (match->reverse)
-              cond = 1-cond;
-
-            if (!cond)
-              return 0;
-          }
-          else
-          {
-            /* searching for option and its value */
-            if (!tcp_option_exists(tcp_options, match->opt_kind))
-              return 0;
-
-            u8 opt_idx = tcp_options->idx[match->opt_kind];
-            u8 opt_offset = tcp_options->parsed[opt_idx].offset;
-            u8 opt_length = tcp_options->parsed[opt_idx].data_length;
-            u8 *opt_data_ptr = &tcp_options->data[opt_offset+2];
-
-            if (vec_len(match->value) > 8)
-            {
-              u8 cond = mmb_value_starts_with(opt_data_ptr, opt_length, match->value);
-              if (match->reverse)
-                cond = 1-cond;
-
-              if (!cond)
-                return 0;
-            }
-            else
-            {
-              if (!mmb_value_compare(mmb_n_bytes_to_u64(opt_data_ptr, opt_length), 
-                                            mmb_bytes_to_u64(match->value), 
-                                            match->condition, match->reverse))
-                return 0;
-            }
-          }
-        }
-        else
-        {
-          /* "!tcp-field" is always false for a TCP packet */
-          if (match->condition == 0 && match->reverse == 1)
-            return 0;
-
-          tcp_header_t *tcph = ip4_next_header(iph);
-          if (match->field == MMB_FIELD_TCP_PAYLOAD)
-          {
-            u8 cond = mmb_value_starts_with((u8 *)(tcph + 1), /*TODO length*/4, match->value);//TODO skip options if any (+1 not enough)
-            if (match->reverse)
-              cond = 1-cond;
-
-            if (!cond)
-              return 0;
-          }
-          else if (!mmb_value_compare(get_tcp_field(tcph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+          if (!mmb_matching_tcp_options(tcp_options, match))
             return 0;
         }
+        else if (!mmb_matching_tcp(iph, match))
+          return 0;
         break;
 
       /* Unexpected field */
@@ -912,6 +813,133 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
   return 1;
 }
 
+u8 mmb_matching_ip4(ip4_header_t *iph, mmb_match_t *match)
+{
+  /* "!ip-field" is always false for an IP packet */
+  if (match->condition == 0 && match->reverse == 1)
+    return 0;
+
+  //TODO payload (waiting for the creation of the macro)
+
+  if (match->field == MMB_FIELD_IP4_SADDR || match->field == MMB_FIELD_IP4_DADDR)
+  {
+    u32 rule_addr, rule_slash_mask, rule_netmask;
+    mmb_parse_ip4_cidr_address(match->value, &rule_addr, &rule_slash_mask);
+    rule_netmask = 0xffffffff << (32 - rule_slash_mask);
+
+    u32 ip_addr = get_ip_field(iph, match->field);
+
+    if (!mmb_value_compare((ip_addr & rule_netmask), (rule_addr & rule_netmask), match->condition, match->reverse))
+      return 0;
+   }
+   else if (!mmb_value_compare(get_ip_field(iph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+     return 0;
+
+   return 1;
+}
+
+u8 mmb_matching_icmp(ip4_header_t *iph, mmb_match_t *match)
+{
+  /* "!icmp-field" is always false for an ICMP packet */
+  if (match->condition == 0 && match->reverse == 1)
+    return 0;
+
+  icmp46_header_t *icmph = ip4_next_header(iph);
+  if (match->field == MMB_FIELD_ICMP_PAYLOAD)
+  {
+    if (!mmb_true_condition(mmb_value_starts_with((u8 *)(icmph + 1), /*TODO length*/4, match->value),
+                           match->reverse))
+      return 0;
+  }
+  else if (!mmb_value_compare(get_icmp_field(icmph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+    return 0;
+
+  return 1;
+}
+
+u8 mmb_matching_udp(ip4_header_t *iph, mmb_match_t *match)
+{
+  /* "!udp-field" is always false for a UDP packet */
+  if (match->condition == 0 && match->reverse == 1)
+    return 0;
+
+  udp_header_t *udph = ip4_next_header(iph);
+  if (match->field == MMB_FIELD_UDP_PAYLOAD)
+  {
+    if (!mmb_true_condition(mmb_value_starts_with((u8 *)(udph + 1), /*TODO length*/4, match->value),
+                            match->reverse))
+      return 0;
+  }
+  else if (!mmb_value_compare(get_udp_field(udph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+    return 0;
+
+  return 1;
+}
+
+u8 mmb_matching_tcp(ip4_header_t *iph, mmb_match_t *match)
+{
+  /* "!tcp-field" is always false for a TCP packet */
+  if (match->condition == 0 && match->reverse == 1)
+    return 0;
+
+  tcp_header_t *tcph = ip4_next_header(iph);
+  if (match->field == MMB_FIELD_TCP_PAYLOAD)
+  {
+    //TODO skip options if any (+1 is not enough)
+    if (!mmb_true_condition(mmb_value_starts_with((u8 *)(tcph + 1), /*TODO length*/4, match->value),
+                            match->reverse))
+      return 0;
+  }
+  else if (!mmb_value_compare(get_tcp_field(tcph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+    return 0;
+
+  return 1;
+}
+
+u8 mmb_matching_tcp_options(mmb_tcp_options_t *options, mmb_match_t *match)
+{
+  //TODO replace opt_kind=0 by opt_kind=ALL (to distinguish option 0 and this case) -> see how Korian will handle it in the CLI
+  if (match->opt_kind == 0 || match->opt_kind == MMB_FIELD_ALL || match->opt_kind == MMB_FIELD_TCP_OPT_ALL)
+  {
+    /* do we have TCP options in this packet ? */
+    if (!mmb_true_condition(vec_len(options->parsed) > 0, 
+                            match->reverse))
+      return 0;
+  }
+  else if (match->condition == 0)
+  {
+    /* only search for the existence of an option */
+    if (!mmb_true_condition(tcp_option_exists(options, match->opt_kind),
+                            match->reverse))
+      return 0;
+  }
+  else
+  {
+    /* search for an option and its value */
+    if (!tcp_option_exists(options, match->opt_kind))
+      return 0;
+
+    u8 opt_idx = options->idx[match->opt_kind];
+    u8 opt_offset = options->parsed[opt_idx].offset;
+    u8 opt_length = options->parsed[opt_idx].data_length;
+    u8 *opt_data_ptr = &options->data[opt_offset+2];
+
+    if (vec_len(match->value) > 8)
+    {
+      /* values > u64 */
+      if (!mmb_true_condition(mmb_value_starts_with(opt_data_ptr, opt_length, match->value),
+                              match->reverse))
+        return 0;
+    }
+    else if (!mmb_value_compare(mmb_n_bytes_to_u64(opt_data_ptr, opt_length), 
+                                mmb_bytes_to_u64(match->value), 
+                                match->condition, match->reverse))
+      return 0;
+  }
+
+  return 1;
+}
+
 /************************
  *   TARGET functions
  ***********************/
@@ -921,6 +949,7 @@ u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t 
   u32 i;
   u8 opts_len, opts_modified = 0;
 
+  //TODO payload targets are not implemented
   /* TARGETS (drop, modify -other than options-) */
   vec_foreach_index(i, rule->targets)
   {
@@ -941,7 +970,7 @@ u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t 
   vec_foreach_index(i, rule->opt_strips)
   {
     u8 *opt_kind = &rule->opt_strips[i];
-    //TODO waiting for new bitmap strip system
+    //TODO whitelist/blacklist consideration
     opts_modified |= mmb_target_strip_option(tcp_options, *opt_kind);
   }
 
