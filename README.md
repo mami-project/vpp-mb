@@ -1,26 +1,26 @@
-VPP Modular Middlebox
-=====================
+VPP Modular Middlebox (MMB 0.1)
+===============================
 
 ## Vagrant
 
-Install **Vagrant** on your host machine.
+Install **Vagrant** on host machine.
 
 ## VirtualBox
 
-Install **VirtualBox** on your host machine.
+Install **VirtualBox** on host machine.
 
 ## VPP-MB simulator
 
 ### Start the simulator
 
-In *vagrant* folder (`vpp-mb/vagrant/`), run:
+Still on host machine, go to *vagrant* directory (`vpp-mb/vagrant/`), and run:
 
     vagrant up
     vagrant ssh
 
-### Documentation
+### MMB Documentation
 
-See *docs* folder.
+See *docs* directory.
 
 ## Interesting/Useful links
 - [Introduction to FD.io](https://www.youtube.com/watch?v=cijQq3Hco8s)
