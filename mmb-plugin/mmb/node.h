@@ -37,6 +37,7 @@ typedef struct {
   ip4_address_t dst_address;
   u32 sw_if_index;
   u32 next;
+  ip4_header_t *iph;
 } mmb_trace_t;
 
 typedef struct {

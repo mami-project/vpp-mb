@@ -26,6 +26,8 @@
 
 #define MMB_DISPLAY_MAX_BYTES 14
 
+#define bitmap_size(ai) vec_len(ai)*BITS(uword)
+
 static uword mmb_unformat_field(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_condition(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_value(unformat_input_t *input, va_list *args);
@@ -54,7 +56,7 @@ void unformat_input_tolower(unformat_input_t *input) {
 }
 
 /**
- * resize value offixed length field,
+ * resize value of fixed length field,
  *
  * @return vec_len(value) 
  */
@@ -441,13 +443,13 @@ static_always_inline u8 *mmb_format_if_sw_index(u8 *s, va_list *args) {
 }
 
 static_always_inline mmb_target_t target_from_strip(mmb_rule_t *rule, 
-                                                    uword strip_index) {
+                                                    u8 opt_kind) {
    mmb_target_t strip_target;
    if (rule->l4 == IP_PROTOCOL_TCP)
       strip_target = (mmb_target_t) {
             .keyword = MMB_TARGET_STRIP,
             .field = MMB_FIELD_TCP_OPT,
-            .opt_kind = rule->opt_strips[strip_index],
+            .opt_kind = opt_kind,
             .reverse = rule->whitelist,
             .value = 0
       };
@@ -470,6 +472,33 @@ static_always_inline mmb_target_t target_from_add(mmb_rule_t *rule,
    return add_target;
 }
 
+/** Return the next clear bit in a bitmap starting at bit i
+ *    @param ai - pointer to the bitmap
+ *   @param i - first bit position to test
+ *   @returns first clear bit position at or after i
+ *
+ * corrected from vppinfra/bitmap.h
+ **/
+always_inline uword
+clib_bitmap_next_clear_corrected(uword * ai, uword i) {
+  uword i0 = i / BITS (ai[0]);
+  uword i1 = i % BITS (ai[0]);
+  uword t;
+
+  if (i0 < vec_len (ai)) {
+     t = (~ai[i0] >> i1) << i1;
+     if (t)
+	    return log2_first_set (t) + i0 * BITS (ai[0]);
+
+     for (i0++; i0 < vec_len (ai); i0++) {
+	    t = ~ai[i0];
+	    if (t)
+	      return log2_first_set (t) + i0 * BITS (ai[0]);
+	  }
+  }
+  return ~0;
+}
+
 u8 *mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
   s = format(s, "l3:%U l4:%U in:%U out:%U ", format_ethernet_type, rule->l3, 
@@ -487,22 +516,30 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
                       (index != vec_len(rule->targets)-1) ? ", ":"");
   }
 
-  vec_foreach_index(index, rule->opt_strips) {
-    mmb_target_t strip_target = target_from_strip(rule, index);
-    s = format(s, "%s%U", (vec_len(rule->targets)>0) ? ", ":"",
-                         mmb_format_target, &strip_target);
+  if (rule->has_strips) {    
+   index = rule->whitelist ? clib_bitmap_first_clear(rule->opt_strips) 
+                           : clib_bitmap_first_set(rule->opt_strips);
+   uword (*next_func) (uword * ai, uword i) = rule->whitelist 
+               ? &clib_bitmap_next_clear_corrected
+               : &clib_bitmap_next_set;
+    while (index != ~0) {
+      mmb_target_t strip_target = target_from_strip(rule, index);
+      s=format(s, "%s%U",  (vec_len(rule->targets)>0) ? ", ":"",
+                  mmb_format_target, &strip_target);
+      index = next_func(rule->opt_strips, index+1);
+    }    
   }
 
   vec_foreach_index(index, rule->opt_mods) {
     s = format(s, "%s%U", (vec_len(rule->targets)>0 
-                            || vec_len(rule->opt_strips)>0) ? ", ":"",
+                            || rule->has_strips) ? ", ":"",
                          mmb_format_target, &rule->opt_mods[index]);
   }
 
   vec_foreach_index(index, rule->opt_adds) {
     mmb_target_t opt_target = target_from_add(rule, index);
     s = format(s, "%s%U", 
-               (vec_len(rule->opt_strips)>0 || vec_len(rule->targets)>0 
+               (rule->has_strips || vec_len(rule->targets)>0 
                    || vec_len(rule->opt_mods)>0 ) ? ", ":"",
                 mmb_format_target, &opt_target);
   }
@@ -518,12 +555,23 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
                 mmb_format_ip_protocol, rule->l4,
                 mmb_format_if_sw_index, rule->in,
                 mmb_format_if_sw_index, rule->out); 
-  uword index, strip_index=0, add_index=0, mod_index=0;
-  for (index=0; 
-       index<clib_max(vec_len(rule->matches), 
-                      vec_len(rule->targets)+vec_len(rule->opt_strips)
-                      +vec_len(rule->opt_adds)+vec_len(rule->opt_mods)); 
-       index++) {
+  uword index, add_index=0, mod_index=0;
+  uword strip_index = rule->whitelist ? clib_bitmap_first_clear(rule->opt_strips) 
+                                      : clib_bitmap_first_set(rule->opt_strips);
+  uword (*next_func) (uword * ai, uword i) = rule->whitelist 
+                                              ? &clib_bitmap_next_clear_corrected
+                                              : &clib_bitmap_next_set;
+  /* count lines to print */
+  uword match_count = vec_len(rule->matches);
+  uword strip_count = rule->whitelist 
+                       ? bitmap_size(rule->opt_strips)
+                           -clib_bitmap_count_set_bits(rule->opt_strips)
+                       : clib_bitmap_count_set_bits(rule->opt_strips);
+  uword target_count = vec_len(rule->targets)+vec_len(rule->opt_adds)
+                      +vec_len(rule->opt_mods)+strip_count;
+  uword count = clib_max(match_count,target_count);
+                   
+  for (index=0; index<count; index++) {
     if (index < vec_len(rule->matches)) {
       /* tabulate empty line */
       if (index) 
@@ -535,10 +583,10 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
 
    if (index < vec_len(rule->targets)) 
       s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
-   else if (strip_index < vec_len(rule->opt_strips)) { 
+   else if (strip_index != ~0) { 
       mmb_target_t strip_target = target_from_strip(rule, strip_index);
       s = format(s, "%-40U", mmb_format_target, &strip_target);
-      strip_index++;
+      strip_index = next_func(rule->opt_strips, strip_index+1);
     } else if (mod_index < vec_len(rule->opt_mods)) {
       s = format(s, "%-40U", mmb_format_target, &rule->opt_mods[mod_index]);
       mod_index++;

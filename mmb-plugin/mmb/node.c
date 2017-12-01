@@ -79,6 +79,19 @@ static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
   return format(s, "%s", keyword_str);
 }
 
+static_always_inline void 
+mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * node,
+                    ip4_header_t *iph, u32 next, u32 sw_if_index, u32 applied_rule) {
+   mmb_trace_t *t = vlib_add_trace (vm, node, b, sizeof (*t));
+   t->proto = iph->protocol;
+   t->rule_index = applied_rule;
+   t->src_address.as_u32 = iph->src_address.as_u32;
+   t->dst_address.as_u32 = iph->dst_address.as_u32;
+   t->next = next;
+   t->sw_if_index = sw_if_index;
+   t->iph=iph;
+}
+
 /* packet trace format function */
 static u8 * format_mmb_trace (u8 * s, va_list * args)
 {
@@ -101,6 +114,9 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
                    format_ip4_address, t->src_address.data,
                    format_ip4_address, t->dst_address.data,
                    format_ip_protocol, t->proto);
+
+  s = format(s, "  mmb: %U", 
+             format_ip4_header, t->iph, t->iph->length);
 
   return s;
 }
@@ -1166,13 +1182,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
                         && (b0->flags & VLIB_BUFFER_IS_TRACED)))
       {
-        mmb_trace_t *t = vlib_add_trace(vm, node, b0, sizeof (*t));
-        t->proto = ip0->protocol;
-        t->rule_index = (applied_rule_index == ~0) ? 0 : applied_rule_index+1;
-        t->src_address.as_u32 = ip0->src_address.as_u32;
-        t->dst_address.as_u32 = ip0->dst_address.as_u32;
-        t->next = next0;
-        t->sw_if_index = sw_if_index;
+        mmb_trace_ip_packet(vm, b0, node, ip0, next0, sw_if_index, 
+                            (applied_rule_index == ~0) ? 0 : applied_rule_index+1);
       }
 
       /* verify speculative enqueue, maybe switch current next frame */
