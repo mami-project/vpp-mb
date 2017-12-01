@@ -48,8 +48,8 @@ typedef struct {
 } mmb_tcp_option_t;
 
 typedef struct {
-  u64 found[4]; // 4 ranges for bits [0-63] [64-127] [128-191] [192-255]
-  u8 *idx; // parsed vector's position for an option "i"
+  uword *found; // bitmap 255 bits (options 0-254)
+  u8 *idx; // parsed vector's position of an option
   mmb_tcp_option_t *parsed; // parsed options vector (in parsing order)
   u8 *data;
 } mmb_tcp_options_t;

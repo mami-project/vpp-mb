@@ -52,9 +52,9 @@ static u8 mmb_matching_tcp_options(mmb_tcp_options_t *, mmb_match_t *);
 
 static u32 packet_apply_targets(ip4_header_t *, mmb_rule_t *, mmb_tcp_options_t *, u8 *);
 static u8 mmb_target_modify_field(ip4_header_t *, mmb_target_t *);
-static u8 mmb_target_add_option(u8 *, u8, mmb_transport_option_t *);
+static u8 mmb_target_add_option(u8 *, mmb_transport_option_t *);
 static u8 mmb_target_modify_option(mmb_tcp_options_t *, u8, u8 *);
-static u8 mmb_target_strip_option(mmb_tcp_options_t *, u8);
+static void mmb_target_strip_option(mmb_tcp_options_t *, u8);
 
 vlib_node_registration_t mmb_node;
 
@@ -81,8 +81,10 @@ static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
 
 static_always_inline void 
 mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * node,
-                    ip4_header_t *iph, u32 next, u32 sw_if_index, u32 applied_rule) {
+                    ip4_header_t *iph, u32 next, u32 sw_if_index, u32 applied_rule)
+{
    mmb_trace_t *t = vlib_add_trace (vm, node, b, sizeof (*t));
+
    t->proto = iph->protocol;
    t->rule_index = applied_rule;
    t->src_address.as_u32 = iph->src_address.as_u32;
@@ -477,8 +479,7 @@ void set_tcp_field(tcp_header_t *tcph, u8 field, u64 value)
 
 u8 tcp_option_exists(mmb_tcp_options_t *options, u8 kind)
 {
-  u64 flag_mask = 1UL << (kind & 63);
-  return (options->found[kind >> 6] & flag_mask) != 0;
+  return clib_bitmap_get_no_check(options->found, kind);
 }
 
 u8 rule_requires_tcp_options(mmb_rule_t *rule)
@@ -494,21 +495,19 @@ u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
   const u8 *data = (const u8 *)(tcph + 1);
   options->data = (u8 *)(tcph + 1);
 
-  options->found[0] = 0UL;
-  options->found[1] = 0UL;
-  options->found[2] = 0UL;
-  options->found[3] = 0UL;
+  clib_bitmap_zero(options->found);
 
-  options->parsed = 0;
-  options->idx = 0;
-  vec_validate(options->idx, 254);
+  if (vec_len(options->parsed) > 0)
+    vec_delete(options->parsed, vec_len(options->parsed), 0);
 
   for(offset = 0; opts_len > 0; opts_len -= opt_len, data += opt_len, offset += opt_len)
   {
     kind = data[0];
 
     if (kind == TCP_OPTION_EOL)
+    {
       break;
+    }
     else if (kind == TCP_OPTION_NOOP)
     {
       opt_len = 1;
@@ -531,7 +530,7 @@ u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
     option.data_length = opt_len-2;
     option.new_value = 0;
 
-    options->found[kind >> 6] |= 1UL << (kind & 63);
+    clib_bitmap_set_no_check(options->found, kind, 1);
     vec_add1(options->parsed, option);
     options->idx[kind] = (u8) vec_len(options->parsed)-1;
   }
@@ -539,7 +538,7 @@ u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
   return 1;
 }
 
-//TODO test in local
+//TODO (WIP) still some parts to be tested...
 u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
 {
   u8 offset = 0; //position where we write
@@ -915,7 +914,7 @@ u8 mmb_matching_tcp(ip4_header_t *iph, mmb_match_t *match)
 u8 mmb_matching_tcp_options(mmb_tcp_options_t *options, mmb_match_t *match)
 {
   //TODO replace opt_kind=0 by opt_kind=ALL (to distinguish option 0 and this case) -> see how Korian will handle it in the CLI
-  if (match->opt_kind == 0 || match->opt_kind == MMB_FIELD_ALL || match->opt_kind == MMB_FIELD_TCP_OPT_ALL)
+  if (match->opt_kind == 0 || match->opt_kind == MMB_FIELD_TCP_OPT_ALL)
   {
     /* do we have TCP options in this packet ? */
     if (!mmb_true_condition(vec_len(options->parsed) > 0, 
@@ -983,11 +982,11 @@ u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t 
   }
 
   /* STRIPS (options only) */
-  vec_foreach_index(i, rule->opt_strips)
+  uword *found_to_strip = clib_bitmap_dup_and(tcp_options->found, rule->opt_strips);
+  if (!clib_bitmap_is_zero(found_to_strip))
   {
-    u8 *opt_kind = &rule->opt_strips[i];
-    //TODO whitelist/blacklist consideration
-    opts_modified |= mmb_target_strip_option(tcp_options, *opt_kind);
+    clib_bitmap_foreach(i, found_to_strip, mmb_target_strip_option(tcp_options, i));
+    opts_modified = 1;
   }
 
   /* MODS (options only) */
@@ -1010,7 +1009,7 @@ u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t 
   vec_foreach_index(i, rule->opt_adds)
   {
     mmb_transport_option_t *opt_added = &rule->opt_adds[i];
-    opts_len = mmb_target_add_option(tcp_options->data, opts_len, opt_added);
+    opts_len += mmb_target_add_option(&tcp_options->data[opts_len], opt_added);
     opts_modified = 1;
   }
 
@@ -1052,17 +1051,15 @@ u8 mmb_target_modify_field(ip4_header_t *iph, mmb_target_t *target)
   return 0;
 }
 
-u8 mmb_target_add_option(u8 *data, u8 offset, mmb_transport_option_t *option)
+u8 mmb_target_add_option(u8 *data, mmb_transport_option_t *option)
 {
-  u8 data_size = vec_len(option->value);
+  u8 opt_len = vec_len(option->value)+2;
 
-  data[offset++] = option->kind;
-  data[offset++] = data_size;
+  *data++ = option->kind;
+  *data++ = opt_len;
+  clib_memcpy(data, option->value, opt_len-2);
 
-  clib_memcpy(&data[offset], option->value, data_size);
-  offset += data_size+2;
-
-  return offset;
+  return opt_len;
 }
 
 u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options, u8 kind, u8 *new_value)
@@ -1076,33 +1073,47 @@ u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options, u8 kind, u8 *new_val
   return 0;
 }
 
-u8 mmb_target_strip_option(mmb_tcp_options_t *tcp_options, u8 kind)
+void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, u8 kind)
 {
-  if (tcp_option_exists(tcp_options, kind))
-  {
-    u8 idx = tcp_options->idx[kind];
-    tcp_options->parsed[idx].is_stripped = 1;
-
-    return 1;
-  }
-
-  return 0;
+  u8 idx = tcp_options->idx[kind];
+  tcp_options->parsed[idx].is_stripped = 1;
 }
 
 /************************
  *  Node entry function
  ***********************/
 
+static void init_tcp_options(mmb_tcp_options_t *options)
+{
+  options->parsed = 0;
+  options->idx = 0;
+  vec_validate(options->idx, 254);
+  clib_bitmap_alloc(options->found, 255);
+}
+
+static void free_tcp_options(mmb_tcp_options_t *options)
+{
+  vec_free(options->idx);
+  vec_free(options->parsed);
+  clib_bitmap_free(options->found);
+}
+
 static uword
 mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
             vlib_frame_t *frame, int is_ip6, int is_output,
-            vlib_node_registration_t *mmb_node) {
+            vlib_node_registration_t *mmb_node)
+{
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
 
   u32 n_left_from, *from, *to_next;
+  mmb_tcp_options_t tcp_options;
+  u8 tcp_opts_loaded;
   mmb_next_t next_index;
   u32 pkts_done = 0;
+
+  //TODO maybe we should find a way to allocate it somewhere else (in the CLI ?)
+  init_tcp_options(&tcp_options);
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -1137,9 +1148,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       b0 = vlib_get_buffer (vm, bi0);
       ip0 = get_ip_header(b0, is_output);
 
-      mmb_tcp_options_t tcp_options;
       u32 i, applied_rule_index = ~0;
-      u8 tcp_opts_loaded = 0;
+      tcp_opts_loaded = 0;
 
       /* fetch each rule to find a match */
       vec_foreach_index(i, rules)
@@ -1197,6 +1207,10 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
   vlib_node_increment_counter (vm, mmb_node->index, 
                                MMB_ERROR_DONE, pkts_done);
+
+  //TODO If we allocated it somewhere else, deallocation must go elsewhere too
+  free_tcp_options(&tcp_options);
+
   return frame->n_vectors;
 }
 
