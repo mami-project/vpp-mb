@@ -41,17 +41,17 @@ typedef struct {
 } mmb_trace_t;
 
 typedef struct {
-  u8 is_stripped:1;
-  u8 offset;
-  u8 data_length;
-  u8 *new_value;
+  u8 is_stripped:1; // flag to tell if this option has been stripped
+  u8 offset;        // real offset in the pkt data
+  u8 data_length;   // length of data
+  u8 *new_value;    // new value if modified
 } mmb_tcp_option_t;
 
 typedef struct {
-  uword *found; // bitmap 255 bits (options 0-254)
-  u8 *idx; // parsed vector's position of an option
+  uword *found;             // bitmap 255 bits (options 0-254)
+  u8 *idx;                  // parsed vector's position of an option
   mmb_tcp_option_t *parsed; // parsed options vector (in parsing order)
-  u8 *data;
+  u8 *data;                 // pointer to the pkt data
 } mmb_tcp_options_t;
 
 #endif /* __included_mmb_node_h__ */

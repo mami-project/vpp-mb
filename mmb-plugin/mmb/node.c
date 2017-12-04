@@ -553,11 +553,10 @@ u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
   return 1;
 }
 
-//TODO (WIP) still some parts to be tested...
 u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
 {
-  u8 offset = 0; //position where we write
-  u8 shift = 0; //cumulative shift offset to the right (after a resize)
+  u8 offset = 0; //writing cursor's position
+  u8 shift = 0; //cumulative shift offset to the right (after a specific resize -see below-)
 
   u8 *data = opts->data;
 
@@ -572,48 +571,59 @@ u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
     if (vec_len(opt->new_value) > 0)
     {
       /* MODIFIED */
-      u8 old_size = opt->data_length;
-      u8 new_size = vec_len(opt->new_value);
+      u8 old_data_length = opt->data_length;
+      u8 new_data_length = vec_len(opt->new_value);
+      u8 new_opt_len = new_data_length + 2;
 
-      if (old_size == new_size)
+      if (old_data_length == new_data_length)
       {
         offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 2);
-        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_size);
+        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
       }
-      else if (old_size > new_size)
+      else if (old_data_length > new_data_length)
       {
         offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 1);
-        offset += mmb_memcpy(&data[offset], &new_size, 1);
-        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_size);
+        offset += mmb_memcpy(&data[offset], &new_opt_len, 1);
+        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
       }
       else
       {
         /* New size is bigger than old size -> check if we have to make room */
-        if (i+1 < vec_len(opts->parsed))
+
+        /* Get very next not-to-be-stripped option in the list */
+        u8 j;
+        for(j=i+1; j < vec_len(opts->parsed) && opts->parsed[j].is_stripped; j++);
+
+        if (j < vec_len(opts->parsed))
         {
-          mmb_tcp_option_t *next_opt = &opts->parsed[i+1];
-          if ((offset + new_size+2) > (next_opt->offset + shift))
+          mmb_tcp_option_t *next_opt = &opts->parsed[j];
+
+          u8 offset_after_modify = offset + 2 + new_data_length;
+          u8 overlap_offset = next_opt->offset + shift;
+          
+          if (offset_after_modify > overlap_offset)
           {
-            u8 local_shift = (offset + new_size+2) - (next_opt->offset + shift);
-            //TODO shift magic
-            memmove(&data[offset+new_size+2+1], &data[offset+new_size+2], 50);
-            shift += local_shift;
+            /* Shift of *needed* bytes to the right */
+            memmove(&data[offset_after_modify], &data[overlap_offset], /*TODO*/100);
+            shift += (offset_after_modify - overlap_offset);
           }
 
-          offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 2);
-          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_size);
+          offset += mmb_memcpy(&data[offset], &data[opt->offset], 1);
+          offset += mmb_memcpy(&data[offset], &new_opt_len, 1);
+          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
         }
         else
         {
-          offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 2);
-          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_size);
+          offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 1);
+          offset += mmb_memcpy(&data[offset], &new_opt_len, 1);
+          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
         }
       }
     }
     else
     {
       /* NOT MODIFIED, rewrite */
-      offset += mmb_memcpy(&data[offset], &data[opt->offset], opt->data_length+2);
+      offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], opt->data_length+2);
     }
   }
 
@@ -1134,10 +1144,12 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   mmb_rule_t *rules = mm->rules;
 
   u32 n_left_from, *from, *to_next;
-  mmb_tcp_options_t tcp_options;
-  u8 tcp_opts_loaded;
   mmb_next_t next_index;
   u32 pkts_done = 0;
+
+  mmb_tcp_options_t tcp_options;
+  memset(&tcp_options, 0, sizeof(mmb_tcp_options_t));
+  u8 tcp_opts_loaded;
 
   //TODO maybe we should find a way to allocate it somewhere else (in the CLI ?)
   init_tcp_options(&tcp_options);
