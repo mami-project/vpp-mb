@@ -59,6 +59,10 @@
 /* List of message types that this plugin understands */
 #define foreach_mmb_plugin_api_msg
 
+/* internal macros */
+#define MMB_MAX_FIELD_LEN 64
+#define MMB_DEFAULT_ETHERNET_TYPE ETHERNET_TYPE_IP4
+
 /* *INDENT-OFF* */
 VLIB_PLUGIN_REGISTER () = {
     .version = MMB_PLUGIN_BUILD_VER,
@@ -66,7 +70,7 @@ VLIB_PLUGIN_REGISTER () = {
 };
 /* *INDENT-ON* */
 
-const u8 fields_len = 68;
+const u8 fields_len = 70;
 const char* fields[] = {
   "in", "out",
   "net-proto", "ip-ver", "ip-ihl",
@@ -76,10 +80,11 @@ const char* fields[] = {
   "ip-res", "ip-df", "ip-mf",
   "ip-frag-offset", "ip-ttl", "ip-proto",
   "ip-checksum", "ip-saddr", "ip-daddr",
+  "ip-payload",
 
   "ip6-ver", "ip6-traffic-class", "ip6-flow-label",
   "ip6-len", "ip6-next", "ip6-hop-limit",
-  "ip6-saddr", "ip6-daddr",                    /* 10 */
+  "ip6-saddr", "ip6-daddr", "ip6-payload",          /* 10 */
 
   "icmp-type", "icmp-code", "icmp-checksum",
   "icmp-payload", "udp-sport", "udp-dport",
@@ -105,9 +110,11 @@ const u8 lens[] = {
   1, 1, 1,
   2, 1, 1,
   2, 5, 5,
+  0,
   1, 1, 3,
   2, 1, 1,
-  17, 17,   /* 10 */
+  17,17,0,   /* 10 */
+
   1, 1, 2,
   0, 2, 2,
   2, 2, 0, 
@@ -132,9 +139,10 @@ const u8 fixed_len[] = {
   1, 1, 1,
   1, 1, 1,
   1, 1, 1,
+  0,
   1, 1, 1,
   1, 1, 1,
-  1, 1,    /* 10 */
+  1, 1, 0,  /* 10 */
   1, 1, 1,
   0, 1, 1,
   1, 1, 0, 
@@ -293,6 +301,13 @@ flush_rules_command_fn (vlib_main_t * vm,
   return 0;
 }
 
+static_always_inline void init_rule(mmb_rule_t *rule) {
+  memset(rule, 0, sizeof(mmb_rule_t));
+  rule->in = rule->out = ~0;
+  clib_bitmap_alloc(rule->opt_strips, 255);
+  clib_bitmap_zero(rule->opt_strips);
+}
+
 static clib_error_t *
 add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
                      vlib_cli_command_t * cmd) {
@@ -325,8 +340,7 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   }
 
   mmb_rule_t rule;
-  memset(&rule, 0, sizeof(mmb_rule_t));
-  rule.in = rule.out = ~0;
+  init_rule(&rule);
   rule.matches = matches;
   rule.targets = targets;
 
@@ -388,9 +402,9 @@ static_always_inline void translate_match_bit_flags(mmb_match_t *match) {
 }
 
 u16 get_field_protocol(u8 field) {
-  if (MMB_FIELD_IP4_VER <= field && field <= MMB_FIELD_IP4_DADDR)
+  if (MMB_FIELD_IP4_VER <= field && field <= MMB_FIELD_IP4_PAYLOAD)
      return ETHERNET_TYPE_IP4;
-  if (MMB_FIELD_IP6_VER <= field && field <= MMB_FIELD_IP6_DADDR)
+  if (MMB_FIELD_IP6_VER <= field && field <= MMB_FIELD_IP6_PAYLOAD)
      return ETHERNET_TYPE_IP6;
    else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD)
      return IP_PROTOCOL_ICMP;
@@ -617,20 +631,22 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
 
        /* build option strip list  */
-       if (vec_len(rule->opt_strips) == 0)  {
-         rule->has_strips = 1;
+       if (!rule->has_strips)  {
+         rule->has_strips = 1; 
          /* first strip target, set type */
-         if (reverse)
+         if (reverse) {
             rule->whitelist = 1;
+            /* flip bitmap to 1s XXX: typo in func name !!*/
+            clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
+         }
        } else if (rule->whitelist != reverse)
          return clib_error_return(0, "inconsistent use of ! in strip");
 
        if (field == MMB_FIELD_ALL) /* strip all */
          target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
 
-       vec_add1(rule->opt_strips, target->opt_kind);
+       clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
        vec_insert_elt_last(rm_indexes, &index);
-       //vec_free(target->value);
      } else if (keyword == MMB_TARGET_ADD) { 
 
         /* Ensure that field of strip target is a tcp opt. */
@@ -723,7 +739,7 @@ void mmb_free_rule(mmb_rule_t *rule) {
     vec_free(rule->targets[index].value);
   }
   vec_free(rule->targets);
-  vec_free(rule->opt_strips);
+  clib_bitmap_free(rule->opt_strips);
   vec_foreach_index(index, rule->opt_adds) {
     vec_free(rule->opt_adds[index].value);
   }
