@@ -23,4 +23,3 @@ Still on host machine, go to *vagrant* directory (`vpp-mb/vagrant/`), and run:
 ### MMB Documentation
 
 See *docs* directory.
-
