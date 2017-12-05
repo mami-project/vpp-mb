@@ -628,7 +628,6 @@ u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
   }
 
   return offset;
-  //TODO check that options don't overflow 40 bytes (opts_len)
 }
 
 u8 mmb_padding_tcp_options(u8 *data, u8 offset)
@@ -1014,7 +1013,7 @@ u8 mmb_matching_tcp_options(mmb_tcp_options_t *options, mmb_match_t *match)
 u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_options, u8 *l4_modified)
 {
   u32 i;
-  u8 opts_len, opts_modified = 0;
+  u8 old_opts_len = 0, new_opts_len = 0, opts_modified = 0;
 
   //TODO payload targets are not implemented
   /* TARGETS (drop, modify -other than options-) */
@@ -1050,18 +1049,23 @@ u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t 
 
   /* Rewrite TCP options (if needed) */
   if (opts_modified)
-    opts_len = mmb_rewrite_tcp_options(tcp_options);
-  else
   {
     tcp_header_t *tcph = ip4_next_header(iph);
-    opts_len = (tcp_doff(tcph) << 2) - sizeof(tcp_header_t);
+    old_opts_len = (tcp_doff(tcph) << 2) - sizeof(tcp_header_t);
+    new_opts_len = mmb_rewrite_tcp_options(tcp_options);
+  }
+  else if (iph->protocol == IP_PROTOCOL_TCP)
+  {
+    tcp_header_t *tcph = ip4_next_header(iph);
+    old_opts_len = (tcp_doff(tcph) << 2) - sizeof(tcp_header_t);
+    new_opts_len = old_opts_len;
   }
 
   /* ADDS (options only) */
   vec_foreach_index(i, rule->opt_adds)
   {
     mmb_transport_option_t *opt_added = &rule->opt_adds[i];
-    opts_len += mmb_target_add_option(&tcp_options->data[opts_len], opt_added);
+    new_opts_len += mmb_target_add_option(&tcp_options->data[new_opts_len], opt_added);
     opts_modified = 1;
   }
 
@@ -1069,8 +1073,17 @@ u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t 
   if (opts_modified)
   {
     tcp_header_t *tcph = ip4_next_header(iph);
-    opts_len = mmb_padding_tcp_options((u8 *)(tcph + 1), opts_len);
-    //TODO update tcph->data_offset, length on IP (? -> watch out fragmentation)
+    new_opts_len = mmb_padding_tcp_options((u8 *)(tcph + 1), new_opts_len);
+
+    /* can't overflow 40 bytes otherwise data_offset becomes crap */
+    if (new_opts_len > 40)
+      new_opts_len = 40;
+    
+    set_tcp_field(tcph, MMB_FIELD_TCP_OFFSET, (new_opts_len + sizeof(tcp_header_t)) >> 2);
+
+    //TODO take care of fragmentation if any
+    //u16 pkt_ip_length = get_ip_field(iph, MMB_FIELD_IP4_LEN);
+    //set_ip_field(iph, MMB_FIELD_IP4_LEN, pkt_ip_length+new_opts_len-old_opts_len);
   }
 
   *l4_modified |= opts_modified;
