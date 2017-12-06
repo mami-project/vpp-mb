@@ -42,4 +42,4 @@ sudo vppctl -s /run/vpp/cli-vpp2.sock set int ip address host-vpp2vpp1 10.10.2.2
 sudo ip route add 10.10.2.0/24 via 10.10.1.2
 sudo vppctl -s /run/vpp/cli-vpp2.sock ip route add 10.10.1.0/24 via 10.10.2.1
 
-./init_plugin.sh
+./plugin_test.sh
