@@ -20,11 +20,12 @@
 
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
+
 #include <mmb/mmb.h>
+#include <mmb/mmb_format.h>
 
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
-/*#include <vlibsocket/api.h>*/
 
 /* define message IDs */
 #include <mmb/mmb_msg_enum.h>
@@ -56,8 +57,11 @@
 #include <ctype.h>
 
 /* List of message types that this plugin understands */
-
 #define foreach_mmb_plugin_api_msg
+
+/* internal macros */
+#define MMB_MAX_FIELD_LEN 64
+#define MMB_DEFAULT_ETHERNET_TYPE ETHERNET_TYPE_IP4
 
 /* *INDENT-OFF* */
 VLIB_PLUGIN_REGISTER () = {
@@ -66,19 +70,9 @@ VLIB_PLUGIN_REGISTER () = {
 };
 /* *INDENT-ON* */
 
-#define MMB_DEFAULT_MATCH_CONDITION MMB_COND_EQ
-
-#define foreach_mmb_transport_proto       \
-_(tcp,TCP)                                    \
-_(udp,UDP)                                    \
-_(icmp,ICMP)     
-                               
-#define foreach_mmb_network_proto       \
-_(ip4,IP4)                                    \
-_(ip6,IP6)                                   
-
-static const u8 fields_len = 58;
-static const char* fields[] = {
+const u8 fields_len = 70;
+const char* fields[] = {
+  "in", "out",
   "net-proto", "ip-ver", "ip-ihl",
   "ip-dscp", "ip-ecn", "ip-non-ect",
   "ip-ect0", "ip-ect1", "ip-ce",
@@ -86,132 +80,189 @@ static const char* fields[] = {
   "ip-res", "ip-df", "ip-mf",
   "ip-frag-offset", "ip-ttl", "ip-proto",
   "ip-checksum", "ip-saddr", "ip-daddr",
+  "ip-payload",
+
+  "ip6-ver", "ip6-traffic-class", "ip6-flow-label",
+  "ip6-len", "ip6-next", "ip6-hop-limit",
+  "ip6-saddr", "ip6-daddr", "ip6-payload",          /* 10 */
+
   "icmp-type", "icmp-code", "icmp-checksum",
   "icmp-payload", "udp-sport", "udp-dport",
-  "udp-len", "udp-checksum", "udp-payload",
-  "tcp-sport", "tcp-dport", "tcp-seq-num",
+  "udp-len", "udp-checksum", "udp-payload", 
+  "tcp-sport", "tcp-dport", "tcp-seq-num", 
   "tcp-ack-num", "tcp-offset", "tcp-reserved",
   "tcp-urg-ptr", "tcp-cwr", "tcp-ece", 
   "tcp-urg", "tcp-ack", "tcp-push", 
-  "tcp-res", "tcp-syn", "tcp-fin", 
+  "tcp-rst", "tcp-syn", "tcp-fin", 
   "tcp-flags", "tcp-win", "tcp-checksum", 
-  "tcp-payload",  "tcp-opt-mss", "tcp-opt-wscale", 
+  "tcp-payload",  "tcp-opt-mss", "tcp-opt-wscale",      /* 20 */
   "tcp-opt-sackp", "tcp-opt-sack", "tcp-opt-timestamp", 
   "tcp-opt-fast-open", "tcp-opt-mptcp", "tcp-opt",
   "all"
 };
 
-static const u8 conditions_len = 6;
-static const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
+const u8 lens[] = {
+  4, 4,
+  2, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  2, 2, 1,
+  1, 1, 1,
+  2, 1, 1,
+  2, 5, 5,
+  0,
+  1, 1, 3,
+  2, 1, 1,
+  17,17,0,   /* 10 */
 
-static const char* blanks = "                                                "
-                            "                                                "
-                            "                                                "
-                            "                                                ";
+  1, 1, 2,
+  0, 2, 2,
+  2, 2, 0, 
+  2, 2, 4,
+  4, 1, 1,
+  2, 1, 1, 
+  1, 1, 1, 
+  1, 1, 1, 
+  1, 2, 2, 
+  0, 2, 1,  /* 20 */
+  0, 0, 8, 
+  0, 0, 0,
+  0
+};
 
-static uword unformat_field(unformat_input_t * input, va_list * va);
-static uword unformat_condition(unformat_input_t * input, va_list * va);
-static uword unformat_value(unformat_input_t * input, va_list * va);
-static u8 *mmb_format_rule(u8 *s, va_list *args);
-static u8 *mmb_format_rule_column(u8 *s, va_list *args);
-static u8 *mmb_format_match(u8 *s, va_list *args);
-static u8 *mmb_format_target(u8 *s, va_list *args);
-static u8* mmb_format_field(u8 *s, va_list *args);
-static u8* mmb_format_condition(u8 *s, va_list *args);
-static u8* mmb_format_keyword(u8 *s, va_list *args);
+const u8 fixed_len[] = {
+  1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  0,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 0,  /* 10 */
+  1, 1, 1,
+  0, 1, 1,
+  1, 1, 0, 
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1,
+  1, 1, 1, 
+  1, 1, 1, 
+  1, 1, 1,
+  0, 1, 1, /* 20 */
+  1, 0, 1, 
+  0, 0, 0,
+  1
+};
 
-static u8 parse_match(unformat_input_t * input, mmb_match_t *match);
-static u8 parse_target(unformat_input_t * input, mmb_target_t *target);
+const u8 conditions_len = 6;
+const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
+
 static void mmb_free_rule(mmb_rule_t *rule);
-
 static clib_error_t *validate_rule();
-static void print_rules(vlib_main_t * vm, mmb_rule_t *rules);
+static clib_error_t *validate_matches(mmb_rule_t *rule);
+static clib_error_t *validate_targets(mmb_rule_t *rule);
 
-static_always_inline void unformat_input_tolower(unformat_input_t *input) {
-  uword buffer_index = 0;
-  vec_foreach_index(buffer_index, input->buffer) {
-     input->buffer[buffer_index] = tolower(input->buffer[buffer_index]);
+static clib_error_t *
+mmb_enable_disable_fn(vlib_main_t * vm,
+                      unformat_input_t * input,
+                      vlib_cli_command_t * cmd,
+                      u32 *sw_if_index) {
+  unformat_input_tolower(input);
+  mmb_main_t *mm = &mmb_main;
+  *sw_if_index = ~0;
+  
+  while(unformat_check_input(input) != UNFORMAT_END_OF_INPUT) {
+    if (!unformat(input, "%U", unformat_vnet_sw_interface, 
+                  mm->vnet_main, sw_if_index))
+      break;
   }
-}
 
-/**
- * @brief Enable/disable the mmb plugin. 
- *
- * Action function shared between message handler and debug CLI.
- */
-
-int mmb_enable_disable (mmb_main_t *mm, u32 sw_if_index,
-                                   int enable_disable) {
-  vnet_sw_interface_t * sw;
-  int rv = 0;
+  if (*sw_if_index == ~0)
+    return clib_error_return(0, "Please specify an interface...");
 
   /* Utterly wrong? */
   if (pool_is_free_index (mm->vnet_main->interface_main.sw_interfaces, 
-                          sw_if_index))
-    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
-
-  /* Not a physical port? */
-  sw = vnet_get_sw_interface (mm->vnet_main, sw_if_index);
-  if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
-    return VNET_API_ERROR_INVALID_SW_IF_INDEX;
-  
-  vnet_feature_enable_disable ("ip4-unicast", "mmb",
-                               sw_if_index, enable_disable, 0, 0);
-
-  return rv;
-}
-
-static clib_error_t *
-mmb_enable_disable_fn (vlib_main_t * vm,
-                   unformat_input_t * input,
-                   vlib_cli_command_t * cmd,
-                   int enable_disable) {
-  unformat_input_tolower(input);
-  mmb_main_t *mm = &mmb_main;
-  u32 sw_if_index = ~0;
-    
-  int rv;
-  while(unformat_check_input(input) != UNFORMAT_END_OF_INPUT) {
-    if (!unformat(input, "%U", unformat_vnet_sw_interface, 
-                  mm->vnet_main, &sw_if_index))
-      break;
-  }
-
-  if (sw_if_index == ~0)
-    return clib_error_return(0, "Please specify an interface...");
-    
-  rv = mmb_enable_disable(mm, sw_if_index, enable_disable);
-
-  switch(rv) {
-    case 0:
-      break;
-
-    case VNET_API_ERROR_INVALID_SW_IF_INDEX:
-      return clib_error_return(0, "Invalid interface, only works on "
-                                  "physical ports");
-
-    case VNET_API_ERROR_UNIMPLEMENTED:
-      return clib_error_return(0, "Device driver doesn't support redirection");
-
-    default:
-      return clib_error_return(0, "mmb_enable_disable returned %d", rv);
-  }
-
+                          *sw_if_index))
+    return clib_error_return(0, "Invalid interface, only works on "
+                                 "physical ports");
   return 0;
 }
 
+static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
+   vnet_feature_enable_disable("ip4-unicast", "mmb-plugin-ip4-in", 
+                               sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip6-unicast", "mmb-plugin-ip6-in", 
+                               sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip4-output", "mmb-plugin-ip4-out", 
+                               sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip6-output", "mmb-plugin-ip6-out", 
+                               sw_if_index, enable_disable, 0, 0);
+}
+
 static clib_error_t *
-enable_command_fn (vlib_main_t * vm,
-                   unformat_input_t * input,
-                   vlib_cli_command_t * cmd) {
-  return mmb_enable_disable_fn(vm, input, cmd, /* enable */ 1);
+enable_command_fn(vlib_main_t * vm,
+                  unformat_input_t * input,
+                  vlib_cli_command_t * cmd) {
+   u8 index;
+   u32 sw_if_index, enabled_sw_if_index;
+   mmb_main_t *mm = &mmb_main;
+   clib_error_t *error;
+
+   if ( (error = mmb_enable_disable_fn(vm, input, cmd, &sw_if_index)) )
+     return error;
+
+   /* if already enabled ? */
+   vec_foreach_index(index, mm->sw_if_indexes) {
+      enabled_sw_if_index = mm->sw_if_indexes[index];
+      if (sw_if_index == enabled_sw_if_index) 
+         return clib_error_return(0, "mmb is already enabled on %U\n", 
+                       format_vnet_sw_if_index_name, 
+                       mm->vnet_main, sw_if_index);
+   }
+
+   vec_add1(mm->sw_if_indexes, sw_if_index);
+   mmb_enable_disable(sw_if_index, 1);
+   vl_print(vm, "mmb enabled on %U\n", format_vnet_sw_if_index_name, 
+             mm->vnet_main, sw_if_index);
+
+   return 0;
 }
 
 static clib_error_t *
 disable_command_fn (vlib_main_t * vm,
                    unformat_input_t * input,
                    vlib_cli_command_t * cmd) {
-  return mmb_enable_disable_fn(vm, input, cmd, /* disable */ 0);
+   u8 enabled = 0, index = 0;
+   u32 sw_if_index, enabled_sw_if_index;
+   mmb_main_t *mm = &mmb_main;
+   clib_error_t *error;
+
+   if ( (error = mmb_enable_disable_fn(vm, input, cmd, &sw_if_index)) )
+     return error;
+
+   /* if already disabled ? */
+   vec_foreach_index(index, mm->sw_if_indexes) {
+      enabled_sw_if_index = mm->sw_if_indexes[index];
+      if (sw_if_index == enabled_sw_if_index) {
+         enabled = 1;
+         break;
+      }
+   }
+   if (!enabled)
+      return clib_error_return(0, "mmb is not enabled on %U\n", 
+              format_vnet_sw_if_index_name, 
+              mm->vnet_main, sw_if_index);
+
+   vec_delete(mm->sw_if_indexes, 1, index);
+   mmb_enable_disable(sw_if_index, 0);
+   vl_print(vm, "mmb disabled on %U\n", format_vnet_sw_if_index_name, 
+          mm->vnet_main, sw_if_index);
+
+  return 0;
 }
 
 static clib_error_t *
@@ -222,7 +273,7 @@ list_rules_command_fn (vlib_main_t * vm,
     return clib_error_return(0, "Syntax error: unexpected additional element");
 
   mmb_main_t *mm = &mmb_main;
-  print_rules(vm, mm->rules);
+  vl_print(vm, "%U", mmb_format_rules, mm->rules);
 
   return 0;
 }
@@ -237,14 +288,24 @@ flush_rules_command_fn (vlib_main_t * vm,
 
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
+
   uword rule_index;
   vec_foreach_index(rule_index, rules) {
     mmb_rule_t *rule = &rules[rule_index];
     mmb_free_rule(rule);
   }
-  vec_delete(rules, vec_len(rules), 0);
+
+  if (vec_len(rules))
+    vec_delete(rules, vec_len(rules), 0);
 
   return 0;
+}
+
+static_always_inline void init_rule(mmb_rule_t *rule) {
+  memset(rule, 0, sizeof(mmb_rule_t));
+  rule->in = rule->out = ~0;
+  clib_bitmap_alloc(rule->opt_strips, 255);
+  clib_bitmap_zero(rule->opt_strips);
 }
 
 static clib_error_t *
@@ -256,7 +317,7 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   mmb_match_t *matches = 0, match;
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
     memset(&match, 0, sizeof (mmb_match_t));
-    if (!parse_match(input, &match)) 
+    if (!unformat(input, "%U", mmb_unformat_match, &match)) 
       break;
     else vec_add1(matches, match);
   } 
@@ -267,7 +328,7 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   mmb_target_t *targets = 0, target;
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
     memset(&target, 0, sizeof (mmb_target_t));
-    if (!parse_target(input, &target)) 
+    if (!unformat(input, "%U", mmb_unformat_target, &target)) 
       break;
     else vec_add1(targets, target);
   }
@@ -279,8 +340,8 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   }
 
   mmb_rule_t rule;
-  memset(&rule, 0, sizeof(mmb_rule_t));
-  rule.matches  = matches;
+  init_rule(&rule);
+  rule.matches = matches;
   rule.targets = targets;
 
   clib_error_t *error;
@@ -295,16 +356,16 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
 static_always_inline void translate_ip4_ecn(u8 field, u8 **value) {
   switch (field) {
-    case MMB_FIELD_IP_NON_ECT:
+    case MMB_FIELD_IP4_NON_ECT:
       vec_add1(*value, 0);
       break;
-    case MMB_FIELD_IP_ECT0:
+    case MMB_FIELD_IP4_ECT0:
       vec_add1(*value, 2);
       break;
-    case MMB_FIELD_IP_ECT1:
+    case MMB_FIELD_IP4_ECT1:
       vec_add1(*value, 1);
       break;
-    case MMB_FIELD_IP_CE:
+    case MMB_FIELD_IP4_CE:
       vec_add1(*value, 3);
       break;
     default:
@@ -314,120 +375,313 @@ static_always_inline void translate_ip4_ecn(u8 field, u8 **value) {
 
 static_always_inline void translate_match_ip4_ecn(mmb_match_t *match) {
   translate_ip4_ecn(match->field, &match->value);
-  match->field = MMB_FIELD_IP_ECN;
+  match->field = MMB_FIELD_IP4_ECN;
   match->condition = MMB_COND_EQ;
 }
 
 static_always_inline void translate_target_ip4_ecn(mmb_target_t *target) {
   translate_ip4_ecn(target->field, &target->value);
-  target->field = MMB_FIELD_IP_ECN;
+  target->field = MMB_FIELD_IP4_ECN;
 }
 
-static clib_error_t *derive_l4(mmb_rule_t *rule) {
-  u8 l4 = IP_PROTOCOL_RESERVED;
-  
-  inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
-    
-    inline clib_error_t *update_l4_aux(u8 l4, u8 *derived_l4) {
+static_always_inline void translate_match_bit_flags(mmb_match_t *match) {
+  match->condition = MMB_COND_EQ;
+  vec_add1(match->value, 1);
+}
+
+u16 get_field_protocol(u8 field) {
+  if (MMB_FIELD_IP4_VER <= field && field <= MMB_FIELD_IP4_PAYLOAD)
+     return ETHERNET_TYPE_IP4;
+  if (MMB_FIELD_IP6_VER <= field && field <= MMB_FIELD_IP6_PAYLOAD)
+     return ETHERNET_TYPE_IP6;
+   else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD)
+     return IP_PROTOCOL_ICMP;
+   else if (MMB_FIELD_UDP_SPORT <= field && field <= MMB_FIELD_UDP_PAYLOAD)
+     return IP_PROTOCOL_UDP;
+   else if (MMB_FIELD_TCP_SPORT <= field && field <= MMB_FIELD_TCP_OPT)
+     return IP_PROTOCOL_TCP;
+   return IP_PROTOCOL_RESERVED;
+}
+
+u8 is_fixed_length(u8 field) {
+   u8 index = field_toindex(field);
+   if (index < fields_len)
+      return fixed_len[index];
+   return 0;
+}
+
+static_always_inline clib_error_t *update_l3(u8 field, u16 *derived_l3) {
+ u16 proto = get_field_protocol(field);
+
+ switch (proto) {
+   case ETHERNET_TYPE_IP4:
+   case ETHERNET_TYPE_IP6:
+
+      if (*derived_l3 == 0) 
+        *derived_l3 = proto;
+      else if (*derived_l3 != proto)
+        return clib_error_return(0, "Multiple l3 protocols");
+   default:
+     break;
+ }
+ return NULL;
+}
+
+static_always_inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
+ u16 proto = get_field_protocol(field);
+
+ switch (proto) {
+   case IP_PROTOCOL_ICMP:case IP_PROTOCOL_UDP:
+   case IP_PROTOCOL_TCP:
+
       if (*derived_l4 == IP_PROTOCOL_RESERVED) 
-        *derived_l4 = l4;
-      else if (*derived_l4 != l4)
+        *derived_l4 = proto;
+      else if (*derived_l4 != proto)
         return clib_error_return(0, "Multiple l4 protocols");
-      return NULL;
-    }
-    
-    clib_error_t *error;
-    if (MMB_FIELD_NET_PROTO >= field && field <= MMB_FIELD_IP_DADDR) 
-      ;
-    else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD) {
-      if ( (error = update_l4_aux(IP_PROTOCOL_ICMP, derived_l4)) )
-        return error;
-    } else if (MMB_FIELD_UDP_SPORT <= field && field <= MMB_FIELD_UDP_PAYLOAD) {
-      if ( (error = update_l4_aux(IP_PROTOCOL_UDP, derived_l4)) )
-        return error;
-    } else if (MMB_FIELD_TCP_SPORT <= field && field <= MMB_FIELD_TCP_OPT) {
-      if ( (error = update_l4_aux(IP_PROTOCOL_TCP, derived_l4)) )
-        return error;
-    }
-    return NULL;
-  }
-
-  clib_error_t *error;
-  uword index;
-  vec_foreach_index(index, rule->matches) {
-    mmb_match_t *match = &rule->matches[index];
-    u8 field = match->field;
-    if ( (error = update_l4(field, &l4)) )
-      return error;
-  }
-  vec_foreach_index(index, rule->targets) {
-    mmb_target_t *target = &rule->targets[index];
-    u8 field = target->field;
-    if ( (error = update_l4(field, &l4)) )
-      return error;
-  }
-
-  rule->l4 = l4;
-  return NULL;
+   default:
+     break;
+ }
+ return NULL;
 }
 
-clib_error_t *validate_rule(mmb_rule_t *rule) {
-   //TODO: validate, recalibrate decimal payload, subnet
-   uword index = 0;
-   
-   clib_error_t *error;
-   if ( (error = derive_l4(rule)) )
-     return error;
-   rule->l3 = ETHERNET_TYPE_IP4;
+static_always_inline u32 bytes_to_u32(u8 *bytes) {
+  u32 value = 0;
+  u32 index = 0;
+  const u32 len = 3;
 
-   /* matches */
+  vec_foreach_index(index, bytes) 
+    value += ((u32) bytes[index]) << (len-index)*8;
+
+  return value;
+}
+
+static_always_inline clib_error_t *
+validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
+   mmb_main_t mm = mmb_main;
+
+   if (vec_len(match->value) == 0)
+      return clib_error_return(0, "missing interface name/index"); 
+   if (match->reverse || match->condition != MMB_COND_EQ)
+      return clib_error_return(0, "invalid interface definition");
+
+   u32 sw_if_index = bytes_to_u32(match->value); 
+   if (vnet_get_sw_interface_safe (mm.vnet_main, sw_if_index) == NULL)
+      return clib_error_return(0, "invalid interface index:%u", sw_if_index);
+
+   if (field == MMB_FIELD_INTERFACE_IN && rule->in == ~0) 
+      rule->in = sw_if_index;
+   else if (field == MMB_FIELD_INTERFACE_OUT && rule->out == ~0)
+      rule->out = sw_if_index;
+   else
+      return clib_error_return(0, "multiple interfaces");
+   
+   return NULL;
+}
+
+#define vec_insert_elt_last(V,E) vec_insert_elts(V,E,1,vec_len(V))
+
+clib_error_t *validate_matches(mmb_rule_t *rule) {
+   clib_error_t *error;
+   uword index = 0;
+   uword *if_indexes = 0, *if_index;
+
    vec_foreach_index(index, rule->matches) {
      mmb_match_t *match = &rule->matches[index];
+     u8 field = match->field, reverse = match->reverse;
+     u8 condition = match->condition, *value = match->value;
 
-     switch (match->field) {
+     if ( (error = update_l3(field, &rule->l3))
+           || (error = update_l4(field, &rule->l4)) )
+       return error;
+
+     switch (field) {
        case MMB_FIELD_ALL:
          /* other fields must be empty, and no other matches */
-         if (match->condition || vec_len(match->value) || match->reverse
-             || vec_len(rule->matches)>1)
+         if (condition || vec_len(value) > 0 || reverse
+             || vec_len(rule->matches) > 1)
            return clib_error_return(0, "'all' in a <match> must be used alone");
          break;
 
-       case MMB_FIELD_IP_NON_ECT:case MMB_FIELD_IP_ECT0:
-       case MMB_FIELD_IP_ECT1:case MMB_FIELD_IP_CE:
-         if (vec_len(match->value))
+       case MMB_FIELD_IP4_NON_ECT:case MMB_FIELD_IP4_ECT0:
+       case MMB_FIELD_IP4_ECT1:case MMB_FIELD_IP4_CE:
+         if (vec_len(value) > 0)
            return clib_error_return(0, "%s does not take a condition nor a value", 
-                                    fields[match->field-MMB_FIELD_NET_PROTO]);
+                                    fields[field_toindex(field)]);
          translate_match_ip4_ecn(match);
          break;
+
+       case MMB_FIELD_TCP_FLAGS:
+         break; // TODO: translate to bits
+       case MMB_FIELD_IP4_FLAGS:
+         break; // TODO: translate to bits
+
+       case MMB_FIELD_IP4_RES:case MMB_FIELD_IP4_DF:case MMB_FIELD_IP4_MF:
+       case MMB_FIELD_TCP_CWR:case MMB_FIELD_TCP_ECE:case MMB_FIELD_TCP_URG:
+       case MMB_FIELD_TCP_ACK:case MMB_FIELD_TCP_PUSH:case MMB_FIELD_TCP_RST:
+       case MMB_FIELD_TCP_SYN:case MMB_FIELD_TCP_FIN:
+         /* "bit-field" or "!bit-field" means "bit-field == 1" or "bit-field == 0" */
+         /* so this does NOT mean "bit-field is (not) present in current packet" */
+         if (vec_len(value) == 0)
+           translate_match_bit_flags(match);
+         break;
+#define _(a,b,c) case a: {match->field=MMB_FIELD_TCP_OPT; match->opt_kind=c;\
+                          rule->opts_in_matches=1; break;}
+   foreach_mmb_tcp_opts
+#undef _
+       case MMB_FIELD_TCP_OPT:
+         rule->opts_in_matches=1;
+         break;
+       case MMB_FIELD_INTERFACE_IN:  
+       case MMB_FIELD_INTERFACE_OUT:
+          if ( (error = validate_if(rule, match, field)) )
+            return error;
+          vec_insert_elt_last(if_indexes, &index);
+          break;        
        default:
          break;
      }
    }
 
-   /* targets */
+   /* delete interface fields */
+   vec_foreach(if_index, if_indexes) {
+     mmb_match_t *match = &rule->matches[*if_index];
+     vec_free(match->value);
+     if (vec_len(rule->matches) == 1) {
+       match->field = MMB_FIELD_ALL;
+       match->condition = 0;
+     } else  /* del */  
+       vec_delete(rule->matches, 1, *if_index);
+   }
+
+   return NULL;
+}
+
+static_always_inline mmb_transport_option_t to_transport_option(mmb_target_t *target) {
+   mmb_transport_option_t opt;
+   memset(&opt, 0, sizeof(mmb_transport_option_t));
+   opt.l4 = IP_PROTOCOL_TCP;
+   opt.kind = target->opt_kind;
+   opt.value = target->value;
+   return opt;
+}
+
+clib_error_t *validate_targets(mmb_rule_t *rule) {
+   clib_error_t *error;
+   uword index = 0;
+   uword *rm_indexes = 0, *rm_index;
+
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
+     u8 field = target->field, reverse = target->reverse;
+     u8 keyword = target->keyword, *value = target->value;
 
-     switch (target->field) {
+     if ( (error = update_l3(field, &rule->l3))
+           || (error = update_l4(field, &rule->l4)) )
+       return error;
+
+     switch (field) {
        case MMB_FIELD_ALL:
-         if (target->keyword != MMB_TARGET_STRIP || vec_len(target->value))
+         if (keyword != MMB_TARGET_STRIP || vec_len(value))
            return clib_error_return(0, "'all' in a <target> can only be used"
                                      " with the 'strip' keyword and no value");
-         if (target->reverse)
+         if (reverse)
            return clib_error_return(0, "<target> has no effect");
+         
+         break;
+       case MMB_FIELD_INTERFACE_IN:
+       case MMB_FIELD_INTERFACE_OUT:
+          return clib_error_return(0, "invalid field in target");
+       case MMB_FIELD_IP4_NON_ECT:case MMB_FIELD_IP4_ECT0:
+       case MMB_FIELD_IP4_ECT1:case MMB_FIELD_IP4_CE:
+         if (vec_len(value) > 0)
+           return clib_error_return(0, "%s does not take a condition nor a value", 
+                                    fields[field_toindex(field)]);
+         translate_target_ip4_ecn(target);
          break;
 
-       case MMB_FIELD_IP_NON_ECT:case MMB_FIELD_IP_ECT0:
-       case MMB_FIELD_IP_ECT1:case MMB_FIELD_IP_CE:
-         if (vec_len(target->value))
-           return clib_error_return(0, "%s does not take a condition nor a value", 
-                                    fields[target->field-MMB_FIELD_NET_PROTO]);
-         translate_target_ip4_ecn(target);
+#define _(a,b,c) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=c;\
+                          rule->opts_in_targets=1; break;}
+   foreach_mmb_tcp_opts
+#undef _
+       //TODO: other "bit fields" (see above in "matches" part)
+       case MMB_FIELD_TCP_OPT:
+         rule->opts_in_targets=1;
          break;
        default:
          break;
      }
+     
+     if (keyword == MMB_TARGET_STRIP) {
+
+       /* Ensure that field of strip target is a tcp opt. */
+       if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
+             && field <= MMB_FIELD_ALL))
+         return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
+
+       /* build option strip list  */
+       if (!rule->has_strips)  {
+         rule->has_strips = 1; 
+         /* first strip target, set type */
+         if (reverse) {
+            rule->whitelist = 1;
+            /* flip bitmap to 1s XXX: typo in func name !!*/
+            clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
+         }
+       } else if (rule->whitelist != reverse)
+         return clib_error_return(0, "inconsistent use of ! in strip");
+
+       if (field == MMB_FIELD_ALL) /* strip all */
+         target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
+
+       clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
+       vec_insert_elt_last(rm_indexes, &index);
+     } else if (keyword == MMB_TARGET_ADD) { 
+
+        /* Ensure that field of strip target is a tcp opt. */
+       if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
+             && field < MMB_FIELD_ALL))
+         return clib_error_return(0, "add <field> must be a tcp option");
+
+       /* empty value should be fixed len and len = 0 */
+       if (vec_len(value) == 0 
+             && !(is_fixed_length(field) && lens[field_toindex(field)]==0) )
+         return clib_error_return(0, "add <field> missing value");
+
+       /* add transport opt to add-list and register for deletion */
+       mmb_transport_option_t opt = to_transport_option(target);
+       vec_add1(rule->opt_adds, opt);
+       rule->has_adds = 1;
+       vec_insert_elt_last(rm_indexes, &index);
+     } else if (keyword == MMB_TARGET_MODIFY) { 
+        if  (MMB_FIELD_TCP_OPT_MSS <= field 
+             && field < MMB_FIELD_ALL) {
+          vec_add1(rule->opt_mods, *target);
+          vec_insert_elt_last(rm_indexes, &index);
+        }
+     }
+   } 
+
+   /* delete strips and adds from targets */ 
+   vec_foreach(rm_index, rm_indexes) {
+     vec_delete(rule->targets, 1, *rm_index);
    }
+   
+   return NULL;
+}
+
+clib_error_t *validate_rule(mmb_rule_t *rule) {
+   clib_error_t *error; //TODO: more validation
+
+   rule->l3 = 0;
+   rule->l4 = IP_PROTOCOL_RESERVED;
+
+   if ( (error = validate_matches(rule)) )
+      return error;
+   if ( (error = validate_targets(rule)) )
+      return error; 
+
+   if (rule->l3 == 0)
+      rule->l3 = MMB_DEFAULT_ETHERNET_TYPE;
 
    return NULL;
 }
@@ -463,262 +717,6 @@ del_rule_command_fn (vlib_main_t * vm,
     "Syntax error: rule number must be an integer greater than 0");
 }
 
-uword unformat_field(unformat_input_t * input, va_list * va) {
-  u8 *field = va_arg(*va, u8*);
-  u8 *kind  = va_arg(*va, u8*);
-  for (u8 i=0; i<fields_len; i++) {
-    if (unformat (input, fields[i])) {
-      *field = MMB_FIELD_NET_PROTO+i;
- 
-      /* optional kind */
-      if (*field == MMB_FIELD_TCP_OPT
-          && (unformat(input, "x%x", kind)
-              || unformat(input, "0x%x", kind) 
-              || unformat(input, "%d", kind)))
-        ;
-      return 1;
-    }
-  }
-
-  return 0;
-}
-
-uword unformat_condition(unformat_input_t * input, va_list * va) {
-  u8 *cond = va_arg(*va, u8*);
-  for (u8 i=0; i<conditions_len; i++) {
-    if (unformat (input, conditions[i])) {
-      *cond = MMB_COND_EQ+i;
-      return 1;
-    }
-  }
-
-  return 0;
-}
-
-static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
-  for (int i=count-1; i>=0; i--)
-    vec_add1(*bytes, value>>(i*8)); 
-}
-
-uword unformat_value(unformat_input_t * input, va_list * va) {
-  u8 **bytes = va_arg(*va, u8**);
-  u8 found_l4 = 0;
-  u16 found_l3 = 0;
-  u64 decimal = 0;
-
-   if (0);
-#define _(a,b) else if (unformat (input, #a)) found_l4 = IP_PROTOCOL_##b;
-   foreach_mmb_transport_proto
-#undef _
-#define _(a,b) else if (unformat (input, #a)) found_l3 = ETHERNET_TYPE_##b;
-   foreach_mmb_network_proto
-#undef _
-
-  if (found_l4) {
-    u64_tobytes(bytes, found_l4, 1);
-    return 1;
-  } else if (found_l3) {
-    u64_tobytes(bytes, found_l3, 2);
-    return 1;
-  }
-
-  if (unformat (input, "0x") 
-    || unformat (input, "x")) {
-    /* hex value */ 
-
-    u8 *hex_str = 0;
-    if (unformat (input, "%U", unformat_hex_string, bytes))
-      ;
-    else if (unformat (input, "%s", &hex_str)) {
-
-      /* add an extra 0 for parity */  
-      unformat_input_t str_input, *sub_input = &str_input; 
-      unformat_init(sub_input, 0, 0);
-      unformat_init_vector(sub_input, format(0, "0%s", hex_str));
-      if (!unformat (sub_input, "%U", unformat_hex_string, bytes)) {
-        unformat_free(sub_input);
-        return 0;
-      }
-      unformat_free(sub_input);
-    }
-    
-  } else if (unformat (input, "%lu", &decimal)) {
-     u64_tobytes(bytes, decimal, 8);
-  } else 
-    return 0;
-
-  return 1;
-}
-
-u8 parse_target(unformat_input_t * input, mmb_target_t *target) {
-   if (unformat(input, "strip ! %U", unformat_field, 
-               &target->field, &target->opt_kind)) {
-     target->keyword=MMB_TARGET_STRIP;
-     target->reverse=1;
-   } else if (unformat(input, "strip %U", unformat_field, 
-                      &target->field, &target->opt_kind)) 
-     target->keyword=MMB_TARGET_STRIP;
-   else if (unformat(input, "mod %U %U", unformat_field, 
-                    &target->field, &target->opt_kind, 
-                    unformat_value, &target->value))
-     target->keyword=MMB_TARGET_MODIFY; 
-   else if (unformat(input, "drop"))
-     target->keyword=MMB_TARGET_DROP; 
-   else 
-     return 0;
-   return 1;
-}
-
-u8 parse_match(unformat_input_t * input, mmb_match_t *match) {
-   if (unformat(input, "!"))
-     match->reverse = 1;
-
-   if (unformat(input, "%U %U %U", unformat_field, 
-                    &match->field, &match->opt_kind, unformat_condition, 
-                    &match->condition, unformat_value, &match->value)) 
-     ;
-   else if (unformat(input, "%U %U", unformat_field, 
-                    &match->field, &match->opt_kind, 
-                    unformat_value, &match->value)) 
-     match->condition = MMB_DEFAULT_MATCH_CONDITION;
-   else if (unformat(input, "%U", unformat_field,
-                    &match->field, &match->opt_kind)) 
-     ;
-   else 
-     return 0;
-   return 1;
-}
-
-u8* mmb_format_field(u8* s, va_list *args) {
-   u8 field = *va_arg(*args, u8*); 
-   u8 kind  = *va_arg(*args, u8*);
-
-   u8 field_index = field-MMB_FIELD_NET_PROTO;
-   if (field < MMB_FIELD_NET_PROTO 
-    || field > MMB_FIELD_NET_PROTO+fields_len)
-     ; 
-   else if (field == MMB_FIELD_TCP_OPT && kind) 
-     s = format(s, "%s %d", fields[field_index], kind);
-   else
-     s = format(s, "%s", fields[field_index]);
-
-   return s;
-}
-
-u8* mmb_format_condition(u8* s, va_list *args) {
-  u8 condition = *va_arg(*args, u8*);
-  if (condition >= MMB_COND_EQ 
-    &&  condition <= MMB_COND_EQ+conditions_len)
-    s = format(s, "%s", conditions[condition-MMB_COND_EQ]);
-  
-  return s;
-}
-
-u8* mmb_format_keyword(u8* s, va_list *args) {
-  u8 keyword = *va_arg(*args, u8*);
-   
-  char *keyword_str = "";
-  switch(keyword) {
-    case MMB_TARGET_DROP:
-       keyword_str = "drop";
-       break;
-    case MMB_TARGET_MODIFY:
-       keyword_str =  "mod";
-       break;
-    case MMB_TARGET_STRIP:
-       keyword_str =  "strip";
-       break;
-    default:
-       break;
-  }
-
-  s = format(s, "%s", keyword_str);
-  return s;
-}
-
-void print_rules(vlib_main_t * vm, mmb_rule_t *rules) {
-   //TODO: alignment
-   vl_print(vm, " Index%2sL3%4sL4%6sMatches%33sTargets\n", 
-                blanks, blanks, blanks, blanks);
-   uword rule_index = 0;
-   vec_foreach_index(rule_index, rules) {
-     vl_print(vm, " %d\t%U%s", rule_index+1, 
-              mmb_format_rule_column, &rules[rule_index], 
-              rule_index == vec_len(rules)-1 ? "" : "\n");
-   }
-}
-
-u8 *mmb_format_rule(u8 *s, va_list *args) {
-  mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
-  s = format(s, "%04x\t%-8d", rule->l3, rule->l4); 
-
-  uword index = 0;
-  vec_foreach_index(index, rule->matches) {
-    s = format(s, "%U%s", mmb_format_match, &rule->matches[index],
-                        (index != vec_len(rule->matches)-1) ? " AND ":"\t");
-  }
-
-  vec_foreach_index(index, rule->targets) {
-    s = format(s, "%U%s", mmb_format_target, &rule->targets[index],  
-                        (index != vec_len(rule->targets)-1) ? ", ":"");
-  }
-  return s;
-}
-
-u8 *mmb_format_rule_column(u8 *s, va_list *args) {
-  mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
-  s = format(s, "%04x  %-8d", rule->l3, rule->l4); 
-  
-  for (uword index = 0; 
-       index<clib_max(vec_len(rule->matches), vec_len(rule->targets)); 
-       index++) {
-    if (index < vec_len(rule->matches)) {
-      /* tabulate empty line */
-      if (index) 
-        s = format(s, "%22s", "AND ");
-      s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
-
-    } else  
-      s = format(s, "%62s", blanks);
-
-    if (index < vec_len(rule->targets)) 
-      s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
-    s = format(s, "\n");
-
-  }
-  return s;
-}
-
-static_always_inline u8 *mmb_format_bytes(u8 *s, va_list *args) {
-  u8 *byte, *bytes = va_arg(*args, u8*); 
-  vec_foreach(byte, bytes) {
-    s = format(s, "%02x", *byte);
-  }
-  return s;
-}
-
-u8 *mmb_format_match(u8 *s, va_list *args) {
-
-  mmb_match_t *match = va_arg(*args, mmb_match_t*);
-  s = format(s, "%s%U %U %U", (match->reverse) ? "! ":"",
-                          mmb_format_field, &match->field, &match->opt_kind,
-                          mmb_format_condition, &match->condition,
-                          mmb_format_bytes, match->value
-                          );
-  return s;
-} 
-
-u8 *mmb_format_target(u8 *s, va_list *args) {
-
-  mmb_target_t *target = va_arg(*args, mmb_target_t*);
-  s = format(s, "%s%U %U %U", (target->reverse) ? "! ":"",
-                         mmb_format_keyword, &target->keyword,
-                         mmb_format_field, &target->field, &target->opt_kind,
-                         mmb_format_bytes, target->value
-                         );
-  return s; 
-}
-
 void mmb_free_rule(mmb_rule_t *rule) {
   uword index;
   vec_foreach_index(index, rule->matches) {
@@ -729,12 +727,17 @@ void mmb_free_rule(mmb_rule_t *rule) {
     vec_free(rule->targets[index].value);
   }
   vec_free(rule->targets);
+  clib_bitmap_free(rule->opt_strips);
+  vec_foreach_index(index, rule->opt_adds) {
+    vec_free(rule->opt_adds[index].value);
+  }
+  vec_free(rule->opt_adds);
 }
 
 /**
  * @brief CLI command to enable the mmb plugin.
  */
-VLIB_CLI_COMMAND (sr_content_command_enable, static) = {
+VLIB_CLI_COMMAND(sr_content_command_enable, static) = {
     .path = "mmb enable",
     .short_help = "mmb enable <interface-name> "
                   "(enable the MMB plugin on a given interface)",
@@ -744,7 +747,7 @@ VLIB_CLI_COMMAND (sr_content_command_enable, static) = {
 /**
  * @brief CLI command to disable the mmb plugin.
  */
-VLIB_CLI_COMMAND (sr_content_command_disable, static) = {
+VLIB_CLI_COMMAND(sr_content_command_disable, static) = {
     .path = "mmb disable",
     .short_help = "mmb disable <interface-name> "
                   "(disable the MMB plugin on a given interface)",
@@ -754,7 +757,7 @@ VLIB_CLI_COMMAND (sr_content_command_disable, static) = {
 /**
  * @brief CLI command to list all rules.
  */
-VLIB_CLI_COMMAND (sr_content_command_list_rules, static) = {
+VLIB_CLI_COMMAND(sr_content_command_list_rules, static) = {
     .path = "mmb list",
     .short_help = "Display all rules",
     .function = list_rules_command_fn,
@@ -763,7 +766,7 @@ VLIB_CLI_COMMAND (sr_content_command_list_rules, static) = {
 /**
  * @brief CLI command to add a new rule.
  */
-VLIB_CLI_COMMAND (sr_content_command_add_rule, static) = {
+VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
     .path = "mmb add",
     .short_help = "Add a rule: mmb add <field> [[<cond>] <value>] "
                   "[<field> [[<cond>] <value>] ...] <strip <option-field> "
@@ -774,16 +777,16 @@ VLIB_CLI_COMMAND (sr_content_command_add_rule, static) = {
 /**
  * @brief CLI command to remove a rule.
  */
-VLIB_CLI_COMMAND (sr_content_command_del_rules, static) = {
+VLIB_CLI_COMMAND(sr_content_command_del_rules, static) = {
     .path = "mmb del",
     .short_help = "Remove a rule: mmb del <rule-number>",
     .function = del_rule_command_fn,
 };
 
 /**
- * @brief CLI command to remove a rule.
+ * @brief CLI command to remove all rules.
  */
-VLIB_CLI_COMMAND (sr_content_command_flush_rule, static) = {
+VLIB_CLI_COMMAND(sr_content_command_flush_rule, static) = {
     .path = "mmb flush",
     .short_help = "Remove all rules",
     .function = flush_rules_command_fn,
@@ -793,7 +796,7 @@ VLIB_CLI_COMMAND (sr_content_command_flush_rule, static) = {
  * @brief Set up the API message handling tables.
  */
 static clib_error_t *
-mmb_plugin_api_hookup (vlib_main_t *vm) {
+mmb_plugin_api_hookup(vlib_main_t *vm) {
   CLIB_UNUSED(mmb_main_t) * mm = &mmb_main;
 #define _(N,n)                                                  \
     vl_msg_api_set_handlers((VL_API_##N + mm->msg_id_base),     \
@@ -814,7 +817,7 @@ mmb_plugin_api_hookup (vlib_main_t *vm) {
 #undef vl_msg_name_crc_list
 
 static void 
-setup_message_id_table (mmb_main_t * mm, api_main_t *am) {
+setup_message_id_table(mmb_main_t * mm, api_main_t *am) {
 #define _(id,n,crc) \
   vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + mm->msg_id_base);
   foreach_vl_msg_name_crc_mmb;
@@ -824,13 +827,13 @@ setup_message_id_table (mmb_main_t * mm, api_main_t *am) {
 /**
  * @brief Initialize the mmb plugin.
  */
-static clib_error_t * mmb_init (vlib_main_t * vm) {
+static clib_error_t * mmb_init(vlib_main_t * vm) {
   mmb_main_t * mm = &mmb_main;
   clib_error_t * error = 0;
   u8 * name;
 
-  mm->vnet_main =  vnet_get_main ();
-  mm->rules = 0;
+  memset(mm, 0, sizeof(mmb_main_t));
+  mm->vnet_main =  vnet_get_main();
 
   name = format (0, "mmb_%08x%c", api_version, 0);
 
@@ -838,10 +841,10 @@ static clib_error_t * mmb_init (vlib_main_t * vm) {
   mm->msg_id_base = vl_msg_api_get_msg_ids 
       ((char *) name, VL_MSG_FIRST_AVAILABLE);
 
-  error = mmb_plugin_api_hookup (vm);
+  error = mmb_plugin_api_hookup(vm);
 
   /* Add our API messages to the global name_crc hash table */
-  setup_message_id_table (mm, &api_main);
+  setup_message_id_table(mm, &api_main);
 
   vec_free(name);
 
@@ -849,13 +852,3 @@ static clib_error_t * mmb_init (vlib_main_t * vm) {
 }
 
 VLIB_INIT_FUNCTION (mmb_init);
-
-/**
- * @brief Hook the mmb plugin into the VPP graph hierarchy.
- */
-//TODO: work in progress (we may need to change the node location...)
-VNET_FEATURE_INIT (mmb, static) = {
-  .arc_name = "ip4-unicast", //ip4-output
-  .node_name = "mmb",
-  .runs_before = VNET_FEATURES ("ip4-lookup"), //interface-output
-};

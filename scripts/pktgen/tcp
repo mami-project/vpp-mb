@@ -1,0 +1,21 @@
+loop create
+set int ip address loop0 192.168.1.1/8
+set int state loop0 up
+
+packet-generator new {
+  name tcp
+  limit 10
+  node ip4-input
+  size 100-100
+  interface loop0
+  no-recycle
+  data {
+    TCP: 192.168.1.2 - 192.168.1.255 -> 192.168.1.1
+    incrementing 100
+  }
+}
+
+tr add pg-input 100
+
+mmb enable loop0
+mmb add ip-ver 4 ip-proto tcp ip-daddr 192.168.1.1 drop
