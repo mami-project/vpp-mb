@@ -1201,6 +1201,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       ip0 = (ip4_header_t *) get_ip_header(b0, is_output);
 
       u32 i, applied_rule_index = ~0;
+      u8 l4_modified = 0;
       tcp_opts_loaded = 0;
 
       /* fetch each rule to find a match */
@@ -1223,18 +1224,20 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
         if (packet_matches(ip0, rule, &tcp_options, b0, is_output))
         {
           /* MATCH: apply targets to packet */
-          u8 l4_modified = 0;
           next0 = packet_apply_targets(ip0, rule, &tcp_options, &l4_modified);
-
-          /* Recompute checksum(s) if needed */
-          if (l4_modified)
-            recompute_l4_checksum(vm, b0, ip0);
-          if (next0 != MMB_NEXT_DROP)
-            recompute_l3_checksum(ip0);
-          
           applied_rule_index = i;
-          break;
+
+          if (next0 == MMB_NEXT_DROP)
+            break;
         }
+      }
+
+      /* Recompute checksum(s) if needed */
+      if (next0 != MMB_NEXT_DROP)
+      {
+        if (l4_modified)
+          recompute_l4_checksum(vm, b0, ip0);
+        recompute_l3_checksum(ip0);
       }
 
       /* one more packet processed */
