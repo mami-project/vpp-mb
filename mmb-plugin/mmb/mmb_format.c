@@ -612,6 +612,27 @@ static_always_inline u32 mmb_field_str_len(u8 field) {
    return padding;
 }
 
+static_always_inline u8 *mmb_format_ip4_address(u8 *s, va_list *args) {
+   u8 *bytes = va_arg(*args, u8*);
+
+   if (bytes[4] == 32)
+      s = format(s, "%U", format_ip4_address, bytes);
+   else
+      s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
+   return s;
+}
+
+static_always_inline u8 *mmb_format_ip6_address(u8 *s, va_list *args) {
+   u8 *bytes = va_arg(*args, u8*);
+
+   if (bytes[16] == 128)
+      s = format(s, "%U", format_ip6_address, (ip6_address_t*) bytes);
+   else
+      s = format(s, "%U", format_ip6_address_and_length, 
+                         (ip6_address_t*) bytes, bytes[16]);
+   return s;
+}
+
 static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
   u8 *bytes = va_arg(*args, u8*);
   u8 field = va_arg(*args, u32);
@@ -620,17 +641,11 @@ static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
   switch (field) {
     case MMB_FIELD_IP4_SADDR:
     case MMB_FIELD_IP4_DADDR:
-      if (bytes[4] == 32)
-         s = format(s, "%U", format_ip4_address, bytes);
-      else
-         s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
+      s = format(s, "%U", mmb_format_ip4_address, bytes);
       break;
     case MMB_FIELD_IP6_SADDR:
     case MMB_FIELD_IP6_DADDR:
-      if (bytes[16] == 128)
-         s = format(s, "%U", format_ip6_address, (ip6_address_t*) bytes);
-      else
-         s = format(s, "%U", format_ip6_address_and_length, (ip6_address_t*) bytes, bytes[16]);
+      s = format(s, "%U", mmb_format_ip6_address, bytes);
       break;// TODO:ports in text ?
 
     default: /* 40 chars = 20 bytes = field (var) + cond (4) + [..] */
