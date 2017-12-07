@@ -371,6 +371,37 @@ uword mmb_unformat_match(unformat_input_t *input, va_list *args) {
    return 1;
 }
 
+uword mmb_unformat_rule(unformat_input_t *input, va_list *args) {
+   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
+
+   /* parse matches */
+   mmb_match_t *matches = 0, match;
+   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+      memset(&match, 0, sizeof (mmb_match_t));
+      if (!unformat(input, "%U", mmb_unformat_match, &match)) 
+         break;
+      else vec_add1(matches, match);
+   } 
+   if (vec_len(matches) < 1)
+      return 0;//clib_error_return (0, "at least one <match> must be set");
+
+   /* parse targets */
+   mmb_target_t *targets = 0, target;
+   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+      memset(&target, 0, sizeof (mmb_target_t));
+      if (!unformat(input, "%U", mmb_unformat_target, &target)) 
+         break;
+      else vec_add1(targets, target);
+   }
+   if (vec_len(targets) < 1)
+      return 0;//clib_error_return (0, "at least one <target> must be set");
+
+   mmb_init_rule(rule);
+   rule->matches = matches;
+   rule->targets = targets;
+   return 1;
+}
+
 u8* mmb_format_field(u8 *s, va_list *args) {
    u8 field = *va_arg(*args, u8*); 
    u8 kind  = *va_arg(*args, u8*);

@@ -26,6 +26,7 @@ uword mmb_unformat_target(unformat_input_t * input, va_list *args);
 
 u8* mmb_format_rule(u8 *s, va_list *args); 
 u8* mmb_format_rules(u8 *s, va_list *args);
+uword mmb_unformat_rule(unformat_input_t *input, va_list *args);
 
 #endif /* included_mmb_format_h */
 

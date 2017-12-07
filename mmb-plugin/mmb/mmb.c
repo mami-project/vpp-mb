@@ -164,18 +164,32 @@ const u8 fixed_len[] = {
 const u8 conditions_len = 6;
 const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
-static void mmb_free_rule(mmb_rule_t *rule);
-static clib_error_t* mmb_parse_and_validate_rule(unformat_input_t * input, 
+static void free_rule(mmb_rule_t *rule);
+static clib_error_t* parse_and_validate_rule(unformat_input_t * input, 
                                                  mmb_rule_t *rule);
 static clib_error_t* validate_rule();
 static clib_error_t* validate_matches(mmb_rule_t *rule);
 static clib_error_t* validate_targets(mmb_rule_t *rule);
+static clib_error_t* mmb_enable_disable_fn(vlib_main_t * vm,
+                                           unformat_input_t * input,
+                                           vlib_cli_command_t * cmd,
+                                           u32 *sw_if_index);
 
-static clib_error_t*
-mmb_enable_disable_fn(vlib_main_t * vm,
-                      unformat_input_t * input,
-                      vlib_cli_command_t * cmd,
-                      u32 *sw_if_index) {
+static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
+   vnet_feature_enable_disable("ip4-unicast", "mmb-plugin-ip4-in", 
+                               sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip6-unicast", "mmb-plugin-ip6-in", 
+                               sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip4-output", "mmb-plugin-ip4-out", 
+                               sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip6-output", "mmb-plugin-ip6-out", 
+                               sw_if_index, enable_disable, 0, 0);
+}
+
+clib_error_t* mmb_enable_disable_fn(vlib_main_t * vm,
+                                    unformat_input_t * input,
+                                    vlib_cli_command_t * cmd,
+                                    u32 *sw_if_index) {
   unformat_input_tolower(input);
   mmb_main_t *mm = &mmb_main;
   *sw_if_index = ~0;
@@ -195,17 +209,6 @@ mmb_enable_disable_fn(vlib_main_t * vm,
     return clib_error_return(0, "Invalid interface, only works on "
                                  "physical ports");
   return 0;
-}
-
-static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
-   vnet_feature_enable_disable("ip4-unicast", "mmb-plugin-ip4-in", 
-                               sw_if_index, enable_disable, 0, 0);
-   vnet_feature_enable_disable("ip6-unicast", "mmb-plugin-ip6-in", 
-                               sw_if_index, enable_disable, 0, 0);
-   vnet_feature_enable_disable("ip4-output", "mmb-plugin-ip4-out", 
-                               sw_if_index, enable_disable, 0, 0);
-   vnet_feature_enable_disable("ip6-output", "mmb-plugin-ip6-out", 
-                               sw_if_index, enable_disable, 0, 0);
 }
 
 static clib_error_t *
@@ -297,20 +300,13 @@ flush_rules_command_fn(vlib_main_t * vm,
   uword rule_index;
   vec_foreach_index(rule_index, rules) {
     mmb_rule_t *rule = &rules[rule_index];
-    mmb_free_rule(rule);
+    free_rule(rule);
   }
 
   if (vec_len(rules))
     vec_delete(rules, vec_len(rules), 0);
 
   return 0;
-}
-
-static_always_inline void init_rule(mmb_rule_t *rule) {
-  memset(rule, 0, sizeof(mmb_rule_t));
-  rule->in = rule->out = ~0;
-  clib_bitmap_alloc(rule->opt_strips, 255);
-  clib_bitmap_zero(rule->opt_strips);
 }
 
 static clib_error_t*
@@ -328,12 +324,12 @@ insert_rule_command_fn(vlib_main_t * vm,
          rule_index = 0;
       else if (rule_index > vec_len(rules))
          rule_index = vec_len(rules);
-      else
+      else 
          rule_index--;
       
       mmb_rule_t rule;
       clib_error_t *error;
-      if ( (error = mmb_parse_and_validate_rule(input, &rule)) )
+      if ( (error = parse_and_validate_rule(input, &rule)) )
          return error;
 
       vec_insert_elt(mm->rules,&rule,rule_index);
@@ -346,39 +342,24 @@ insert_rule_command_fn(vlib_main_t * vm,
     "Syntax error: rule number must be an integer greater than 0");
 }
 
-uword mmb_unformat_rule(unformat_input_t *input, va_list *args) {
+static clib_error_t *
+add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
+                     vlib_cli_command_t * cmd) {
+  mmb_rule_t rule;
+  clib_error_t *error;
 
-   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
+  unformat_input_tolower(input);
+  if ( (error = parse_and_validate_rule(input, &rule)) )
+    return error;
+  
+  mmb_main_t *mm = &mmb_main;
+  vec_add1(mm->rules, rule);
 
-   /* parse matches */
-   mmb_match_t *matches = 0, match;
-   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
-      memset(&match, 0, sizeof (mmb_match_t));
-      if (!unformat(input, "%U", mmb_unformat_match, &match)) 
-         break;
-      else vec_add1(matches, match);
-   } 
-   if (vec_len(matches) < 1)
-      return 0;//clib_error_return (0, "at least one <match> must be set");
-
-   /* parse targets */
-   mmb_target_t *targets = 0, target;
-   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
-      memset(&target, 0, sizeof (mmb_target_t));
-      if (!unformat(input, "%U", mmb_unformat_target, &target)) 
-         break;
-      else vec_add1(targets, target);
-   }
-   if (vec_len(targets) < 1)
-      return 0;//clib_error_return (0, "at least one <target> must be set");
-
-   init_rule(rule);
-   rule->matches = matches;
-   rule->targets = targets;
-   return 1;
+  vl_print(vm, "Added rule: %U", mmb_format_rule, &rule);
+  return 0;
 }
 
-clib_error_t *mmb_parse_and_validate_rule(unformat_input_t * input, 
+clib_error_t *parse_and_validate_rule(unformat_input_t * input, 
                      mmb_rule_t *rule) {
 
    if (!unformat(input, "%U", mmb_unformat_rule, rule))
@@ -394,21 +375,37 @@ clib_error_t *mmb_parse_and_validate_rule(unformat_input_t * input,
    return 0;
 }
 
-static clib_error_t *
-add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
-                     vlib_cli_command_t * cmd) {
-  mmb_rule_t rule;
-  clib_error_t *error;
+static clib_error_t*
+del_rule_command_fn(vlib_main_t *vm,
+                    unformat_input_t *input,
+                    vlib_cli_command_t *cmd) {
+   unformat_input_tolower(input);
+   u32 rule_index;
+   mmb_main_t *mm = &mmb_main;
+   mmb_rule_t *rules = mm->rules;
 
-  unformat_input_tolower(input);
-  if ( (error = mmb_parse_and_validate_rule(input, &rule)) )
-    return error;
-  
-  mmb_main_t *mm = &mmb_main;
-  vec_add1(mm->rules, rule);
+   if (unformat(input, "%u", &rule_index)) {
 
-  vl_print(vm, "Added rule: %U", mmb_format_rule, &rule);
-  return 0;
+      if (rule_index > 0 && rule_index <= vec_len(rules)) {
+
+         if (unformat_is_eof(input)) {
+            rule_index--; 
+            mmb_rule_t *rule = &rules[rule_index];
+            free_rule(rule);
+            vec_delete(rules, 1, rule_index);
+
+            return 0;
+         } 
+
+         return clib_error_return(0, 
+               "Syntax error: unexpected additional element");
+      }
+
+      return clib_error_return(0, "No rule at this index");
+   }
+ 
+   return clib_error_return(0, 
+    "Syntax error: rule number must be an integer greater than 0");
 }
 
 static_always_inline void translate_ip4_ecn(u8 field, u8 **value) {
@@ -512,7 +509,7 @@ static_always_inline u32 bytes_to_u32(u8 *bytes) {
   return value;
 }
 
-static_always_inline clib_error_t *
+static_always_inline clib_error_t*
 validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
    mmb_main_t mm = mmb_main;
 
@@ -535,7 +532,7 @@ validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
    return NULL;
 }
 
-clib_error_t *validate_matches(mmb_rule_t *rule) {
+clib_error_t* validate_matches(mmb_rule_t *rule) {
    clib_error_t *error;
    uword index = 0;
    uword *if_indexes = 0, *if_index;
@@ -741,48 +738,28 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
    return NULL;
 }
 
-static clib_error_t *
-del_rule_command_fn (vlib_main_t * vm,
-                     unformat_input_t * input,
-                     vlib_cli_command_t * cmd) {
-  unformat_input_tolower(input);
-  u32 rule_index;
-  mmb_main_t *mm = &mmb_main;
-  mmb_rule_t *rules = mm->rules;
-
-  if (unformat(input, "%u", &rule_index)) {
-
-   if (rule_index > 0 && rule_index <= vec_len(rules)) {
-
-       if (unformat_is_eof(input)) {
-         rule_index--; 
-         mmb_rule_t *rule = &rules[rule_index];
-         mmb_free_rule(rule);
-         vec_delete(rules, 1, rule_index);
-
-         return 0;
-       } 
-       return clib_error_return(0, 
-        "Syntax error: unexpected additional element");
-    }
-        return clib_error_return(0, "No rule at this index");
-  } 
-
-  return clib_error_return(0, 
-    "Syntax error: rule number must be an integer greater than 0");
+void mmb_init_rule(mmb_rule_t *rule) {
+  memset(rule, 0, sizeof(mmb_rule_t));
+  rule->in = rule->out = ~0;
+  clib_bitmap_alloc(rule->opt_strips, 255);
+  clib_bitmap_zero(rule->opt_strips);
 }
 
-void mmb_free_rule(mmb_rule_t *rule) {
+void free_rule(mmb_rule_t *rule) {
   uword index;
+
   vec_foreach_index(index, rule->matches) {
     vec_free(rule->matches[index].value);
   }
   vec_free(rule->matches);
+
   vec_foreach_index(index, rule->targets) {
     vec_free(rule->targets[index].value);
   }
   vec_free(rule->targets);
+
   clib_bitmap_free(rule->opt_strips);
+
   vec_foreach_index(index, rule->opt_adds) {
     vec_free(rule->opt_adds[index].value);
   }
