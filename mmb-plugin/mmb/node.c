@@ -1227,7 +1227,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
           next0 = packet_apply_targets(ip0, rule, &tcp_options, &l4_modified);
           applied_rule_index = i;
 
-          if (next0 == MMB_NEXT_DROP)
+          if (rule->last_match || next0 == MMB_NEXT_DROP)
             break;
         }
       }
