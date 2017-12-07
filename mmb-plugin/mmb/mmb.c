@@ -63,6 +63,9 @@
 #define MMB_MAX_FIELD_LEN 64
 #define MMB_DEFAULT_ETHERNET_TYPE ETHERNET_TYPE_IP4
 
+#define vec_insert_elt_last(V,E) vec_insert_elts(V,E,1,vec_len(V))
+#define vec_insert_elt(V,E,I) vec_insert_elts(V,E,1,I)
+
 /* *INDENT-OFF* */
 VLIB_PLUGIN_REGISTER () = {
     .version = MMB_PLUGIN_BUILD_VER,
@@ -162,11 +165,13 @@ const u8 conditions_len = 6;
 const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
 static void mmb_free_rule(mmb_rule_t *rule);
-static clib_error_t *validate_rule();
-static clib_error_t *validate_matches(mmb_rule_t *rule);
-static clib_error_t *validate_targets(mmb_rule_t *rule);
+static clib_error_t* mmb_parse_and_validate_rule(unformat_input_t * input, 
+                                                 mmb_rule_t *rule);
+static clib_error_t* validate_rule();
+static clib_error_t* validate_matches(mmb_rule_t *rule);
+static clib_error_t* validate_targets(mmb_rule_t *rule);
 
-static clib_error_t *
+static clib_error_t*
 mmb_enable_disable_fn(vlib_main_t * vm,
                       unformat_input_t * input,
                       vlib_cli_command_t * cmd,
@@ -232,8 +237,8 @@ enable_command_fn(vlib_main_t * vm,
    return 0;
 }
 
-static clib_error_t *
-disable_command_fn (vlib_main_t * vm,
+static clib_error_t*
+disable_command_fn(vlib_main_t * vm,
                    unformat_input_t * input,
                    vlib_cli_command_t * cmd) {
    u8 enabled = 0, index = 0;
@@ -265,8 +270,8 @@ disable_command_fn (vlib_main_t * vm,
   return 0;
 }
 
-static clib_error_t *
-list_rules_command_fn (vlib_main_t * vm,
+static clib_error_t*
+list_rules_command_fn(vlib_main_t * vm,
                           unformat_input_t * input,
                           vlib_cli_command_t * cmd) {
   if (!unformat_is_eof(input))
@@ -278,8 +283,8 @@ list_rules_command_fn (vlib_main_t * vm,
   return 0;
 }
 
-static clib_error_t *
-flush_rules_command_fn (vlib_main_t * vm,
+static clib_error_t*
+flush_rules_command_fn(vlib_main_t * vm,
                         unformat_input_t * input,
                         vlib_cli_command_t * cmd) {
   unformat_input_tolower(input);
@@ -308,49 +313,101 @@ static_always_inline void init_rule(mmb_rule_t *rule) {
   clib_bitmap_zero(rule->opt_strips);
 }
 
+static clib_error_t*
+insert_rule_command_fn(vlib_main_t * vm,
+                     unformat_input_t * input,
+                     vlib_cli_command_t * cmd) {
+   unformat_input_tolower(input);
+   u32 rule_index;
+   mmb_main_t *mm = &mmb_main;
+   mmb_rule_t *rules = mm->rules;
+
+   if (unformat(input, "%u", &rule_index)) {
+      /* oow index */
+      if (rule_index <= 0)
+         rule_index = 0;
+      else if (rule_index > vec_len(rules))
+         rule_index = vec_len(rules);
+      else
+         rule_index--;
+      
+      mmb_rule_t rule;
+      clib_error_t *error;
+      if ( (error = mmb_parse_and_validate_rule(input, &rule)) )
+         return error;
+
+      vec_insert_elt(mm->rules,&rule,rule_index);
+
+      vl_print(vm, "Inserted rule at index %u: %U", 
+               rule_index+1, mmb_format_rule, &rule);
+      return 0;
+   } 
+   return clib_error_return(0, 
+    "Syntax error: rule number must be an integer greater than 0");
+}
+
+uword mmb_unformat_rule(unformat_input_t *input, va_list *args) {
+
+   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
+
+   /* parse matches */
+   mmb_match_t *matches = 0, match;
+   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+      memset(&match, 0, sizeof (mmb_match_t));
+      if (!unformat(input, "%U", mmb_unformat_match, &match)) 
+         break;
+      else vec_add1(matches, match);
+   } 
+   if (vec_len(matches) < 1)
+      return 0;//clib_error_return (0, "at least one <match> must be set");
+
+   /* parse targets */
+   mmb_target_t *targets = 0, target;
+   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+      memset(&target, 0, sizeof (mmb_target_t));
+      if (!unformat(input, "%U", mmb_unformat_target, &target)) 
+         break;
+      else vec_add1(targets, target);
+   }
+   if (vec_len(targets) < 1)
+      return 0;//clib_error_return (0, "at least one <target> must be set");
+
+   init_rule(rule);
+   rule->matches = matches;
+   rule->targets = targets;
+   return 1;
+}
+
+clib_error_t *mmb_parse_and_validate_rule(unformat_input_t * input, 
+                     mmb_rule_t *rule) {
+
+   if (!unformat(input, "%U", mmb_unformat_rule, rule))
+      return clib_error_return(0, "Invalid rule");
+
+   /* input is now empty */
+   if (unformat_check_input(input) != UNFORMAT_END_OF_INPUT) 
+      return clib_error_return(0, "Could not parse whole input");
+
+   clib_error_t *error;
+   if ( (error = validate_rule(rule)) )
+      return error;
+   return 0;
+}
+
 static clib_error_t *
 add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
                      vlib_cli_command_t * cmd) {
-  unformat_input_tolower(input);
-  
-   /* parse matches */
-  mmb_match_t *matches = 0, match;
-  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
-    memset(&match, 0, sizeof (mmb_match_t));
-    if (!unformat(input, "%U", mmb_unformat_match, &match)) 
-      break;
-    else vec_add1(matches, match);
-  } 
-  if (vec_len(matches) < 1)
-     return clib_error_return (0, "at least one <match> must be set");
-
-  /* parse targets */
-  mmb_target_t *targets = 0, target;
-  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
-    memset(&target, 0, sizeof (mmb_target_t));
-    if (!unformat(input, "%U", mmb_unformat_target, &target)) 
-      break;
-    else vec_add1(targets, target);
-  }
-  if (vec_len(targets) < 1)
-     return clib_error_return (0, "at least one <target> must be set");
-
-  if (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
-    return clib_error_return(0, "Could not parse whole input");
-  }
-
   mmb_rule_t rule;
-  init_rule(&rule);
-  rule.matches = matches;
-  rule.targets = targets;
-
   clib_error_t *error;
-  if ( (error = validate_rule(&rule)) )
-    return error;
 
-  vl_print(vm, "%U", mmb_format_rule, &rule);
+  unformat_input_tolower(input);
+  if ( (error = mmb_parse_and_validate_rule(input, &rule)) )
+    return error;
+  
   mmb_main_t *mm = &mmb_main;
   vec_add1(mm->rules, rule);
+
+  vl_print(vm, "Added rule: %U", mmb_format_rule, &rule);
   return 0;
 }
 
@@ -477,8 +534,6 @@ validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
    
    return NULL;
 }
-
-#define vec_insert_elt_last(V,E) vec_insert_elts(V,E,1,vec_len(V))
 
 clib_error_t *validate_matches(mmb_rule_t *rule) {
    clib_error_t *error;
@@ -775,11 +830,20 @@ VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
 };
 
 /**
+ * @brief CLI command to insert a rule.
+ */
+VLIB_CLI_COMMAND(sr_content_command_insert_rule, static) = {
+    .path = "mmb insert",
+    .short_help = "Insert a rule: mmb insert <index> <rule>",
+    .function = insert_rule_command_fn,
+};
+
+/**
  * @brief CLI command to remove a rule.
  */
 VLIB_CLI_COMMAND(sr_content_command_del_rules, static) = {
-    .path = "mmb del",
-    .short_help = "Remove a rule: mmb del <rule-number>",
+    .path = "mmb delete",
+    .short_help = "Remove a rule: mmb delete <rule-number>",
     .function = del_rule_command_fn,
 };
 
