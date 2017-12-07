@@ -32,12 +32,12 @@ static uword mmb_unformat_field(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_condition(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_value(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_ip4_address (unformat_input_t *input, va_list *args);
-static u8 *mmb_format_match(u8 *s, va_list *args);
-static u8 *mmb_format_target(u8 *s, va_list *args);
+static u8* mmb_format_match(u8 *s, va_list *args);
+static u8* mmb_format_target(u8 *s, va_list *args);
 static u8* mmb_format_field(u8 *s, va_list *args);
 static u8* mmb_format_condition(u8 *s, va_list *args);
 static u8* mmb_format_keyword(u8 *s, va_list *args);
-static u8 *mmb_format_rule_column(u8 *s, va_list *args);
+static u8* mmb_format_rule_column(u8 *s, va_list *args);
 
 static const char* blanks = "                                                "
                             "                                                "
@@ -75,7 +75,7 @@ static_always_inline int resize_value(u8 field, u8 **value) {
   return vec_len(*value);
 }
 
-uword mmb_unformat_field(unformat_input_t * input, va_list *args) {
+uword mmb_unformat_field(unformat_input_t *input, va_list *args) {
   u8 *field = va_arg(*args, u8*);
   u8 *kind  = va_arg(*args, u8*);
   for (u8 i=0; i<fields_len; i++) {
@@ -95,7 +95,7 @@ uword mmb_unformat_field(unformat_input_t * input, va_list *args) {
   return 0;
 }
 
-uword mmb_unformat_condition(unformat_input_t * input, va_list *args) {
+uword mmb_unformat_condition(unformat_input_t *input, va_list *args) {
   u8 *cond = va_arg(*args, u8*);
   for (u8 i=0; i<conditions_len; i++) {
     if (unformat (input, conditions[i])) {
@@ -235,7 +235,7 @@ mmb_unformat_ip6_address(unformat_input_t *input, va_list *args) {
 }
 
 static_always_inline uword mmb_unformat_transport_protocol(
-            unformat_input_t * input, va_list *args) {
+            unformat_input_t *input, va_list *args) {
    u8 *l4 = va_arg(*args, u8*);
    if (0);
 #define _(a,b) else if (unformat(input, "%_"#a)) {*l4 = IP_PROTOCOL_##b;\
@@ -246,7 +246,7 @@ static_always_inline uword mmb_unformat_transport_protocol(
 }
 
 static_always_inline uword mmb_unformat_network_protocol(
-            unformat_input_t * input, va_list *args) {
+            unformat_input_t *input, va_list *args) {
    u16 *l3 = va_arg(*args, u16*);
    if (0);
 #define _(a,b) else if (unformat(input, "%_"#a)) {*l3 = ETHERNET_TYPE_##b;\
@@ -256,7 +256,7 @@ static_always_inline uword mmb_unformat_network_protocol(
    return 0;
 }
 
-uword mmb_unformat_value(unformat_input_t * input, va_list *args) {
+uword mmb_unformat_value(unformat_input_t *input, va_list *args) {
    u8 **bytes = va_arg(*args, u8**);
    u8 l4 = 0;
    u16 l3 = 0;
@@ -313,7 +313,7 @@ uword mmb_unformat_value(unformat_input_t * input, va_list *args) {
   return 1;
 }
 
-uword mmb_unformat_target(unformat_input_t * input, va_list *args) {
+uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
    mmb_target_t *target = va_arg(*args, mmb_target_t*);
 
    if (unformat(input, "strip ! %U", mmb_unformat_field, 
@@ -343,7 +343,7 @@ uword mmb_unformat_target(unformat_input_t * input, va_list *args) {
    return 1;
 }
 
-uword mmb_unformat_match(unformat_input_t * input, va_list *args) {
+uword mmb_unformat_match(unformat_input_t *input, va_list *args) {
    mmb_match_t *match = va_arg(*args, mmb_match_t*);
 
    if (unformat(input, "!"))
@@ -371,7 +371,38 @@ uword mmb_unformat_match(unformat_input_t * input, va_list *args) {
    return 1;
 }
 
-u8* mmb_format_field(u8* s, va_list *args) {
+uword mmb_unformat_rule(unformat_input_t *input, va_list *args) {
+   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
+
+   /* parse matches */
+   mmb_match_t *matches = 0, match;
+   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+      memset(&match, 0, sizeof (mmb_match_t));
+      if (!unformat(input, "%U", mmb_unformat_match, &match)) 
+         break;
+      else vec_add1(matches, match);
+   } 
+   if (vec_len(matches) < 1)
+      return 0;
+
+   /* parse targets */
+   mmb_target_t *targets = 0, target;
+   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+      memset(&target, 0, sizeof (mmb_target_t));
+      if (!unformat(input, "%U", mmb_unformat_target, &target)) 
+         break;
+      else vec_add1(targets, target);
+   }
+   if (vec_len(targets) < 1)
+      return 0;
+
+   rule->matches = matches;
+   rule->targets = targets;
+
+   return 1;
+}
+
+u8* mmb_format_field(u8 *s, va_list *args) {
    u8 field = *va_arg(*args, u8*); 
    u8 kind  = *va_arg(*args, u8*);
 
@@ -393,7 +424,7 @@ u8* mmb_format_field(u8* s, va_list *args) {
    return s;
 }
 
-u8* mmb_format_condition(u8* s, va_list *args) {
+u8* mmb_format_condition(u8 *s, va_list *args) {
   u8 condition = *va_arg(*args, u8*);
   if (condition >= MMB_COND_EQ 
     &&  condition <= MMB_COND_EQ+conditions_len)
@@ -402,7 +433,7 @@ u8* mmb_format_condition(u8* s, va_list *args) {
   return s;
 }
 
-u8* mmb_format_keyword(u8* s, va_list *args) {
+u8* mmb_format_keyword(u8 *s, va_list *args) {
   u8 keyword = *va_arg(*args, u8*);
    
   char *keyword_str = "";
@@ -426,7 +457,7 @@ u8* mmb_format_keyword(u8* s, va_list *args) {
   return format(s, "%s", keyword_str);
 }
 
-static_always_inline u8 *mmb_format_ip_protocol (u8 * s, va_list *args) {
+static_always_inline u8 *mmb_format_ip_protocol (u8 *s, va_list *args) {
   u8 protocol = va_arg (*args, ip_protocol_t);
   if (protocol == IP_PROTOCOL_RESERVED)
     return format(s, "all");
@@ -480,7 +511,7 @@ static_always_inline mmb_target_t target_from_add(mmb_rule_t *rule,
  * corrected from vppinfra/bitmap.h
  **/
 always_inline uword
-clib_bitmap_next_clear_corrected(uword * ai, uword i) {
+clib_bitmap_next_clear_corrected(uword *ai, uword i) {
   uword i0 = i / BITS (ai[0]);
   uword i1 = i % BITS (ai[0]);
   uword t;
@@ -499,12 +530,15 @@ clib_bitmap_next_clear_corrected(uword * ai, uword i) {
   return ~0;
 }
 
-u8 *mmb_format_rule(u8 *s, va_list *args) {
+u8* mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
   s = format(s, "l3:%U l4:%U in:%U out:%U ", format_ethernet_type, rule->l3, 
              mmb_format_ip_protocol, rule->l4, mmb_format_if_sw_index, rule->in, 
              mmb_format_if_sw_index, rule->out);
-  
+
+  if (rule->last_match)
+    s = format(s, "L ");  
+
   uword index=0;
   vec_foreach_index(index, rule->matches) {
     s = format(s, "%U%s", mmb_format_match, &rule->matches[index],
@@ -519,7 +553,7 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
   if (rule->has_strips) {    
    index = rule->whitelist ? clib_bitmap_first_clear(rule->opt_strips) 
                            : clib_bitmap_first_set(rule->opt_strips);
-   uword (*next_func) (uword * ai, uword i) = rule->whitelist 
+   uword (*next_func) (uword *ai, uword i) = rule->whitelist 
                ? &clib_bitmap_next_clear_corrected
                : &clib_bitmap_next_set;
     while (index != ~0) {
@@ -547,7 +581,7 @@ u8 *mmb_format_rule(u8 *s, va_list *args) {
   return s;
 }
 
-static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
+static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
 
   s = format(s, "%-4U  %-8U %-16U %-16U",
@@ -558,7 +592,7 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
   uword index, add_index=0, mod_index=0;
   uword strip_index = rule->whitelist ? clib_bitmap_first_clear(rule->opt_strips) 
                                       : clib_bitmap_first_set(rule->opt_strips);
-  uword (*next_func) (uword * ai, uword i) = rule->whitelist 
+  uword (*next_func) (uword *ai, uword i) = rule->whitelist 
                                               ? &clib_bitmap_next_clear_corrected
                                               : &clib_bitmap_next_set;
   /* count lines to print */
@@ -575,8 +609,12 @@ static u8 *mmb_format_rule_column(u8 *s, va_list *args) {
     if (index < vec_len(rule->matches)) {
       /* tabulate empty line */
       if (index) 
-        s = format(s, "%56s", "AND ");
-      s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
+         s = format(s, "%56s", "AND ");
+
+      if (index==0 && rule->last_match)
+         s = format(s, "L %-38U", mmb_format_match, &rule->matches[index]);
+      else
+         s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
 
     } else  
       s = format(s, "%96s", blanks);
@@ -612,7 +650,28 @@ static_always_inline u32 mmb_field_str_len(u8 field) {
    return padding;
 }
 
-static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
+static_always_inline u8* mmb_format_ip4_address(u8 *s, va_list *args) {
+   u8 *bytes = va_arg(*args, u8*);
+
+   if (bytes[4] == 32)
+      s = format(s, "%U", format_ip4_address, bytes);
+   else
+      s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
+   return s;
+}
+
+static_always_inline u8* mmb_format_ip6_address(u8 *s, va_list *args) {
+   u8 *bytes = va_arg(*args, u8*);
+
+   if (bytes[16] == 128)
+      s = format(s, "%U", format_ip6_address, (ip6_address_t*) bytes);
+   else
+      s = format(s, "%U", format_ip6_address_and_length, 
+                         (ip6_address_t*) bytes, bytes[16]);
+   return s;
+}
+
+static_always_inline u8* mmb_format_value(u8 *s, va_list *args) {
   u8 *bytes = va_arg(*args, u8*);
   u8 field = va_arg(*args, u32);
   u32 index, padding=mmb_field_str_len(field);
@@ -620,17 +679,11 @@ static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
   switch (field) {
     case MMB_FIELD_IP4_SADDR:
     case MMB_FIELD_IP4_DADDR:
-      if (bytes[4] == 32)
-         s = format(s, "%U", format_ip4_address, bytes);
-      else
-         s = format(s, "%U", format_ip4_address_and_length, bytes, bytes[4]);
+      s = format(s, "%U", mmb_format_ip4_address, bytes);
       break;
     case MMB_FIELD_IP6_SADDR:
     case MMB_FIELD_IP6_DADDR:
-      if (bytes[16] == 128)
-         s = format(s, "%U", format_ip6_address, (ip6_address_t*) bytes);
-      else
-         s = format(s, "%U", format_ip6_address_and_length, (ip6_address_t*) bytes, bytes[16]);
+      s = format(s, "%U", mmb_format_ip6_address, bytes);
       break;// TODO:ports in text ?
 
     default: /* 40 chars = 20 bytes = field (var) + cond (4) + [..] */
@@ -647,7 +700,7 @@ static_always_inline u8 *mmb_format_value(u8 *s, va_list *args) {
   return s;
 }
 
-u8 *mmb_format_match(u8 *s, va_list *args) {
+u8* mmb_format_match(u8 *s, va_list *args) {
 
   mmb_match_t *match = va_arg(*args, mmb_match_t*);
   return format(s, "%s%U %U %U", (match->reverse) ? "! ":"",
@@ -657,7 +710,7 @@ u8 *mmb_format_match(u8 *s, va_list *args) {
                           );
 } 
 
-u8 *mmb_format_target(u8 *s, va_list *args) {
+u8* mmb_format_target(u8 *s, va_list *args) {
 
   mmb_target_t *target = va_arg(*args, mmb_target_t*);
   return format(s, "%s%U %U %U", (target->reverse) ? "! ":"",
@@ -667,7 +720,7 @@ u8 *mmb_format_target(u8 *s, va_list *args) {
                          );
 }
 
-u8 *mmb_format_rules(u8 *s, va_list *args) {
+u8* mmb_format_rules(u8 *s, va_list *args) {
   mmb_rule_t *rules = va_arg(*args, mmb_rule_t*);
 
   s = format(s, " Index%2sL3%4sL4%7sin%15sout%13sMatches%33sTargets\n", 
