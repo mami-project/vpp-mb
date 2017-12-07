@@ -165,6 +165,7 @@ const u8 conditions_len = 6;
 const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
 static void free_rule(mmb_rule_t *rule);
+static void init_rule(mmb_rule_t *rule);
 static clib_error_t* parse_and_validate_rule(unformat_input_t * input, 
                                                  mmb_rule_t *rule);
 static clib_error_t* validate_rule();
@@ -329,6 +330,10 @@ insert_rule_command_fn(vlib_main_t * vm,
       
       mmb_rule_t rule;
       clib_error_t *error;
+      init_rule(&rule);
+
+      if (unformat(input, "last")) 
+         rule.last_match = 1;
       if ( (error = parse_and_validate_rule(input, &rule)) )
          return error;
 
@@ -345,10 +350,14 @@ insert_rule_command_fn(vlib_main_t * vm,
 static clib_error_t *
 add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
                      vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
+
   mmb_rule_t rule;
   clib_error_t *error;
+  init_rule(&rule);
 
-  unformat_input_tolower(input);
+  if (unformat(input, "last")) 
+    rule.last_match = 1;
   if ( (error = parse_and_validate_rule(input, &rule)) )
     return error;
   
@@ -738,7 +747,7 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
    return NULL;
 }
 
-void mmb_init_rule(mmb_rule_t *rule) {
+void init_rule(mmb_rule_t *rule) {
   memset(rule, 0, sizeof(mmb_rule_t));
   rule->in = rule->out = ~0;
   clib_bitmap_alloc(rule->opt_strips, 255);
@@ -811,7 +820,7 @@ VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
  */
 VLIB_CLI_COMMAND(sr_content_command_insert_rule, static) = {
     .path = "mmb insert",
-    .short_help = "Insert a rule: mmb insert <index> <rule>",
+    .short_help = "Insert a rule: mmb insert [last] <index> <rule>",
     .function = insert_rule_command_fn,
 };
 

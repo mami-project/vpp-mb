@@ -193,6 +193,7 @@ typedef struct {
   u8 has_adds:1;
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
+  u8 last_match:1;
 
 } mmb_rule_t;
 
@@ -219,7 +220,5 @@ extern const char* conditions[];
 
 u16 get_field_protocol(u8 field);
 u8 is_fixed_length(u8 field);
-
-void mmb_init_rule(mmb_rule_t *rule);
 
 #endif /* __included_mmb_h__ */

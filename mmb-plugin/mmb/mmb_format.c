@@ -383,7 +383,7 @@ uword mmb_unformat_rule(unformat_input_t *input, va_list *args) {
       else vec_add1(matches, match);
    } 
    if (vec_len(matches) < 1)
-      return 0;//clib_error_return (0, "at least one <match> must be set");
+      return 0;
 
    /* parse targets */
    mmb_target_t *targets = 0, target;
@@ -394,11 +394,11 @@ uword mmb_unformat_rule(unformat_input_t *input, va_list *args) {
       else vec_add1(targets, target);
    }
    if (vec_len(targets) < 1)
-      return 0;//clib_error_return (0, "at least one <target> must be set");
+      return 0;
 
-   mmb_init_rule(rule);
    rule->matches = matches;
    rule->targets = targets;
+
    return 1;
 }
 
@@ -535,7 +535,10 @@ u8* mmb_format_rule(u8 *s, va_list *args) {
   s = format(s, "l3:%U l4:%U in:%U out:%U ", format_ethernet_type, rule->l3, 
              mmb_format_ip_protocol, rule->l4, mmb_format_if_sw_index, rule->in, 
              mmb_format_if_sw_index, rule->out);
-  
+
+  if (rule->last_match)
+    s = format(s, "L ");  
+
   uword index=0;
   vec_foreach_index(index, rule->matches) {
     s = format(s, "%U%s", mmb_format_match, &rule->matches[index],
@@ -606,8 +609,12 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
     if (index < vec_len(rule->matches)) {
       /* tabulate empty line */
       if (index) 
-        s = format(s, "%56s", "AND ");
-      s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
+         s = format(s, "%56s", "AND ");
+
+      if (index==0 && rule->last_match)
+         s = format(s, "L %-38U", mmb_format_match, &rule->matches[index]);
+      else
+         s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
 
     } else  
       s = format(s, "%96s", blanks);
