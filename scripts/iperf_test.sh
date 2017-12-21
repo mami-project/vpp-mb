@@ -17,67 +17,99 @@ fi
 
 function get_random_match
 {
-  case $(( $1 % 23 )) in
-    0)
-      echo "ip-ver $(( RANDOM % 16 ))";;
-    1)
-      echo "ip-ihl $(( RANDOM % 16 ))";;
-    2)
-      echo "ip-dscp $(( RANDOM % 64 ))";;
-    3)
-      echo "ip-ecn $(( RANDOM % 4 ))";;
-    4)
-      echo "ip-len $(( RANDOM % 65536 ))";;
-    5)
-      echo "ip-id $(( RANDOM % 65536 ))";;
-    6)
-      echo "ip-flags $(( RANDOM % 8 ))";;
-    7)
-      echo "ip-frag-offset $(( RANDOM % 8192 ))";;
-    8)
-      echo "ip-ttl $(( RANDOM % 256 ))";;
-    9)
-      echo "ip-proto $(( RANDOM % 256 ))";;
-    10)
-      echo "ip-checksum $(( RANDOM % 65536 ))";;
-    11)
-      a=$(( RANDOM % 256 ))
-      b=$(( RANDOM % 256 ))
-      c=$(( RANDOM % 256 ))
-      d=$(( RANDOM % 256 ))
-      echo "ip-saddr $a.$b.$c.$d";;
-    12)
-      a=$(( RANDOM % 256 ))
-      b=$(( RANDOM % 256 ))
-      c=$(( RANDOM % 256 ))
-      d=$(( RANDOM % 256 ))
-      echo "ip-daddr $a.$b.$c.$d";;
-    13)
-      echo "tcp-sport $(( RANDOM % 65536 ))";;
-    14)
-      echo "tcp-dport $(( RANDOM % 65536 ))";;
-    15)
-      echo "tcp-seq-num $(( RANDOM % 4294967296 ))";;
-    16)
-      echo "tcp-ack-num $(( RANDOM % 4294967296 ))";;
-    17)
-      echo "tcp-offset $(( RANDOM % 16 ))";;
-    18)
-      echo "tcp-reserved $(( RANDOM % 16 ))";;
-    19)
-      echo "tcp-flags $(( RANDOM % 256 ))";;
-    20)
-      echo "tcp-win $(( RANDOM % 65536 ))";;
-    21)
-      echo "tcp-checksum $(( RANDOM % 65536 ))";;
-    22)
-      echo "tcp-urg-ptr $(( RANDOM % 65536 ))";;
-  esac
+  if $2; then
+
+    case $(( $1 % 3 )) in
+      0)
+        echo "tcp-opt-mss $(( RANDOM % 65536 ))";;
+      1)
+        echo "tcp-opt-wscale $(( RANDOM % 256 ))";;
+      2)
+        echo "tcp-opt-timestamp $(( RANDOM % 9223372036854775808 ))";;
+
+      #TODO construct "real" sack, fast-open, mptcp ???
+    esac
+
+  else
+
+    case $(( $1 % 22 )) in
+      0)
+        echo "ip-ver $(( RANDOM % 16 ))";;
+      1)
+        echo "ip-ihl $(( RANDOM % 16 ))";;
+      2)
+        echo "ip-dscp $(( RANDOM % 64 ))";;
+      3)
+        echo "ip-ecn $(( RANDOM % 4 ))";;
+      4)
+        echo "ip-len $(( RANDOM % 65536 ))";;
+      5)
+        echo "ip-id $(( RANDOM % 65536 ))";;
+      6)
+        echo "ip-flags $(( RANDOM % 8 ))";;
+      7)
+        echo "ip-frag-offset $(( RANDOM % 8192 ))";;
+      8)
+        echo "ip-ttl $(( RANDOM % 256 ))";;
+      9)
+        echo "ip-checksum $(( RANDOM % 65536 ))";;
+      10)
+        a=$(( RANDOM % 256 ))
+        b=$(( RANDOM % 256 ))
+        c=$(( RANDOM % 256 ))
+        d=$(( RANDOM % 256 ))
+        echo "ip-saddr $a.$b.$c.$d";;
+      11)
+        a=$(( RANDOM % 256 ))
+        b=$(( RANDOM % 256 ))
+        c=$(( RANDOM % 256 ))
+        d=$(( RANDOM % 256 ))
+        echo "ip-daddr $a.$b.$c.$d";;
+      12)
+        echo "tcp-sport $(( RANDOM % 65536 ))";;
+      13)
+        echo "tcp-dport $(( RANDOM % 65536 ))";;
+      14)
+        echo "tcp-seq-num $(( RANDOM % 4294967296 ))";;
+      15)
+        echo "tcp-ack-num $(( RANDOM % 4294967296 ))";;
+      16)
+        echo "tcp-offset $(( RANDOM % 16 ))";;
+      17)
+        echo "tcp-reserved $(( RANDOM % 16 ))";;
+      18)
+        echo "tcp-flags $(( RANDOM % 256 ))";;
+      19)
+        echo "tcp-win $(( RANDOM % 65536 ))";;
+      20)
+        echo "tcp-checksum $(( RANDOM % 65536 ))";;
+      21)
+        echo "tcp-urg-ptr $(( RANDOM % 65536 ))";;
+    esac
+
+  fi
 }
 
 function get_random_target
 {
-  echo "mod ip-ttl 50"
+  if $2; then
+
+    case $(( $1 % 3 )) in
+      0)
+        echo "mod tcp-opt-mss $(( RANDOM % 65536 ))";;
+      1)
+        echo "mod tcp-opt-wscale $(( RANDOM % 256 ))";;
+      2)
+        echo "mod tcp-opt-timestamp $(( RANDOM % 9223372036854775808 ))";;
+
+      #TODO "add" options ?
+    esac
+
+  else
+
+    echo "mod ip-ttl $(( RANDOM % 256 ))"
+
+  fi
 }
 
 function rule_gen
@@ -85,17 +117,12 @@ function rule_gen
   RULES=$1
   OPTIONS=$2
 
-  #echo "Number of rules to generate: $RULES"
-  #if $OPTIONS; then
-  #  echo "With TCP options"
-  #fi
-
   i=0
   until [ $i -eq $RULES ]; do
-    match=$(get_random_match $i)
-    target=$(get_random_target $i)
+    match=$(get_random_match $i $OPTIONS)
+    target=$(get_random_target $i $OPTIONS)
 
-    sudo vppctl -s /run/vpp/cli-vpp.sock mmb add $match $target
+    sudo vppctl -s /run/vpp/cli-vpp.sock mmb add ip-proto tcp $match $target
     let i+=1
   done
 
