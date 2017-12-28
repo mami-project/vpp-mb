@@ -369,19 +369,14 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
 }
 
 clib_error_t *parse_and_validate_rule(unformat_input_t * input, 
-                     mmb_rule_t *rule) {
+                                      mmb_rule_t *rule) {
+  if (!unformat(input, "%U", mmb_unformat_rule, rule))
+    return clib_error_return(0, "Invalid rule");
 
-   if (!unformat(input, "%U", mmb_unformat_rule, rule))
-      return clib_error_return(0, "Invalid rule");
-
-   /* input is now empty */
-   if (unformat_check_input(input) != UNFORMAT_END_OF_INPUT) 
-      return clib_error_return(0, "Could not parse whole input");
-
-   clib_error_t *error;
-   if ( (error = validate_rule(rule)) )
-      return error;
-   return 0;
+  clib_error_t *error;
+  if ( (error = validate_rule(rule)) )
+    return error;
+  return 0;
 }
 
 static clib_error_t*
