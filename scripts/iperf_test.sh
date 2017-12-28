@@ -117,14 +117,19 @@ function rule_gen
   RULES=$1
   OPTIONS=$2
 
+  touch random_rules
+
   i=0
   until [ $i -eq $RULES ]; do
     match=$(get_random_match $i $OPTIONS)
     target=$(get_random_target $i $OPTIONS)
 
-    sudo vppctl -s /run/vpp/cli-vpp.sock mmb add ip-proto tcp $match $target
+    echo "mmb add ip-proto tcp $match $target" >> random_rules
     let i+=1
   done
+
+  sudo vppctl -s /run/vpp/cli-vpp.sock exec /home/vagrant/vpp-mb/scripts/random_rules
+  rm random_rules
 
   #TODO how many matches in matching part ? how many targets in target part ?
 }
@@ -201,6 +206,7 @@ sleep 2
 # iperf client (test & results)
 #TODO speed gen ? pass it as an argument ?
 sudo ip netns exec ns0 iperf3 -c 10.0.1.1 -4 -k 10000 -V
+#TODO filter & display results in our own format ?
 sleep 1
 
 echo
