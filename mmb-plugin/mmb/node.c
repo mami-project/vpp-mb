@@ -1033,11 +1033,14 @@ u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t 
   }
 
   /* STRIPS (options only) */
-  uword *found_to_strip = clib_bitmap_dup_and(tcp_options->found, rule->opt_strips);
-  if (!clib_bitmap_is_zero(found_to_strip))
+  if (rule->has_strips)
   {
-    clib_bitmap_foreach(i, found_to_strip, mmb_target_strip_option(tcp_options, i));
-    opts_modified = 1;
+    uword *found_to_strip = clib_bitmap_dup_and(tcp_options->found, rule->opt_strips);
+    if (!clib_bitmap_is_zero(found_to_strip))
+    {
+      clib_bitmap_foreach(i, found_to_strip, mmb_target_strip_option(tcp_options, i));
+      opts_modified = 1;
+    }
   }
 
   /* MODS (options only) */
