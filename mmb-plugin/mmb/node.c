@@ -1287,7 +1287,7 @@ mmb_node_ip4_out_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   return mmb_node_fn(vm, node, frame, 0, 1, &mmb_ip4_out_node);
 }
 
-vlib_node_registration_t mmb_ip6_in_node;
+/*vlib_node_registration_t mmb_ip6_in_node;
 static uword
 mmb_node_ip6_in_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
@@ -1299,7 +1299,7 @@ static uword
 mmb_node_ip6_out_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
   return mmb_node_fn(vm, node, frame, 1, 1, &mmb_ip6_out_node);
-}
+}*/
 
 VLIB_REGISTER_NODE(mmb_ip4_in_node) =
 {
@@ -1348,7 +1348,7 @@ VNET_FEATURE_INIT (mmb_ip4_out_feature, static) = {
 };
 
 
-VLIB_REGISTER_NODE(mmb_ip6_in_node) =
+/*VLIB_REGISTER_NODE(mmb_ip6_in_node) =
 {
   .function = mmb_node_ip6_in_fn,
   .name = "mmb-plugin-ip6-in",
@@ -1392,5 +1392,5 @@ VNET_FEATURE_INIT (mmb_ip6_out_feature, static) = {
   .arc_name = "ip6-output",
   .node_name = "mmb-plugin-ip6-out",
   .runs_before = VNET_FEATURES("interface-output"), 
-};
+};*/
 
