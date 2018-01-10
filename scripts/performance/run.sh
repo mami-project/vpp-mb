@@ -308,107 +308,254 @@ function get_random_match
   # branch 4: tcp options
   local _branch=0
 
-  if [[ _proto -eq PROTOCOL_UDP ]]; then
-    let _branch=$(( RANDOM % 2 + 1 ))
-  elif [[ _proto -eq PROTOCOL_TCP ]]; then
+  if [[ _proto -eq PROTOCOL_TCP ]]; then
     if [[ _type -eq TYPE_TCP_OPTS_ONLY ]]; then
-      let _branch=4
+      let _branch=5
     elif [[ _type -eq TYPE_NO_TCP_OPTS ]]; then
-      if [[ $(( RANDOM % 2 )) -eq 0 ]]; then
-        let _branch=3
-      else
-        let _branch=1
-      fi
+      let _branch=4
     else
-      if [[ $(( RANDOM % 2 )) -eq 0 ]]; then
-        let _branch=$(( RANDOM % 2 + 3 ))
-      else
-        let _branch=1
-      fi
+      let _branch=3
     fi
+  elif [[ _proto -eq PROTOCOL_UDP ]]; then
+     let _branch=2
   fi
 
   if [[ _branch -eq 1 ]]; then
-    case $(( RANDOM % 13 )) in
+    case $(get_random 13) in
       0)
-        echo "ip-ver $(( RANDOM % 16 ))";;
+        echo "ip-ver $(get_random 16)";;
       1)
-        echo "ip-ihl $(( RANDOM % 16 ))";;
+        echo "ip-ihl $(get_random 16)";;
       2)
-        echo "ip-dscp $(( RANDOM % 64 ))";;
+        echo "ip-dscp $(get_random 64)";;
       3)
-        echo "ip-ecn $(( RANDOM % 4 ))";;
+        echo "ip-ecn $(get_random 4)";;
       4)
-        echo "ip-len $(( RANDOM % 65536 ))";;
+        echo "ip-len $(get_random 65536)";;
       5)
-        echo "ip-id $(( RANDOM % 65536 ))";;
+        echo "ip-id $(get_random 65536)";;
       6)
-        echo "ip-flags $(( RANDOM % 8 ))";;
+        echo "ip-flags $(get_random 8)";;
       7)
-        echo "ip-frag-offset $(( RANDOM % 8192 ))";;
+        echo "ip-frag-offset $(get_random 8192)";;
       8)
-        echo "ip-ttl $(( RANDOM % 256 ))";;
+        echo "ip-ttl $(get_random 256)";;
       9)
-        [[ $(( RANDOM % 2 )) -eq 0 ]] && local _proto="udp" || local _proto="tcp"
-        echo "ip-proto $_proto";;
+        echo "ip-checksum $(get_random 65536)";;
       10)
-        echo "ip-checksum $(( RANDOM % 65536 ))";;
-      11)
-        local a=$(( RANDOM % 256 ))
-        local b=$(( RANDOM % 256 ))
-        local c=$(( RANDOM % 256 ))
-        local d=$(( RANDOM % 256 ))
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
         echo "ip-saddr $a.$b.$c.$d";;
-      12)
-        local a=$(( RANDOM % 256 ))
-        local b=$(( RANDOM % 256 ))
-        local c=$(( RANDOM % 256 ))
-        local d=$(( RANDOM % 256 ))
+      11)
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
         echo "ip-daddr $a.$b.$c.$d";;
+      12)
+        echo "ip-payload $(get_random 65536)";;
     esac
   elif [[ _branch -eq 2 ]]; then
-    case $(( RANDOM % 4 )) in
+    case $(get_random 18) in
       0)
-        echo "udp-sport $(( RANDOM % 65536 ))";;
+        echo "udp-sport $(get_random 65536)";;
       1)
-        echo "udp-dport $(( RANDOM % 65536 ))";;
+        echo "udp-dport $(get_random 65536)";;
       2)
-        echo "udp-len $(( RANDOM % 65536 ))";;
+        echo "udp-len $(get_random 65536)";;
       3)
-        echo "udp-checksum $(( RANDOM % 65536 ))";;
+        echo "udp-checksum $(get_random 65536)";;
+      4)
+        echo "udp-payload $(get_random 65536)";;
+      5)
+        echo "ip-ver $(get_random 16)";;
+      6)
+        echo "ip-ihl $(get_random 16)";;
+      7)
+        echo "ip-dscp $(get_random 64)";;
+      8)
+        echo "ip-ecn $(get_random 4)";;
+      9)
+        echo "ip-len $(get_random 65536)";;
+      10)
+        echo "ip-id $(get_random 65536)";;
+      11)
+        echo "ip-flags $(get_random 8)";;
+      12)
+        echo "ip-frag-offset $(get_random 8192)";;
+      13)
+        echo "ip-ttl $(get_random 256)";;
+      14)
+        echo "ip-checksum $(get_random 65536)";;
+      15)
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
+        echo "ip-saddr $a.$b.$c.$d";;
+      16)
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
+        echo "ip-daddr $a.$b.$c.$d";;
+      17)
+        echo "ip-payload $(get_random 65536)";;
     esac
   elif [[ _branch -eq 3 ]]; then
-    case $(( RANDOM % 10 )) in
+    case $(get_random 32) in
       0)
-        echo "tcp-sport $(( RANDOM % 65536 ))";;
+        echo "tcp-sport $(get_random 65536)";;
       1)
-        echo "tcp-dport $(( RANDOM % 65536 ))";;
+        echo "tcp-dport $(get_random 65536)";;
       2)
-        echo "tcp-seq-num $(( RANDOM % 4294967296 ))";;
+        echo "tcp-seq-num $(get_random 4294967296)";;
       3)
-        echo "tcp-ack-num $(( RANDOM % 4294967296 ))";;
+        echo "tcp-ack-num $(get_random 4294967296)";;
       4)
-        echo "tcp-offset $(( RANDOM % 16 ))";;
+        echo "tcp-offset $(get_random 16)";;
       5)
-        echo "tcp-reserved $(( RANDOM % 16 ))";;
+        echo "tcp-reserved $(get_random 16)";;
       6)
-        echo "tcp-flags $(( RANDOM % 256 ))";;
+        echo "tcp-flags $(get_random 256)";;
       7)
-        echo "tcp-win $(( RANDOM % 65536 ))";;
+        echo "tcp-win $(get_random 65536)";;
       8)
-        echo "tcp-checksum $(( RANDOM % 65536 ))";;
+        echo "tcp-checksum $(get_random 65536)";;
       9)
-        echo "tcp-urg-ptr $(( RANDOM % 65536 ))";;
+        echo "tcp-urg-ptr $(get_random 65536)";;
+      10)
+        echo "tcp-payload $(get_random 65536)";;
+      11)
+        echo "tcp-opt-mss $(get_random 65536)";;
+      12)
+        echo "tcp-opt-wscale $(get_random 256)";;
+      13)
+        echo "tcp-opt-timestamp $(get_random 9223372036854775808)";;
+      14)
+        echo "tcp-opt-sackp";;
+      15) # 1 block
+        echo "tcp-opt-sack $(get_random 18446744073709551616)";;
+      16) 
+        echo "tcp-opt-fast-open $(get_random 65536)";;
+      17)
+        echo "tcp-opt-mptcp $(get_random 65536)";;      
+      18) 
+        echo "tcp-opt $(($(get_random 224) + 32)) $(get_random 65536)";;
+      19)
+        echo "ip-ver $(get_random 16)";;
+      20)
+        echo "ip-ihl $(get_random 16)";;
+      21)
+        echo "ip-dscp $(get_random 64)";;
+      22)
+        echo "ip-ecn $(get_random 4)";;
+      23)
+        echo "ip-len $(get_random 65536)";;
+      24)
+        echo "ip-id $(get_random 65536)";;
+      25)
+        echo "ip-flags $(get_random 8)";;
+      26)
+        echo "ip-frag-offset $(get_random 8192)";;
+      27)
+        echo "ip-ttl $(get_random 256)";;
+      28)
+        echo "ip-checksum $(get_random 65536)";;
+      29)
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
+        echo "ip-saddr $a.$b.$c.$d";;
+      30)
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
+        echo "ip-daddr $a.$b.$c.$d";;
+      31)
+        echo "ip-payload $(get_random 65536)";;  
+    esac
+  elif [[ _branch -eq 4 ]]; then
+    case $(get_random 24) in
+      0)
+        echo "tcp-sport $(get_random 65536)";;
+      1)
+        echo "tcp-dport $(get_random 65536)";;
+      2)
+        echo "tcp-seq-num $(get_random 4294967296)";;
+      3)
+        echo "tcp-ack-num $(get_random 4294967296)";;
+      4)
+        echo "tcp-offset $(get_random 16)";;
+      5)
+        echo "tcp-reserved $(get_random 16)";;
+      6)
+        echo "tcp-flags $(get_random 256)";;
+      7)
+        echo "tcp-win $(get_random 65536)";;
+      8)
+        echo "tcp-checksum $(get_random 65536)";;
+      9)
+        echo "tcp-urg-ptr $(get_random 65536)";;
+      10)
+        echo "tcp-payload $(get_random 65536)";;
+      11)
+        echo "ip-ver $(get_random 16)";;
+      12)
+        echo "ip-ihl $(get_random 16)";;
+      13)
+        echo "ip-dscp $(get_random 64)";;
+      14)
+        echo "ip-ecn $(get_random 4)";;
+      15)
+        echo "ip-len $(get_random 65536)";;
+      16)
+        echo "ip-id $(get_random 65536)";;
+      17)
+        echo "ip-flags $(get_random 8)";;
+      18)
+        echo "ip-frag-offset $(get_random 8192)";;
+      19)
+        echo "ip-ttl $(get_random 256)";;
+      20)
+        echo "ip-checksum $(get_random 65536)";;
+      21)
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
+        echo "ip-saddr $a.$b.$c.$d";;
+      22)
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
+        echo "ip-daddr $a.$b.$c.$d";;
+      23)
+        echo "ip-payload $(get_random 65536)";;  
     esac
   else
-    case $(( RANDOM % 3 )) in
+    case $(get_random 8) in
       0)
-        echo "tcp-opt-mss $(( RANDOM % 65536 ))";;
+        echo "tcp-opt-mss $(get_random 65536)";;
       1)
-        echo "tcp-opt-wscale $(( RANDOM % 256 ))";;
+        echo "tcp-opt-wscale $(get_random 256)";;
       2)
-        echo "tcp-opt-timestamp $(( RANDOM % 9223372036854775808 ))";;
-      #TODO construct "real" sack, fast-open, mptcp ???
+        echo "tcp-opt-timestamp $(get_random 9223372036854775808)";;
+      3)
+        echo "tcp-opt-sackp";;
+      4) # 1 block
+        echo "tcp-opt-sack $(get_random 18446744073709551616)";;
+      5) 
+        echo "tcp-opt-fast-open $(get_random 65536)";;
+      6)
+        echo "tcp-opt-mptcp $(get_random 65536)";;      
+      7) 
+        echo "tcp-opt $(($(get_random 224) + 32)) $(get_random 65536)";;  
     esac
   fi
 }
@@ -417,9 +564,6 @@ function get_random_target
 {
   local _proto=$1
   local _type=$2
-
-  # branch 1: ip/udp/tcp field -> only ip "ttl" to avoid issues
-  # branch 2: tcp options
   local _branch=0
 
   if [[ _proto -eq PROTOCOL_UDP ]] || [[ _type -eq TYPE_NO_TCP_OPTS ]]; then
@@ -427,22 +571,73 @@ function get_random_target
   elif [[ _type -eq TYPE_TCP_OPTS_ONLY ]]; then
     let _branch=2
   else
-    let _branch=$(( RANDOM % 2 + 1 ))
+    let _branch=$(( $(get_random 2) + 1 ))
   fi
 
   if [[ _branch -eq 1 ]]; then
-    echo "mod ip-ttl $(( RANDOM % 256 ))"
-  else
-    case $(( RANDOM % 3 )) in
+     case $(get_random 13) in
       0)
-        echo "mod tcp-opt-mss $(( RANDOM % 65536 ))";;
+        echo "mod ip-ver $(get_random 16)";;
       1)
-        echo "mod tcp-opt-wscale $(( RANDOM % 256 ))";;
+        echo "mod ip-ihl $(get_random 16)";;
       2)
-        echo "mod tcp-opt-timestamp $(( RANDOM % 9223372036854775808 ))";;
+        echo "mod ip-dscp $(get_random 64)";;
+      3)
+        echo "mod ip-ecn $(get_random 4)";;
+      4)
+        echo "mod ip-len $(get_random 65536)";;
+      5)
+        echo "mod ip-id $(get_random 65536)";;
+      6)
+        echo "mod ip-flags $(get_random 8)";;
+      7)
+        echo "mod ip-frag-offset $(get_random 8192)";;
+      8)
+        echo "mod ip-ttl $(get_random 256)";;
+      9)
+        echo "mod ip-checksum $(get_random 65536)";;
+      10)
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
+        echo "mod ip-saddr $a.$b.$c.$d";;
+      11)
+        local a=$(get_random 256)
+        local b=$(get_random 256)
+        local c=$(get_random 256)
+        local d=$(get_random 256)
+        echo "mod ip-daddr $a.$b.$c.$d";;
+      12)
+        echo "mod ip-payload $(get_random 65536)";;
+    esac
+  else
+    case $(get_random 8) in
+      0)
+        echo "mod tcp-opt-mss $(get_random 65536)";;
+      1)
+        echo "mod tcp-opt-wscale $(get_random 256)";;
+      2)
+        echo "mod tcp-opt-timestamp $(get_random 9223372036854775808)";;
+      3)
+        echo "strip tcp-opt-sackp";;
+      4) # 1 block
+        echo "mod tcp-opt-sack $(get_random 18446744073709551616)";;
+      5) 
+        echo "mod tcp-opt-fast-open $(get_random 65536)";;
+      6)
+        echo "mod tcp-opt-mptcp $(get_random 65536)";;      
+      7) 
+        echo "mod tcp-opt $(($(get_random 224) + 32)) $(get_random 65536)";;  
       #TODO "add" options
     esac
   fi
+}
+
+function get_random {
+   cmd="od -vAn -N8 -tu8 < /dev/urandom";
+   r=$(eval $cmd);
+   echo "$r % $1" | bc;
 }
 
 function rule_gen
@@ -454,25 +649,25 @@ function rule_gen
     echo -n "mmb add" >> /home/vagrant/random_rules
 
     if [[ $_proto -eq ${PROTOCOL_ALL} ]] && [[ $rules_type -ne ${TYPE_TCP_OPTS_ONLY} ]]; then
-      if [[ $(( RANDOM % 2 )) -eq 0 ]]; then
-        local _proto=${PROTOCOL_UDP}
+      if [[ $(get_random 2) -eq 0 ]]; then
+        local _rule_proto=${PROTOCOL_UDP}
       else
-        local _proto=${PROTOCOL_TCP}
+        local _rule_proto=${PROTOCOL_TCP}
       fi
     else
-      local _proto=$rules_proto
+      local _rule_proto=$rules_proto
     fi
 
     local max_nb_matches=0
     if [[ $matches_random -eq 0 ]]; then
       max_nb_matches=$matches_nb
     else
-      max_nb_matches=$(( RANDOM % ($(( $matches_max - $matches_min + 1 ))) + $matches_min ))
+      max_nb_matches=$(( $(get_random $(( $matches_max - $matches_min + 1 ))) + $matches_min ))
     fi
-
+   
     local j=0
     until [ $j -eq $max_nb_matches ]; do
-      echo -n " $(get_random_match $_proto $rules_type)" >> /home/vagrant/random_rules
+      echo -n " $(get_random_match $_rule_proto $rules_type)" >> /home/vagrant/random_rules
       let j+=1
     done
 
@@ -480,12 +675,12 @@ function rule_gen
     if [[ $targets_random -eq 0 ]]; then
       max_nb_targets=$targets_nb
     else
-      max_nb_targets=$(( RANDOM % ($(( $targets_max - $targets_min + 1 ))) + $targets_min ))
+      max_nb_targets=$(( $(get_random $(( $targets_max - $targets_min + 1 ))) + $targets_min ))
     fi
 
     local j=0
     until [ $j -eq $max_nb_targets ]; do
-      echo -n " $(get_random_target $_proto $rules_type)" >> /home/vagrant/random_rules
+      echo -n " $(get_random_target $_rule_proto $rules_type)" >> /home/vagrant/random_rules
       let j+=1
     done
 
@@ -500,7 +695,6 @@ function rule_gen
 # add rules to mmb
 ./flush.sh
 rule_gen
-
 #TODO background traffic (udp & tcp) in parallel
 sleep 1
 #TODO filter & display results in our own format ?
