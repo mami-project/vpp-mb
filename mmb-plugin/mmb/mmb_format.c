@@ -633,6 +633,8 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
       s = format(s, "%-40U", mmb_format_target, &opt_target);
       add_index++;
     }
+    if (index == 0) 
+      s = format(s, "%u", rule->match_count);
     s = format(s, "\n");
   }
 
@@ -723,8 +725,8 @@ u8* mmb_format_target(u8 *s, va_list *args) {
 u8* mmb_format_rules(u8 *s, va_list *args) {
   mmb_rule_t *rules = va_arg(*args, mmb_rule_t*);
 
-  s = format(s, " Index%2sL3%4sL4%7sin%15sout%13sMatches%33sTargets\n", 
-                blanks, blanks, blanks, blanks, blanks, blanks);
+  s = format(s, " Index%2sL3%4sL4%7sin%15sout%13sMatches%33sTargets%33sCount\n", 
+                blanks, blanks, blanks, blanks, blanks, blanks, blanks);
   uword rule_index = 0;
   vec_foreach_index(rule_index, rules) {
     s = format(s, " %d\t%U%s", rule_index+1, mmb_format_rule_column, 
