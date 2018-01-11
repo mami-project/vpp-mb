@@ -176,6 +176,26 @@ static clib_error_t* mmb_enable_disable_fn(vlib_main_t * vm,
                                            vlib_cli_command_t * cmd,
                                            u32 *sw_if_index);
 
+static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule)
+{
+  return rule->opts_in_matches || rule->opts_in_targets;
+}
+
+static_always_inline void reset_flags(mmb_main_t *mm) {
+   mm->opts_in_rules = 0;
+} 
+
+static_always_inline void update_flags(mmb_main_t *mm, mmb_rule_t *rules) {
+   mmb_rule_t *rule;
+   vec_foreach(rule, rules) {
+      if (rule_has_tcp_options(rule)) {
+          mm->opts_in_rules = 1;
+          return;
+      }
+   }
+   mm->opts_in_rules = 0;
+} 
+
 static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
    vnet_feature_enable_disable("ip4-unicast", "mmb-plugin-ip4-in", 
                                sw_if_index, enable_disable, 0, 0);
@@ -307,6 +327,8 @@ flush_rules_command_fn(vlib_main_t * vm,
   if (vec_len(rules))
     vec_delete(rules, vec_len(rules), 0);
 
+  reset_flags(mm);
+
   return 0;
 }
 
@@ -338,6 +360,10 @@ insert_rule_command_fn(vlib_main_t * vm,
          return error;
 
       vec_insert_elt(mm->rules,&rule,rule_index);
+
+      /* flags */
+      if (rule_has_tcp_options(&rule))
+         mm->opts_in_rules = 1;
 
       vl_print(vm, "Inserted rule at index %u: %U", 
                rule_index+1, mmb_format_rule, &rule);
@@ -375,6 +401,10 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
                                   u32 * table_index,
                                   1);*/
 
+  /* flags */
+  if (rule_has_tcp_options(&rule))
+     mm->opts_in_rules = 1;
+
   vl_print(vm, "Added rule: %U", mmb_format_rule, &rule);
   return 0;
 }
@@ -408,6 +438,9 @@ del_rule_command_fn(vlib_main_t *vm,
             mmb_rule_t *rule = &rules[rule_index];
             free_rule(rule);
             vec_delete(rules, 1, rule_index);
+
+            /* flags */
+            update_flags(mm, rules);
 
             return 0;
          } 
