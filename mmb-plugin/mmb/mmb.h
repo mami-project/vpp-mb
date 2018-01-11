@@ -181,7 +181,6 @@ typedef struct {
   u8 l4;
   u32 in;
   u32 out;
-  uword match_count;
 
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
@@ -189,6 +188,7 @@ typedef struct {
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
 
+  uword match_count;
   u8 has_strips:1;
   u8 whitelist:1;
   u8 has_adds:1;
@@ -203,10 +203,13 @@ typedef struct {
    u16 msg_id_base;
 
    mmb_rule_t *rules;  /*! Rules vector, per if, per dir */
+   
 
    u32 *sw_if_indexes;
    /* convenience */
    vnet_main_t *vnet_main;
+
+   u8 opts_in_rules:1;
 } mmb_main_t;
 
 mmb_main_t mmb_main;
