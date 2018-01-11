@@ -1229,8 +1229,9 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
           /* MATCH: apply targets to packet */
           next0 = packet_apply_targets(ip0, rule, &tcp_options, &l4_modified);
           applied_rule_index = i;
+          rule->match_count++;
 
-          if (rule->last_match || next0 == MMB_NEXT_DROP)
+          if (next0 == MMB_NEXT_DROP || rule->last_match)
             break;
         }
       }
@@ -1244,7 +1245,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       }
 
       /* one more packet processed */
-      pkts_done += 1;
+      pkts_done++;
 
       /* node trace (if enabled) */
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
