@@ -18,10 +18,10 @@
 #include <vppinfra/error.h>
 #include <mmb/node.h>
 
-static u64 get_ip_field(ip4_header_t *, u8);
-static u64 get_icmp_field(icmp46_header_t *, u8);
-static u64 get_udp_field(udp_header_t *, u8);
-static u64 get_tcp_field(tcp_header_t *, u8);
+static uword get_ip_field(ip4_header_t *, u8);
+static uword get_tcp_field(tcp_header_t *, u8);
+static u16 get_icmp_field(icmp46_header_t *, u8);
+static u16 get_udp_field(udp_header_t *, u8);
 static void set_ip_field(ip4_header_t *, u8, u64);
 static void set_icmp_field(icmp46_header_t *, u8, u64);
 static void set_udp_field(udp_header_t *, u8, u64);
@@ -50,7 +50,7 @@ static u8 mmb_matching_udp(ip4_header_t *, mmb_match_t *, vlib_buffer_t *, int);
 static u8 mmb_matching_tcp(ip4_header_t *, mmb_match_t *, vlib_buffer_t *, int);
 static u8 mmb_matching_tcp_options(mmb_tcp_options_t *, mmb_match_t *);
 
-static u32 packet_apply_targets(ip4_header_t *, mmb_rule_t *, mmb_tcp_options_t *, u8 *);
+static u8 packet_apply_targets(ip4_header_t *, mmb_rule_t *, mmb_tcp_options_t *, u8 *);
 static u8 mmb_target_modify_field(ip4_header_t *, mmb_target_t *);
 static u8 mmb_target_add_option(u8 *, mmb_transport_option_t *);
 static u8 mmb_target_modify_option(mmb_tcp_options_t *, u8, u8 *);
@@ -58,10 +58,9 @@ static void mmb_target_strip_option(mmb_tcp_options_t *, u8);
 
 vlib_node_registration_t mmb_node;
 
-static void init_tcp_options(mmb_tcp_options_t *options)
+static_always_inline void init_tcp_options(mmb_tcp_options_t *options)
 {
-  options->parsed = 0;
-  options->idx = 0;
+  memset(options, 0, sizeof(mmb_tcp_options_t));
   vec_validate(options->idx, 254);
   clib_bitmap_alloc(options->found, 255);
 }
@@ -142,9 +141,9 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
  *      IP fields
  ***********************/
 
-u64 get_ip_field(ip4_header_t *iph, u8 field)
+uword get_ip_field(ip4_header_t *iph, u8 field)
 {
-  u64 value = ~0;
+  uword value;
 
   switch(field)
   {
@@ -197,6 +196,7 @@ u64 get_ip_field(ip4_header_t *iph, u8 field)
       value = clib_net_to_host_u32(iph->dst_address.as_u32);
       break;
     default:
+      value = ~0;
       break;
   }
 
@@ -264,9 +264,9 @@ void set_ip_field(ip4_header_t *iph, u8 field, u64 value)
  *     ICMP fields
  ***********************/
 
-u64 get_icmp_field(icmp46_header_t *icmph, u8 field)
+u16 get_icmp_field(icmp46_header_t *icmph, u8 field)
 {
-  u64 value = ~0;
+  u16 value;
 
   switch(field)
   {
@@ -280,6 +280,7 @@ u64 get_icmp_field(icmp46_header_t *icmph, u8 field)
       value = clib_net_to_host_u16(icmph->checksum);
       break;
     default:
+      value = ~0;
       break;
   }
 
@@ -308,9 +309,9 @@ void set_icmp_field(icmp46_header_t *icmph, u8 field, u64 value)
  *      UDP fields
  ***********************/
 
-u64 get_udp_field(udp_header_t *udph, u8 field)
+u16 get_udp_field(udp_header_t *udph, u8 field)
 {
-  u64 value = ~0;
+  u16 value;
 
   switch(field)
   {
@@ -327,6 +328,7 @@ u64 get_udp_field(udp_header_t *udph, u8 field)
       value = clib_net_to_host_u16(udph->checksum);
       break;
     default:
+      value = ~0;
       break;
   }
 
@@ -358,9 +360,9 @@ void set_udp_field(udp_header_t *udph, u8 field, u64 value)
  *      TCP fields
  ***********************/
 
-u64 get_tcp_field(tcp_header_t *tcph, u8 field)
+uword get_tcp_field(tcp_header_t *tcph, u8 field)
 {
-  u64 value = ~0;
+  uword value;
 
   switch(field)
   {
@@ -419,6 +421,7 @@ u64 get_tcp_field(tcp_header_t *tcph, u8 field)
       value = clib_net_to_host_u16(tcph->urgent_pointer);
       break;
     default:
+      value = ~0;
       break;
   }
 
@@ -492,12 +495,12 @@ void set_tcp_field(tcp_header_t *tcph, u8 field, u64 value)
  *      TCP options
  ***********************/
 
-u8 tcp_option_exists(mmb_tcp_options_t *options, u8 kind)
+static_always_inline u8 tcp_option_exists(mmb_tcp_options_t *options, u8 kind)
 {
   return clib_bitmap_get_no_check(options->found, kind);
 }
 
-u8 rule_requires_tcp_options(mmb_rule_t *rule)
+static_always_inline u8 rule_requires_tcp_options(mmb_rule_t *rule)
 {
   return (rule->opts_in_matches || rule->opts_in_targets);
 }
@@ -649,25 +652,25 @@ u8 mmb_padding_tcp_options(u8 *data, u8 offset)
  *  Utility functions
  ***********************/
 
-u8 mmb_true_condition(u8 condition, u8 reverse)
+static_always_inline u8 mmb_true_condition(u8 condition, u8 reverse)
 {
   return condition != reverse;
 }
 
-u8 mmb_memcpy(u8 *dst, u8 *from, u8 length)
+static_always_inline u8 mmb_memcpy(u8 *dst, u8 *from, u8 length)
 {
   clib_memcpy(dst, from, length);
   return length;
 }
 
-void mmb_parse_ip4_cidr_address(u8 *bytes, u32 *ip_addr, u32 *mask)
+static_always_inline void mmb_parse_ip4_cidr_address(u8 *bytes, u32 *ip_addr, u32 *mask)
 {
   *mask = vec_pop(bytes);
   *ip_addr = mmb_bytes_to_u64(bytes);
   vec_add1(bytes, *mask);
 }
 
-u64 mmb_bytes_to_u64(u8 *bytes)
+static_always_inline u64 mmb_bytes_to_u64(u8 *bytes)
 {
   return mmb_n_bytes_to_u64(bytes, vec_len(bytes));
 }
@@ -770,7 +773,7 @@ void recompute_l4_checksum(vlib_main_t *vm, vlib_buffer_t *buffer, ip4_header_t 
     }
 }
 
-void recompute_l3_checksum(ip4_header_t *iph)
+static_always_inline void recompute_l3_checksum(ip4_header_t *iph)
 {
   iph->checksum = ip4_header_checksum(iph);
 }
@@ -1010,7 +1013,7 @@ u8 mmb_matching_tcp_options(mmb_tcp_options_t *options, mmb_match_t *match)
  *   TARGET functions
  ***********************/
 
-u32 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_options, u8 *l4_modified)
+u8 packet_apply_targets(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_options, u8 *l4_modified)
 {
   u32 i;
   u8 old_opts_len = 0, new_opts_len = 0, opts_modified = 0;
@@ -1119,7 +1122,7 @@ u8 mmb_target_modify_field(ip4_header_t *iph, mmb_target_t *target)
   return 0;
 }
 
-u8 mmb_target_add_option(u8 *data, mmb_transport_option_t *option)
+static_always_inline u8 mmb_target_add_option(u8 *data, mmb_transport_option_t *option)
 {
   u8 opt_len = vec_len(option->value)+2;
 
@@ -1130,7 +1133,7 @@ u8 mmb_target_add_option(u8 *data, mmb_transport_option_t *option)
   return opt_len;
 }
 
-u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options, u8 kind, u8 *new_value)
+static_always_inline u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options, u8 kind, u8 *new_value)
 {
   if (tcp_option_exists(tcp_options, kind))
   {
@@ -1141,7 +1144,7 @@ u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options, u8 kind, u8 *new_val
   return 0;
 }
 
-void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, u8 kind)
+static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, u8 kind)
 {
   u8 idx = tcp_options->idx[kind];
   tcp_options->parsed[idx].is_stripped = 1;
@@ -1164,11 +1167,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   u32 pkts_done = 0;
 
   mmb_tcp_options_t tcp_options;
-  memset(&tcp_options, 0, sizeof(mmb_tcp_options_t));
-  u8 tcp_opts_loaded;
-
-  //TODO maybe we should find a way to allocate it somewhere else (in the CLI ?)
   init_tcp_options(&tcp_options);
+  u8 tcp_opts_loaded;
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -1210,7 +1210,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       /* fetch each rule to find a match */
       vec_foreach_index(i, rules)
       {
-        mmb_rule_t *rule = &rules[i];
+        mmb_rule_t *rule = rules+i;
 
         /* parse TCP options if necessary */
         if (ip0->protocol == IP_PROTOCOL_TCP && rule_requires_tcp_options(rule))
