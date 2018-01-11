@@ -181,9 +181,10 @@ typedef struct {
   u8 l4;
   u32 in;
   u32 out;
+  uword match_count;
+
   mmb_match_t *matches; /*! Matches vector */
   mmb_target_t *targets; /*! Targets vector */
-
   uword                  *opt_strips;
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
@@ -193,6 +194,7 @@ typedef struct {
   u8 has_adds:1;
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
+  u8 last_match:1;
 
 } mmb_rule_t;
 
