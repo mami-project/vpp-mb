@@ -27,6 +27,10 @@
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 
+
+#include <vnet/l2/l2_classify.h>
+#include <vnet/classify/flow_classify.h>
+
 /* define message IDs */
 #include <mmb/mmb_msg_enum.h>
 
@@ -166,7 +170,7 @@ const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
 
 static void free_rule(mmb_rule_t *rule);
 static void init_rule(mmb_rule_t *rule);
-static clib_error_t* parse_and_validate_rule(unformat_input_t * input, 
+static clib_error_t* parse_rule(unformat_input_t * input, 
                                                  mmb_rule_t *rule);
 static clib_error_t* validate_rule();
 static clib_error_t* validate_matches(mmb_rule_t *rule);
@@ -205,6 +209,7 @@ static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable
                                sw_if_index, enable_disable, 0, 0);
    vnet_feature_enable_disable("ip6-output", "mmb-plugin-ip6-out", 
                                sw_if_index, enable_disable, 0, 0);
+   vnet_l2_input_classify_enable_disable (sw_if_index, enable_disable);
 }
 
 clib_error_t* mmb_enable_disable_fn(vlib_main_t * vm,
@@ -354,9 +359,7 @@ insert_rule_command_fn(vlib_main_t * vm,
       clib_error_t *error;
       init_rule(&rule);
 
-      if (unformat(input, "last")) 
-         rule.last_match = 1;
-      if ( (error = parse_and_validate_rule(input, &rule)) )
+      if ( (error = parse_rule(input, &rule)) )
          return error;
 
       vec_insert_elt(mm->rules,&rule,rule_index);
@@ -373,6 +376,120 @@ insert_rule_command_fn(vlib_main_t * vm,
     "Syntax error: rule number must be an integer greater than 0");
 }
 
+/**
+ *
+ * Compute mask (u8*), skip & match
+ * 
+ **/
+
+static uword build_mask(mmb_rule_t *rule) {
+   /* 
+    * ip4: 14 + 20 + 20 
+    * ip: 14 + 40 + x + 20
+    */
+   return 1;
+}
+
+static u32 add_table(mmb_rule_t *rule, char *mask_str) {
+
+  u32 table_index = ~0;
+  int rv =0;
+  u8 *mask = 0;
+  u32 skip, match; 
+  unformat_input_t mask_input;
+  unformat_init_string(&mask_input, mask_str, strlen(mask_str));
+ 
+  vl_print(mmb_main.vlib_main,"unformat retval:%u", unformat(&mask_input, "%U", unformat_classify_mask, &mask, &skip, &match));
+
+   u32 nbuckets = 32;
+   u32 memory_size = 2<<20;
+  vnet_classify_add_del_table (mmb_main.classify_main,
+                                    mask, 
+                                    nbuckets, /* nbuckets, sessions per table */
+                                    memory_size, /* memory_size */
+                                    skip,
+                                    match, 
+                                    ~0, /* next_table_index */
+                                    IP_LOOKUP_NEXT_REWRITE, /* miss_next_index */
+                                    &table_index,  /* */
+                                    0, /* */
+                                    0, /* */
+                                    1, /* add */
+                                    0); /* del chain of table */
+
+   vl_print(mmb_main.vlib_main,"table_index:%u skip:%u match:%u\n", table_index, skip, match);
+   /*int i;
+   for (i=0;i<vec_len(mask);i++) {
+       vl_print(mmb_main.vlib_main,"%02X",mask[i]);
+   }*/
+
+  u32 sw_if_index, i;
+  for (i=0;i<vec_len(mmb_main.sw_if_indexes);i++) {
+     sw_if_index = mmb_main.sw_if_indexes[i];
+     vl_print(mmb_main.vlib_main, "if:%u intfc:%u",  sw_if_index,
+
+              vnet_set_flow_classify_intfc (mmb_main.vlib_main, sw_if_index,
+                                 table_index, ~0, 1)
+   /* vnet_set_ip4_classify_intfc (mmb_main.vlib_main, sw_if_index,
+				 table_index)*/
+              );
+  }
+
+
+   return table_index;
+}
+
+static uword new_session(mmb_rule_t *rule, u32 table_index) {
+   /* todo add to state*/
+  /*
+      vnet_classify_add_del_session (cm, mvec[match_type_index].table_index,
+				     mask, a->rules[i].is_permit ? ~0 : 0, i,
+
+				     0, action, metadata, 1);
+
+int vnet_classify_add_del_session (vnet_classify_main_t * cm, 
+                                   u32 table_index, 
+                                   u8 * match, 
+                                   u32 hit_next_index,
+                                   u32 opaque_index, 
+
+                                   i32 advance,
+                                   u8 action,
+                                   u32 metadata,
+                                   int is_add);
+
+   */
+   u8 *data = 0;
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 0);
+   vec_add1(data, 5);
+   
+   uword rv = vnet_classify_add_del_session (mmb_main.classify_main, 
+                                       table_index, 
+                                       data, 
+                                       ~0, /* should be our node */
+                                       table_index+10 /* opaque_index */, 
+                                       0 /* advance */, 
+                                       0 /* action*/, 
+                                       0 /* metadata */,
+                                       1 /* is_add */);
+      
+   return rv;
+}
+
 static clib_error_t *
 add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
                      vlib_cli_command_t * cmd) {
@@ -380,43 +497,37 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   mmb_rule_t rule;
   clib_error_t *error;
-  init_rule(&rule);
+  mmb_main_t *mm = &mmb_main;
 
-  if (unformat(input, "last")) 
-    rule.last_match = 1;
-  if ( (error = parse_and_validate_rule(input, &rule)) )
+  init_rule(&rule);
+  if ( (error = parse_rule(input, &rule)) )
     return error;
   
-  mmb_main_t *mm = &mmb_main;
   vec_add1(mm->rules, rule);
   
- /*int vnet_classify_add_del_table (vnet_classify_main_t * cm, // &vnet_classify_main
-                                  u8 * mask, 
-                                  32,
-                                  u32 memory_size, // 16*(1 + match_n_vectors)
-                                  1,
-                                  u32 match, 
-                                  u32 next_table_index,
-                                  MMB_NEXT_LOOKUP,
-                                  u32 * table_index,
-                                  1);*/
-
   /* flags */
   if (rule_has_tcp_options(&rule))
      mm->opts_in_rules = 1;
-
+  
   vl_print(vm, "Added rule: %U", mmb_format_rule, &rule);
   return 0;
 }
 
-clib_error_t *parse_and_validate_rule(unformat_input_t * input, 
+clib_error_t *parse_rule(unformat_input_t * input, 
                                       mmb_rule_t *rule) {
+  if (unformat(input, "last")) 
+    rule->last_match = 1;
   if (!unformat(input, "%U", mmb_unformat_rule, rule))
     return clib_error_return(0, "Invalid rule");
 
   clib_error_t *error;
   if ( (error = validate_rule(rule)) )
     return error;
+
+  u32 table_index0 = add_table(rule, "l3 ip4 tos");
+  u32 table_index1 = add_table(rule, "l3 ip4 src l4 tcp dst");
+  new_session(rule, table_index0);
+  
   return 0;
 }
 
@@ -922,7 +1033,9 @@ static clib_error_t * mmb_init(vlib_main_t * vm) {
   u8 * name;
 
   memset(mm, 0, sizeof(mmb_main_t));
-  mm->vnet_main =  vnet_get_main();
+  mm->vnet_main = vnet_get_main();
+  mm->vlib_main = vm;
+  mm->classify_main = &vnet_classify_main;
 
   name = format (0, "mmb_%08x%c", api_version, 0);
 

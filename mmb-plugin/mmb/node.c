@@ -16,12 +16,19 @@
 #include <vnet/vnet.h>
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
+#include <vnet/classify/vnet_classify.h>
+#include <vnet/classify/input_acl.h>
+
 #include <mmb/mmb.h>
 #include <mmb/node.h>
+
 
 #define foreach_mmb_next_node \
   _(FORWARD, "Forward")         \
   _(DROP, "Drop")
+
+#define foreach_mmb_error \
+_(DONE, "MMB packets processed")
 
 typedef enum {
 #define _(sym,str) MMB_ERROR_##sym,
@@ -42,8 +49,7 @@ typedef struct {
   ip4_header_t *ip;
 } mmb_trace_t;
 
-#define foreach_mmb_error \
-_(DONE, "MMB packets processed")
+
 
 typedef enum {
   MMB_NEXT_DROP,
@@ -86,6 +92,7 @@ mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * no
    t->next = next;
    t->sw_if_index = sw_if_index;
    t->ip=ip;
+   t->rule_index = vnet_buffer(b)->l2_classify.opaque_index;
 }
 
 /* packet trace format function */
@@ -114,23 +121,7 @@ static u8 * format_mmb_trace(u8 * s, va_list * args)
 
    s = format(s, "  mmb: %U", 
                    format_ip4_header, t->ip, t->ip->length);
-
-  s = format(s, "  mmb: %U", 
-             format_ip4_header, t->ip, t->ip->length);
-
   return s;
-}
-
-static_always_inline void 
-mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * node,
-                    ip4_header_t *ip, u32 next) {
-   mmb_trace_t *t = vlib_add_trace (vm, node, b, sizeof (*t));
-   t->proto = ip->protocol;
-   t->src_address.as_u32 = ip->src_address.as_u32;
-   t->dst_address.as_u32 = ip->dst_address.as_u32;
-   t->next = next;
-
-   t->ip=ip;
 }
 
 static_always_inline u32 get_sw_if_index(vlib_buffer_t *b, int is_output) {
@@ -184,11 +175,10 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       /* get vlib buffer */
       b0 = vlib_get_buffer (vm, bi0);
-
-      ASSERT(b0->current_data == 0);
-      
-      /* get IP header */
       ip0 = get_ip_header(b0, is_output);
+
+      u32 i, applied_rule_index = ~0;
+      //vnet_buffer(b)->l2_classify.opaque_index;
 
       /* example: modify TTL and update checksum */
       //ip0->ttl -= pkts_count+1;
@@ -307,7 +297,7 @@ VLIB_REGISTER_NODE(mmb_ip4_in_node) =
 
   .n_next_nodes = MMB_N_NEXT,
   .next_nodes = {
-    [MMB_NEXT_FORWARD]   = "ip4-lookup",
+    [MMB_NEXT_FORWARD]   = "ip4-flow-classify",//"ip4-lookup",
     [MMB_NEXT_DROP]   = "error-drop",
   }
 };
@@ -315,7 +305,7 @@ VLIB_REGISTER_NODE(mmb_ip4_in_node) =
 VNET_FEATURE_INIT (mmb_ip4_in_feature, static) = {
   .arc_name = "ip4-unicast",
   .node_name = "mmb-plugin-ip4-in",
-  .runs_before = VNET_FEATURES("ip4-lookup"), 
+  .runs_before = VNET_FEATURES("ip4-flow-classify"),//VNET_FEATURES("ip4-lookup"), 
 };
 
 VLIB_REGISTER_NODE(mmb_ip4_out_node) =

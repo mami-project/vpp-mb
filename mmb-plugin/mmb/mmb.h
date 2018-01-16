@@ -207,7 +207,9 @@ typedef struct {
 
    u32 *sw_if_indexes;
    /* convenience */
+   vlib_main_t * vlib_main;
    vnet_main_t *vnet_main;
+   vnet_classify_main_t *classify_main;
 
    u8 opts_in_rules:1;
 } mmb_main_t;
