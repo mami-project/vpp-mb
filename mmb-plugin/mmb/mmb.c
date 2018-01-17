@@ -200,14 +200,10 @@ static_always_inline void update_flags(mmb_main_t *mm, mmb_rule_t *rules) {
 
 static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
    mmb_classify_main_t *mcm = &mmb_classify_main;
-   vnet_feature_enable_disable("ip4-unicast", "mmb-plugin-ip4-in", 
+   vnet_feature_enable_disable("ip4-unicast", "ip4-mmb-rewrite", 
                                sw_if_index, enable_disable, 0, 0);
-   vnet_feature_enable_disable("ip6-unicast", "mmb-plugin-ip6-in", 
+   vnet_feature_enable_disable("ip6-unicast", "ip6-mmb-rewrite", 
                                sw_if_index, enable_disable, 0, 0);
-   /*vnet_feature_enable_disable("ip4-output", "mmb-plugin-ip4-out", 
-                               sw_if_index, enable_disable, 0, 0);
-   vnet_feature_enable_disable("ip6-output", "mmb-plugin-ip6-out", 
-                               sw_if_index, enable_disable, 0, 0);*/
 
   if (enable_disable) {
      u32 ti;

@@ -38,10 +38,9 @@ typedef struct {
   u32 * classify_table_index_by_sw_if_index [MMB_CLASSIFY_N_TABLES];
 
   /* Convenience variables */
-  vlib_main_t * vlib_main;
-  vnet_main_t * vnet_main;
+  //vlib_main_t * vlib_main;
+  //vnet_main_t * vnet_main;
   vnet_classify_main_t * vnet_classify_main;
-  //vnet_config_main_t * vnet_config_main[MMB_CLASSIFY_N_TABLES];
 } mmb_classify_main_t;
 
 mmb_classify_main_t mmb_classify_main;

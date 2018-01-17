@@ -217,7 +217,7 @@ typedef struct {
 
 mmb_main_t mmb_main;
 
-extern vlib_node_registration_t mmb_node;
+//extern vlib_node_registration_t mmb_node;
 
 extern const u8 fields_len;
 extern const char* fields[];

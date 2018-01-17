@@ -123,20 +123,19 @@ static u8 * format_mmb_trace(u8 * s, va_list * args)
   return s;
 }
 
-static_always_inline u32 get_sw_if_index(vlib_buffer_t *b, int is_output) {
-  return vnet_buffer(b)->sw_if_index[is_output];
+static_always_inline u32 get_sw_if_index(vlib_buffer_t *b) {
+  return vnet_buffer(b)->sw_if_index[VLIB_RX];
 }
 
-static_always_inline void *get_ip_header(vlib_buffer_t *b, int is_output) {
+static_always_inline void *get_ip_header(vlib_buffer_t *b) {
   u8 *p = vlib_buffer_get_current(b);
-  if (is_output)
-    p += ethernet_buffer_header_size(b);
+  p += ethernet_buffer_header_size(b);
   return p;
 }
 
 static uword
 mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
-            vlib_frame_t *frame, int is_ip6, int is_output,
+            vlib_frame_t *frame, int is_ip6,
             vlib_node_registration_t *mmb_node) {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
@@ -149,7 +148,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
 
-  u32 sw_if_index = get_sw_if_index(vlib_get_buffer(vm, from[0]), is_output);
+  u32 sw_if_index = get_sw_if_index(vlib_get_buffer(vm, from[0]));
 
   while (n_left_from > 0) { // Outter loop
 
@@ -174,7 +173,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       /* get vlib buffer */
       b0 = vlib_get_buffer (vm, bi0);
-      ip0 = get_ip_header(b0, is_output);
+      ip0 = get_ip_header(b0);
 
       u32 i, applied_rule_index = ~0;
       //vnet_buffer(b)->l2_classify.opaque_index;
@@ -256,45 +255,24 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   return frame->n_vectors;
 }
 
-vlib_node_registration_t mmb_ip4_in_node;
+vlib_node_registration_t ip4_mmb_rewrite_node;
 static uword
-mmb_node_ip4_in_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
+mmb_node_ip4_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
-  return mmb_node_fn(vm, node, frame, 0, 0, &mmb_ip4_in_node);
+  return mmb_node_fn(vm, node, frame, 0, &ip4_mmb_rewrite_node);
 }
 
-vlib_node_registration_t mmb_ip4_out_node;
+vlib_node_registration_t ip6_mmb_rewrite_node;
 static uword
-mmb_node_ip4_out_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
+mmb_node_ip6_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
-  return mmb_node_fn(vm, node, frame, 0, 1, &mmb_ip4_out_node);
+  return mmb_node_fn(vm, node, frame, 1, &ip6_mmb_rewrite_node);
 }
 
-vlib_node_registration_t mmb_ip6_in_node;
-static uword
-mmb_node_ip6_in_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
-                    vlib_frame_t *frame) {
-  return mmb_node_fn(vm, node, frame, 1, 0, &mmb_ip6_in_node);
-}
-
-vlib_node_registration_t mmb_ip6_out_node;
-static uword
-mmb_node_ip6_out_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
-                    vlib_frame_t *frame) {
-  return mmb_node_fn(vm, node, frame, 1, 1, &mmb_ip6_out_node);
-}
-
-/*VNET_FEATURE_ARC_INIT (ip4_mmb, static) =
+VLIB_REGISTER_NODE(ip4_mmb_rewrite_node) =
 {
-  .arc_name = "ip4-mmb",
-  .start_nodes = VNET_FEATURES ("ip4-lookup"),
-  .arc_index_ptr = &mmb_main.feature_arc_index
-};*/
-
-VLIB_REGISTER_NODE(mmb_ip4_in_node) =
-{
-  .function = mmb_node_ip4_in_fn,
-  .name = "mmb-plugin-ip4-in",
+  .function = mmb_node_ip4_rewrite_fn,
+  .name = "ip4-mmb-rewrite",
   .vector_size = sizeof (u32),
   .format_trace = format_mmb_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
@@ -307,43 +285,18 @@ VLIB_REGISTER_NODE(mmb_ip4_in_node) =
   }
 };
 
-VLIB_NODE_FUNCTION_MULTIARCH(mmb_ip4_in_node, mmb_node_ip4_in_fn);
+VLIB_NODE_FUNCTION_MULTIARCH(ip4_mmb_rewrite_node, mmb_node_ip4_rewrite_fn);
 
-VNET_FEATURE_INIT (mmb_ip4_in_feature, static) = {
+VNET_FEATURE_INIT (ip4_mmb_rewrite_feature, static) = {
   .arc_name = "ip4-unicast",
-  .node_name = "mmb-plugin-ip4-in",
+  .node_name = "ip4-mmb-rewrite",
   .runs_before = VNET_FEATURES("ip4-lookup"),
 };
 
-VLIB_REGISTER_NODE(mmb_ip4_out_node) =
+VLIB_REGISTER_NODE(ip6_mmb_rewrite_node) =
 {
-  .function = mmb_node_ip4_out_fn,
-  .name = "mmb-plugin-ip4-out",
-  .vector_size = sizeof(u32),
-  .format_trace = format_mmb_trace,
-  .type = VLIB_NODE_TYPE_INTERNAL,
-  .n_errors = ARRAY_LEN(mmb_error_strings),
-  .error_strings = mmb_error_strings,
-
-  .n_next_nodes = MMB_N_NEXT,
-  .next_nodes = {
-    [MMB_NEXT_FORWARD]   = "interface-output",
-  }
-};
-
-VLIB_NODE_FUNCTION_MULTIARCH(mmb_ip4_out_node, mmb_node_ip4_out_fn);
-
-VNET_FEATURE_INIT (mmb_ip4_out_feature, static) = {
-  .arc_name = "ip4-output",
-  .node_name = "mmb-plugin-ip4-out",
-  .runs_before = VNET_FEATURES("interface-output"), 
-};
-
-
-VLIB_REGISTER_NODE(mmb_ip6_in_node) =
-{
-  .function = mmb_node_ip6_in_fn,
-  .name = "mmb-plugin-ip6-in",
+  .function = mmb_node_ip6_rewrite_fn,
+  .name = "ip6-mmb-rewrite",
   .vector_size = sizeof(u32),
   .format_trace = format_mmb_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
@@ -356,35 +309,21 @@ VLIB_REGISTER_NODE(mmb_ip6_in_node) =
   }
 };
 
-VLIB_NODE_FUNCTION_MULTIARCH(mmb_ip6_in_node, mmb_node_ip6_in_fn);
+VLIB_NODE_FUNCTION_MULTIARCH(ip6_mmb_rewrite_node, mmb_node_ip6_rewrite_fn);
 
-VNET_FEATURE_INIT (mmb_ip6_in_feature, static) = {
+VNET_FEATURE_INIT (ip6_mmb_rewrite_feature, static) = {
   .arc_name = "ip6-unicast",
-  .node_name = "mmb-plugin-ip6-in",
+  .node_name = "ip6-mmb-rewrite",
   .runs_before = VNET_FEATURES("ip6-lookup"), 
 };
 
-VLIB_REGISTER_NODE(mmb_ip6_out_node) =
+static clib_error_t *
+mmb_rewrite_init (vlib_main_t *vm)
 {
-  .function = mmb_node_ip6_out_fn,
-  .name = "mmb-plugin-ip6-out",
-  .vector_size = sizeof(u32),
-  .format_trace = format_mmb_trace,
-  .type = VLIB_NODE_TYPE_INTERNAL,
-  .n_errors = ARRAY_LEN(mmb_error_strings),
-  .error_strings = mmb_error_strings,
 
-  .n_next_nodes = MMB_N_NEXT,
-  .next_nodes = {
-    [MMB_NEXT_FORWARD]   = "interface-output",
-  }
-};
+  mmb_main.feature_arc_index = vlib_node_add_next(vm, ip4_mmb_rewrite_node.index, ip4_rewrite_node.index);
 
-VLIB_NODE_FUNCTION_MULTIARCH(mmb_ip6_out_node, mmb_node_ip6_out_fn);
+  return 0;
+}
 
-VNET_FEATURE_INIT (mmb_ip6_out_feature, static) = {
-  .arc_name = "ip6-output",
-  .node_name = "mmb-plugin-ip6-out",
-  .runs_before = VNET_FEATURES("interface-output"), 
-};
-
+VLIB_INIT_FUNCTION(mmb_rewrite_init);
