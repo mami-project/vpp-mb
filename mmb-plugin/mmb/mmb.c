@@ -27,10 +27,6 @@
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 
-
-#include <vnet/l2/l2_classify.h>
-#include <vnet/classify/flow_classify.h>
-
 /* define message IDs */
 #include <mmb/mmb_msg_enum.h>
 
@@ -59,6 +55,8 @@
 #include <vlibapi/api_helper_macros.h>
 
 #include <ctype.h>
+
+#include "mmb_classify.h"
 
 /* List of message types that this plugin understands */
 #define foreach_mmb_plugin_api_msg
@@ -201,15 +199,36 @@ static_always_inline void update_flags(mmb_main_t *mm, mmb_rule_t *rules) {
 } 
 
 static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
+   mmb_classify_main_t *mcm = &mmb_classify_main;
    vnet_feature_enable_disable("ip4-unicast", "mmb-plugin-ip4-in", 
                                sw_if_index, enable_disable, 0, 0);
    vnet_feature_enable_disable("ip6-unicast", "mmb-plugin-ip6-in", 
                                sw_if_index, enable_disable, 0, 0);
-   vnet_feature_enable_disable("ip4-output", "mmb-plugin-ip4-out", 
+   /*vnet_feature_enable_disable("ip4-output", "mmb-plugin-ip4-out", 
                                sw_if_index, enable_disable, 0, 0);
    vnet_feature_enable_disable("ip6-output", "mmb-plugin-ip6-out", 
-                               sw_if_index, enable_disable, 0, 0);
-   vnet_l2_input_classify_enable_disable (sw_if_index, enable_disable);
+                               sw_if_index, enable_disable, 0, 0);*/
+
+  if (enable_disable) {
+     u32 ti;
+     for (ti = 0; ti < MMB_CLASSIFY_N_TABLES; ti++)
+         vec_validate_init_empty
+           (mcm->classify_table_index_by_sw_if_index[ti], sw_if_index, ~0);
+   }
+
+   vnet_feature_enable_disable("ip4-unicast", "ip4-mmb-classify",
+		      sw_if_index, enable_disable, 0, 0);
+   vnet_feature_enable_disable("ip6-unicast", "ip6-mmb-classify",
+		      sw_if_index, enable_disable, 0, 0);
+}
+
+static_always_inline void mmb_enable_disable_all(int enable_disable) {
+   mmb_main_t *mm = &mmb_main;
+   u32 *sw_if_index;
+   vec_foreach(sw_if_index, mm->sw_if_indexes) {
+      mmb_enable_disable(*sw_if_index, enable_disable);
+   }
+   mm->enabled = enable_disable;
 }
 
 clib_error_t* mmb_enable_disable_fn(vlib_main_t * vm,
@@ -259,7 +278,8 @@ enable_command_fn(vlib_main_t * vm,
    }
 
    vec_add1(mm->sw_if_indexes, sw_if_index);
-   mmb_enable_disable(sw_if_index, 1);
+   if (mm->enabled)
+      mmb_enable_disable(sw_if_index, 1);
    vl_print(vm, "mmb enabled on %U\n", format_vnet_sw_if_index_name, 
              mm->vnet_main, sw_if_index);
 
@@ -292,7 +312,7 @@ disable_command_fn(vlib_main_t * vm,
               mm->vnet_main, sw_if_index);
 
    vec_delete(mm->sw_if_indexes, 1, index);
-   mmb_enable_disable(sw_if_index, 0);
+   mmb_enable_disable(sw_if_index, 0); /* TODO: del related tables */
    vl_print(vm, "mmb disabled on %U\n", format_vnet_sw_if_index_name, 
           mm->vnet_main, sw_if_index);
 
@@ -332,6 +352,9 @@ flush_rules_command_fn(vlib_main_t * vm,
   if (vec_len(rules))
     vec_delete(rules, vec_len(rules), 0);
 
+   if (mm->enabled) 
+      mmb_enable_disable_all(0);
+
   reset_flags(mm);
 
   return 0;
@@ -368,6 +391,9 @@ insert_rule_command_fn(vlib_main_t * vm,
       if (rule_has_tcp_options(&rule))
          mm->opts_in_rules = 1;
 
+      if (!mm->enabled) 
+         mmb_enable_disable_all(1);
+
       vl_print(vm, "Inserted rule at index %u: %U", 
                rule_index+1, mmb_format_rule, &rule);
       return 0;
@@ -390,10 +416,85 @@ static uword build_mask(mmb_rule_t *rule) {
    return 1;
 }
 
+/*static void
+mmb_classify_feature_enable (vlib_main_t *vnm,
+                                   mmb_classify_main_t *mcm,
+                                   u32 sw_if_index,
+                                   mmb_classify_table_id_t tid,
+                                   int feature_enable)
+{
+  vnet_feature_config_main_t *vfcm;
+  u8 arc;
+
+  if (tid == MMB_CLASSIFY_TABLE_IP4)
+    {
+      vnet_feature_enable_disable ("ip4-unicast", "ip4-mmb-classify",
+				   sw_if_index, feature_enable, 0, 0);
+     // arc = vnet_get_feature_arc_index ("ip4-unicast");
+    }
+  else
+    {
+      vnet_feature_enable_disable ("ip6-unicast", "ip6-mmb-classify",
+				   sw_if_index, feature_enable, 0, 0);
+      //arc = vnet_get_feature_arc_index ("ip6-unicast");
+    }
+
+  //vfcm = vnet_get_feature_arc_config_main (arc);
+  //mcm->vnet_config_main[tid] = &vfcm->config_main;
+}*/
+
+static int vnet_set_mmb_classify_intfc (vlib_main_t * vm, u32 sw_if_index,
+                                  u32 ip4_table_index, u32 ip6_table_index,
+                                  u32 is_add) {
+
+  mmb_classify_main_t *mcm = &mmb_classify_main;
+  vnet_classify_main_t *vcm = mcm->vnet_classify_main;
+  u32 pct[MMB_CLASSIFY_N_TABLES] = {ip4_table_index, ip6_table_index};
+  u32 ti;
+
+  /* Assume that we've validated sw_if_index in the API layer */
+
+  for (ti = 0; ti < MMB_CLASSIFY_N_TABLES; ti++)
+    {
+      if (pct[ti] == ~0)
+        continue;
+
+      if (pool_is_free_index (vcm->tables, pct[ti]))
+        return VNET_API_ERROR_NO_SUCH_TABLE;
+
+      vec_validate_init_empty
+        (mcm->classify_table_index_by_sw_if_index[ti], sw_if_index, ~0);
+
+      /* Reject any DEL operation with wrong sw_if_index */
+      if (!is_add &&
+          (pct[ti] != mcm->classify_table_index_by_sw_if_index[ti][sw_if_index]))
+        {
+          clib_warning ("Non-existent intf_idx=%d with table_index=%d for delete",
+                        sw_if_index, pct[ti]);
+          return VNET_API_ERROR_NO_SUCH_TABLE;
+        }
+      /* TODO add tables */
+      /* Return ok on ADD operaton if feature is already enabled */
+      if (is_add &&
+          mcm->classify_table_index_by_sw_if_index[ti][sw_if_index] != ~0)
+          return 0;
+
+      //mmb_classify_feature_enable(vm, mcm, sw_if_index, ti, is_add);
+
+      if (is_add)
+        mcm->classify_table_index_by_sw_if_index[ti][sw_if_index] = pct[ti];
+      else
+        mcm->classify_table_index_by_sw_if_index[ti][sw_if_index] = ~0;
+    }
+
+
+  return 0;
+}
+
 static u32 add_table(mmb_rule_t *rule, char *mask_str) {
 
   u32 table_index = ~0;
-  int rv =0;
+  //int rv =0;
   u8 *mask = 0;
   u32 skip, match; 
   unformat_input_t mask_input;
@@ -427,11 +528,8 @@ static u32 add_table(mmb_rule_t *rule, char *mask_str) {
   for (i=0;i<vec_len(mmb_main.sw_if_indexes);i++) {
      sw_if_index = mmb_main.sw_if_indexes[i];
      vl_print(mmb_main.vlib_main, "if:%u intfc:%u",  sw_if_index,
-
-              vnet_set_flow_classify_intfc (mmb_main.vlib_main, sw_if_index,
+              vnet_set_mmb_classify_intfc (mmb_main.vlib_main, sw_if_index,
                                  table_index, ~0, 1)
-   /* vnet_set_ip4_classify_intfc (mmb_main.vlib_main, sw_if_index,
-				 table_index)*/
               );
   }
 
@@ -475,7 +573,7 @@ int vnet_classify_add_del_session (vnet_classify_main_t * cm,
    vec_add1(data, 0);
    vec_add1(data, 0);
    vec_add1(data, 0);
-   vec_add1(data, 5);
+   vec_add1(data, 4);
    
    uword rv = vnet_classify_add_del_session (mmb_main.classify_main, 
                                        table_index, 
@@ -508,6 +606,9 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   /* flags */
   if (rule_has_tcp_options(&rule))
      mm->opts_in_rules = 1;
+
+   if (!mm->enabled) 
+      mmb_enable_disable_all(1);
   
   vl_print(vm, "Added rule: %U", mmb_format_rule, &rule);
   return 0;
@@ -525,7 +626,7 @@ clib_error_t *parse_rule(unformat_input_t * input,
     return error;
 
   u32 table_index0 = add_table(rule, "l3 ip4 tos");
-  u32 table_index1 = add_table(rule, "l3 ip4 src l4 tcp dst");
+  //u32 table_index1 = add_table(rule, "l3 ip4 src l4 tcp dst");
   new_session(rule, table_index0);
   
   return 0;
@@ -552,6 +653,9 @@ del_rule_command_fn(vlib_main_t *vm,
 
             /* flags */
             update_flags(mm, rules);
+
+            if (mm->enabled && vec_len(rules) == 0) 
+               mmb_enable_disable_all(0);
 
             return 0;
          } 

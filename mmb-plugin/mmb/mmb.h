@@ -204,7 +204,7 @@ typedef struct {
 
    mmb_rule_t *rules;  /*! Rules vector, per if, per dir */
    
-
+   u8 feature_arc_index;
    u32 *sw_if_indexes;
    /* convenience */
    vlib_main_t * vlib_main;
@@ -212,6 +212,7 @@ typedef struct {
    vnet_classify_main_t *classify_main;
 
    u8 opts_in_rules:1;
+   u8 enabled:1;
 } mmb_main_t;
 
 mmb_main_t mmb_main;

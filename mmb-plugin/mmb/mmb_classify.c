@@ -21,6 +21,7 @@
 #include <vnet/classify/vnet_classify.h>
 
 #include "mmb_classify.h"
+#include "mmb.h"
 
 typedef struct {
   u32 sw_if_index;
@@ -327,7 +328,7 @@ VNET_FEATURE_INIT (ip4_mmb_classify_feature, static) =
 {
   .arc_name = "ip4-unicast",
   .node_name = "ip4-mmb-classify",
-  .runs_before = VNET_FEATURES ("mmb-plugin-ip4-in"),//VNET_FEATURES ("ip4-lookup"),
+  .runs_before = VNET_FEATURES ("mmb-plugin-ip4-in"),
 };
 
 static uword

@@ -17,15 +17,15 @@
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
 #include <vnet/classify/vnet_classify.h>
-#include <vnet/classify/input_acl.h>
 
 #include <mmb/mmb.h>
-#include <mmb/node.h>
 
 
 #define foreach_mmb_next_node \
-  _(FORWARD, "Forward")         \
-  _(DROP, "Drop")
+  _(FORWARD, "Forward")    
+
+/*  \
+  _(SLOW_PATH, "Slow Path")*/
 
 #define foreach_mmb_error \
 _(DONE, "MMB packets processed")
@@ -49,11 +49,10 @@ typedef struct {
   ip4_header_t *ip;
 } mmb_trace_t;
 
-
-
 typedef enum {
-  MMB_NEXT_DROP,
-  MMB_NEXT_FORWARD,
+#define _(sym,str) MMB_NEXT_##sym,
+  foreach_mmb_next_node
+#undef _
   MMB_N_NEXT,
 } mmb_next_t;
 
@@ -285,6 +284,13 @@ mmb_node_ip6_out_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   return mmb_node_fn(vm, node, frame, 1, 1, &mmb_ip6_out_node);
 }
 
+/*VNET_FEATURE_ARC_INIT (ip4_mmb, static) =
+{
+  .arc_name = "ip4-mmb",
+  .start_nodes = VNET_FEATURES ("ip4-lookup"),
+  .arc_index_ptr = &mmb_main.feature_arc_index
+};*/
+
 VLIB_REGISTER_NODE(mmb_ip4_in_node) =
 {
   .function = mmb_node_ip4_in_fn,
@@ -297,15 +303,16 @@ VLIB_REGISTER_NODE(mmb_ip4_in_node) =
 
   .n_next_nodes = MMB_N_NEXT,
   .next_nodes = {
-    [MMB_NEXT_FORWARD]   = "ip4-flow-classify",//"ip4-lookup",
-    [MMB_NEXT_DROP]   = "error-drop",
+    [MMB_NEXT_FORWARD]   = "ip4-lookup",
   }
 };
+
+VLIB_NODE_FUNCTION_MULTIARCH(mmb_ip4_in_node, mmb_node_ip4_in_fn);
 
 VNET_FEATURE_INIT (mmb_ip4_in_feature, static) = {
   .arc_name = "ip4-unicast",
   .node_name = "mmb-plugin-ip4-in",
-  .runs_before = VNET_FEATURES("ip4-flow-classify"),//VNET_FEATURES("ip4-lookup"), 
+  .runs_before = VNET_FEATURES("ip4-lookup"),
 };
 
 VLIB_REGISTER_NODE(mmb_ip4_out_node) =
@@ -321,9 +328,10 @@ VLIB_REGISTER_NODE(mmb_ip4_out_node) =
   .n_next_nodes = MMB_N_NEXT,
   .next_nodes = {
     [MMB_NEXT_FORWARD]   = "interface-output",
-    [MMB_NEXT_DROP]   = "error-drop",
   }
 };
+
+VLIB_NODE_FUNCTION_MULTIARCH(mmb_ip4_out_node, mmb_node_ip4_out_fn);
 
 VNET_FEATURE_INIT (mmb_ip4_out_feature, static) = {
   .arc_name = "ip4-output",
@@ -345,9 +353,10 @@ VLIB_REGISTER_NODE(mmb_ip6_in_node) =
   .n_next_nodes = MMB_N_NEXT,
   .next_nodes = {
     [MMB_NEXT_FORWARD]   = "ip6-lookup",
-    [MMB_NEXT_DROP]   = "error-drop",
   }
 };
+
+VLIB_NODE_FUNCTION_MULTIARCH(mmb_ip6_in_node, mmb_node_ip6_in_fn);
 
 VNET_FEATURE_INIT (mmb_ip6_in_feature, static) = {
   .arc_name = "ip6-unicast",
@@ -368,16 +377,14 @@ VLIB_REGISTER_NODE(mmb_ip6_out_node) =
   .n_next_nodes = MMB_N_NEXT,
   .next_nodes = {
     [MMB_NEXT_FORWARD]   = "interface-output",
-    [MMB_NEXT_DROP] = "error-drop",
   }
 };
+
+VLIB_NODE_FUNCTION_MULTIARCH(mmb_ip6_out_node, mmb_node_ip6_out_fn);
 
 VNET_FEATURE_INIT (mmb_ip6_out_feature, static) = {
   .arc_name = "ip6-output",
   .node_name = "mmb-plugin-ip6-out",
   .runs_before = VNET_FEATURES("interface-output"), 
 };
-
-
-//VLIB_NODE_FUNCTION_MULTIARCH(mmb_node, mmb_node_fn);
 
