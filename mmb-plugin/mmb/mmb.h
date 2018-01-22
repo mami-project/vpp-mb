@@ -176,6 +176,18 @@ typedef struct {
    u8 reverse; /*! whitelist (strip only) */
 } mmb_target_t;
 
+
+typedef struct {
+  /* match */
+  u8 *mask;
+  u32 skip;
+  u32 match;
+  u8 *key;
+  u32 table_index;
+  
+  
+} mmb_table_t;
+
 typedef struct {
   u16 l3;
   u8 l4;
@@ -189,6 +201,18 @@ typedef struct {
   mmb_transport_option_t *opt_adds;
 
   uword match_count;
+
+  u8 *mmask;
+  u32 mskip; 
+  u32 mmatch;
+  u8 *mkey;
+  u32 mtable_index;
+
+  u8 *tmask; /* XXX: in dedicated struct for efficient access in node */
+  u32 tskip;
+  u32 tmatch;
+  u8 *tkey;
+
   u8 has_strips:1;
   u8 whitelist:1;
   u8 has_adds:1;

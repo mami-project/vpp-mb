@@ -406,7 +406,18 @@ insert_rule_command_fn(vlib_main_t * vm,
 
       if ( (error = parse_rule(input, &rule)) )
          return error;
+      /* XXX: rebuild classifier: if previous or next table has same mask, 
+         than this rule,
+         add new session to it, 
+         else:
+             - if previous and next table have different mask or no previous or no next
+               new table, new session, rechain tables
 
+             - if previous and next have same mask, but different than this rule,
+               PICK ONE: - error message, cannot insert in the middle of a table
+                         - split table
+         
+        */
       vec_insert_elt(mm->rules,&rule,rule_index);
 
       /* flags */
@@ -506,7 +517,6 @@ static void ip6_header_host_to_net(ip6_header_t *ip) {
    ip->ip_version_traffic_class_and_flow_label = 
      clib_host_to_net_u32(ip->ip_version_traffic_class_and_flow_label);
    ip->payload_length = clib_host_to_net_u16(ip->payload_length);
-
    ip->src_address.as_u64[0] = clib_host_to_net_u64(ip->src_address.as_u64[0]); 
    ip->src_address.as_u64[1] = clib_host_to_net_u64(ip->src_address.as_u64[1]); 
    ip->dst_address.as_u64[0] = clib_host_to_net_u64(ip->dst_address.as_u64[0]); 
@@ -727,6 +737,11 @@ static u8 mmb_ip4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key) {
 #ifdef MMB_MATCH_IP_VERSION
   ip_mask->ip_version_and_header_length = 0xf0;
   ip_key->ip_version_and_header_length = 0x40;
+#elif
+  if (vec_len(rule->matches) == 0) {
+     ip_mask->ip_version_and_header_length = 0xf0;
+     ip_key->ip_version_and_header_length = 0x40;  
+  }
 #endif
 
   vec_foreach(match, rule->matches) {
@@ -854,6 +869,11 @@ static u8 mmb_ip6_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key) {
 #ifdef MMB_MATCH_IP_VERSION
   ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
   ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
+#elif
+  if (vec_len(rule->matches) == 0) {
+  ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
+  ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
+  }
 #endif
  
   vec_foreach(match, rule->matches) {
@@ -919,9 +939,7 @@ static u8 mmb_ip6_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key) {
  * Compute mask, key, skip and match from a rule.
  * 
  */
-static u8 mmb_mask_and_key(mmb_rule_t *rule, u8 **maskp, u32 *skipp, 
-                           u32 *matchp, u8 **keyp) {
-
+static u8 mmb_mask_and_key(mmb_rule_t *rule) {
   u32 skip = 0;
   u32 match = 0;
   u8 *mask = 0;
@@ -959,125 +977,109 @@ static u8 mmb_mask_and_key(mmb_rule_t *rule, u8 **maskp, u32 *skipp,
      clib_warning ("BUG: match 0");
    _vec_len(mask) = match * sizeof(u32x4);
    _vec_len(key) = match * sizeof(u32x4);
-
-  /* Revert mask, XXX */
   
-  *maskp = mask;
-  *skipp = skip;
-  *matchp = match;
-  *keyp = key;
+  rule->mmask = mask;
+  rule->mskip = skip;
+  rule->mmatch = match;
+  rule->mkey = key;
 
-  return (match > 0);
+  /*vl_print(mmb_main.vlib_main,"skip:%u match:%u lenmask:%u lenkey:%u",skip,match,vec_len(mask),vec_len(key));
+  vl_print(mmb_main.vlib_main,"MASK");
+  for (i=0;i<vec_len(mask);i++) 
+     vl_print(mmb_main.vlib_main,"%02X",mask[i]);
+  vl_print(mmb_main.vlib_main,"KEY");
+  for (i=0;i<vec_len(key);i++) 
+     vl_print(mmb_main.vlib_main,"%02X",key[i]);*/
+
+  return 1;
 }
 
-static u32 add_table(mmb_rule_t *rule, char *mask_str) {
-  
-  u32 table_index = ~0;
-  //int rv =0;
-  u8 *mask = 0, *key = 0;
-  u32 skip, match; 
+static int
+mmb_classify_add_del_table_tiny (u8 *mask, u32 skip, u32 match,
+			    u32 next_table_index, u32 miss_next_index, u32 *table_index,
+			    int is_add)
+{
+  vnet_classify_main_t *cm = mmb_main.classify_main;
+  u32 nbuckets = 1;
+  u32 memory_size = 2 << 13;
+  u32 current_data_flag = 0;
+  int current_data_offset = 0;
+
+  void *oldheap = clib_mem_set_heap (cm->vlib_main->heap_base);
+  int ret = vnet_classify_add_del_table (cm, mask, nbuckets,
+				      memory_size, skip, match,
+				      next_table_index, miss_next_index,
+				      table_index, current_data_flag,
+				      current_data_offset, is_add,
+				      1 /* delete_chain */);
+  clib_mem_set_heap (oldheap);
+  return ret;
+}
+
+static int
+mmb_classify_add_del_table_small (u8 *mask, u32 skip, u32 match,
+			    u32 next_table_index, u32 miss_next_index, u32 *table_index,
+			    int is_add)
+{
+  vnet_classify_main_t *cm = mmb_main.classify_main;
   u32 nbuckets = 32;
-  u32 memory_size = 2<<20;
-  int i;
+  u32 memory_size = 2 << 20;
+  u32 current_data_flag = 0;
+  int current_data_offset = 0;
 
-  if (mmb_mask_and_key(rule, &mask, &skip, &match, &key)) {
+  void *oldheap = clib_mem_set_heap (cm->vlib_main->heap_base);
+  int ret = vnet_classify_add_del_table (cm, mask, nbuckets,
+				      memory_size, skip, match,
+				      next_table_index, miss_next_index,
+				      table_index, current_data_flag,
+				      current_data_offset, is_add,
+				      1 /* delete_chain */);
+  clib_mem_set_heap (oldheap);
+  return ret;
+}
 
-     vl_print(mmb_main.vlib_main,"skip:%u match:%u lenmask:%u lenkey:%u",skip,match,vec_len(mask),vec_len(key));
-     vl_print(mmb_main.vlib_main,"MASK");
-     for (i=0;i<vec_len(mask);i++) 
-        vl_print(mmb_main.vlib_main,"%02X",mask[i]);
-     vl_print(mmb_main.vlib_main,"KEY");
-     for (i=0;i<vec_len(key);i++) 
-        vl_print(mmb_main.vlib_main,"%02X",key[i]);
+static u8 add_to_classifier(mmb_rule_t *rule) {
 
-  }
-  
-  return table_index;
-  vnet_classify_add_del_table(mmb_main.classify_main,
-                                    mask, 
-                                    nbuckets, /* nbuckets, sessions per table */
-                                    memory_size, /* memory_size */
-                                    skip,
-                                    match, 
-                                    ~0, /* next_table_index */
-                                    IP_LOOKUP_NEXT_REWRITE, /* miss_next_index */
-                                    &table_index,  /* */
-                                    0, /* */
-                                    0, /* */
-                                    1, /* add */
-                                    0); /* del chain of table */
+  mmb_mask_and_key(rule);
 
-   vl_print(mmb_main.vlib_main,"table_index:%u skip:%u match:%u\n", table_index, skip, match);
   /**
     * if table does exists, create it and add session
     * if table exists, check size 
     *                  if size too small, enlarge
     *                  if size ok, add session, 
     */ 
+  mmb_classify_add_del_table_small(rule->mmask, rule->mskip, rule->mmatch,
+              ~0, IP_LOOKUP_NEXT_REWRITE,
+			    &rule->mtable_index, /* next_table_index */
+			    1);
+
+
+  vnet_classify_add_del_session (mmb_main.classify_main, 
+                                 rule->mtable_index, 
+                                 rule->mkey, 
+                                 ~0, /* should be our node */
+                                 0 /* opaque_index */, 
+                                 0 /* advance */, 
+                                 0 /* action*/, 
+                                 0 /* metadata */,
+                                 1 /* is_add */);
+
+  //return 1;
+  
 
 
   u32 sw_if_index;
+  int i;
   for (i=0;i<vec_len(mmb_main.sw_if_indexes);i++) {
      sw_if_index = mmb_main.sw_if_indexes[i];
      vl_print(mmb_main.vlib_main, "if:%u intfc:%u",  sw_if_index,
               vnet_set_mmb_classify_intfc (mmb_main.vlib_main, sw_if_index,
-                                 table_index, ~0, 1)
+                                 rule->mtable_index, ~0, 1)
               );
   }
 
 
-   return table_index;
-}
-
-static uword new_session(mmb_rule_t *rule, u32 table_index) {
-   /* todo add to state*/
-  /*
-      vnet_classify_add_del_session (cm, mvec[match_type_index].table_index,
-				     mask, a->rules[i].is_permit ? ~0 : 0, i,
-
-				     0, action, metadata, 1);
-
-int vnet_classify_add_del_session (vnet_classify_main_t * cm, 
-                                   u32 table_index, 
-                                   u8 *match, 
-                                   u32 hit_next_index,
-                                   u32 opaque_index, 
-
-                                   i32 advance,
-                                   u8 action,
-                                   u32 metadata,
-                                   int is_add);
-
-   */
-   u8 *data = 0;
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 0);
-   vec_add1(data, 4);
-   
-   uword rv = vnet_classify_add_del_session (mmb_main.classify_main, 
-                                       table_index, 
-                                       data, 
-                                       ~0, /* should be our node */
-                                       table_index+10 /* opaque_index */, 
-                                       0 /* advance */, 
-                                       0 /* action*/, 
-                                       0 /* metadata */,
-                                       1 /* is_add */);
-      
-   return rv;
+   return 1;
 }
 
 static clib_error_t *
@@ -1112,15 +1114,13 @@ clib_error_t *parse_rule(unformat_input_t * input,
     rule->last_match = 1;
   if (!unformat(input, "%U", mmb_unformat_rule, rule))
     return clib_error_return(0, "Invalid rule");
-
+  
   clib_error_t *error;
   if ( (error = validate_rule(rule)) )
     return error;
 
-  u32 table_index0 = add_table(rule, "l3 ip4 tos");
-  //u32 table_index1 = add_table(rule, "l3 ip4 src l4 tcp dst");
-  new_session(rule, table_index0);
-  
+  add_to_classifier(rule);
+
   return 0;
 }
 
@@ -1149,6 +1149,10 @@ del_rule_command_fn(vlib_main_t *vm,
             if (mm->enabled && vec_len(rules) == 0) 
                mmb_enable_disable_all(0);
 
+            /* XXX: rebuild classifier: if table contains more than 1 session, del session,
+                if table contains 1 session, del sess, del table, update table linked list
+               
+              */
             return 0;
          } 
 
@@ -1489,6 +1493,7 @@ clib_error_t *validate_rule(mmb_rule_t *rule) {
 void init_rule(mmb_rule_t *rule) {
   memset(rule, 0, sizeof(mmb_rule_t));
   rule->in = rule->out = ~0;
+  rule->mtable_index = ~0;
   clib_bitmap_alloc(rule->opt_strips, 255);
   clib_bitmap_zero(rule->opt_strips);
 }
