@@ -20,8 +20,8 @@
 #include <vnet/ip/ip.h>
 #include <vnet/classify/vnet_classify.h>
 
-#include "mmb_classify.h"
-#include "mmb.h"
+#include <mmb/mmb_classify.h>
+#include <mmb/mmb.h>
 
 typedef struct {
   u32 sw_if_index;

@@ -20,6 +20,8 @@
 #include <vnet/vnet.h>
 #include <vnet/classify/vnet_classify.h>
 
+#define MMB_CLASSIFY_MAX_MASK_LEN (5*sizeof(u32x4))
+
 typedef enum {
   MMB_CLASSIFY_TABLE_IP4,
   MMB_CLASSIFY_TABLE_IP6,
