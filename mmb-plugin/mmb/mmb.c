@@ -1279,12 +1279,12 @@ validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
 clib_error_t* validate_matches(mmb_rule_t *rule) {
    clib_error_t *error;
    uword index = 0;
-   uword *if_indexes = 0, *if_index;
+   uword *deletions = 0, *deletion;
 
    vec_foreach_index(index, rule->matches) {
      mmb_match_t *match = &rule->matches[index];
      u8 field = match->field, reverse = match->reverse;
-     u8 condition = match->condition, *value = match->value;
+     u8 condition = match->condition;
 
      if ( (error = update_l3(field, &rule->l3))
            || (error = update_l4(field, &rule->l4)) )
@@ -1293,14 +1293,14 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
      switch (field) {
        case MMB_FIELD_ALL:
          /* other fields must be empty, and no other matches */
-         if (condition || vec_len(value) > 0 || reverse
+         if (condition || vec_len(match->value) > 0 || reverse
              || vec_len(rule->matches) > 1)
            return clib_error_return(0, "'all' in a <match> must be used alone");
          break;
 
        case MMB_FIELD_IP4_NON_ECT:case MMB_FIELD_IP4_ECT0:
        case MMB_FIELD_IP4_ECT1:case MMB_FIELD_IP4_CE:
-         if (vec_len(value) > 0)
+         if (vec_len(match->value) > 0)
            return clib_error_return(0, "%s does not take a condition nor a value", 
                                     fields[field_toindex(field)]);
          translate_match_ip4_ecn(match);
@@ -1317,7 +1317,7 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
        case MMB_FIELD_TCP_SYN:case MMB_FIELD_TCP_FIN:
          /* "bit-field" or "!bit-field" means "bit-field == 1" or "bit-field == 0" */
          /* so this does NOT mean "bit-field is (not) present in current packet" */
-         if (vec_len(value) == 0)
+         if (vec_len(match->value) == 0)
            translate_match_bit_flags(match);
          break;
 #define _(a,b,c) case a: {match->field=MMB_FIELD_TCP_OPT; match->opt_kind=c;\
@@ -1331,22 +1331,26 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
        case MMB_FIELD_INTERFACE_OUT:
           if ( (error = validate_if(rule, match, field)) )
             return error;
-          vec_insert_elt_last(if_indexes, &index);
+          vec_insert_elt_last(deletions, &index);
           break;        
        default:
          break;
      }
+   
+     /* remove field if no value */
+     if (vec_len(match->value) == 0 && match->field != MMB_FIELD_TCP_OPT)
+       vec_insert_elt_last(deletions, &index);
    }
 
    /* delete interface fields */
-   vec_foreach(if_index, if_indexes) {
-     mmb_match_t *match = &rule->matches[*if_index];
+   vec_foreach(deletion, deletions) {
+     mmb_match_t *match = &rule->matches[*deletion];
      vec_free(match->value);
      if (vec_len(rule->matches) == 1) {
        match->field = MMB_FIELD_ALL;
        match->condition = 0;
      } else  /* del */  
-       vec_delete(rule->matches, 1, *if_index);
+       vec_delete(rule->matches, 1, *deletion);
    }
 
    return NULL;
