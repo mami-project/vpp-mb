@@ -143,8 +143,7 @@ uword mmb_unformat_ip4_address(unformat_input_t *input, va_list *args) {
  **/
 uword
 mmb_unformat_ip6_address(unformat_input_t *input, va_list *args) {
-  u16 **result = va_arg(*args, u16**);
-  u8 **bytes = (u8**)result; /* is this ok ? */
+  u8 **bytes = va_arg(*args, u8**);
   u16 hex_quads[8];
   uword hex_quad, n_hex_quads, hex_digit, n_hex_digits;
   uword c, n_colon, double_colon_index;
@@ -221,8 +220,9 @@ mmb_unformat_ip6_address(unformat_input_t *input, va_list *args) {
       if (n_hex_quads < ARRAY_LEN(hex_quads))
          return 0;
 
-      for (i = 0; i < ARRAY_LEN(hex_quads); i++)
-         vec_add1(*result, clib_host_to_net_u16(hex_quads[i]));
+      vec_validate(*bytes, 16);
+      for (i = 0; i < ARRAY_LEN(hex_quads); i++) 
+         (*((u16**)bytes))[i] = clib_host_to_net_u16(hex_quads[i]); 
 
       /* parse mask */
       vec_validate(*bytes, 16);
