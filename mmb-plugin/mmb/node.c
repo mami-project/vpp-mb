@@ -155,7 +155,7 @@ static_always_inline u32 get_sw_if_index(vlib_buffer_t *b) {
 
 static_always_inline void *get_ip_header(vlib_buffer_t *b) {
   u8 *p = vlib_buffer_get_current(b);
-  p += ethernet_buffer_header_size(b);
+  //p += ethernet_buffer_header_size(b);
   return p;
 }
 
