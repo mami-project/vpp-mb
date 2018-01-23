@@ -20,6 +20,8 @@
 
 #include <vppinfra/error.h>
 
+#include <mmb/mmb_classify.h>
+
 #define MMB_PLUGIN_BUILD_VER "0.1"
 
 #define MMB_TYPE_FIELD           1
@@ -176,15 +178,19 @@ typedef struct {
    u8 reverse; /*! whitelist (strip only) */
 } mmb_target_t;
 
+#define target_is_drop(rule) \
+    ((vec_len(rule->targets) == 1 && rule->targets[0].keyword == MMB_TARGET_DROP)\
+     ? MMB_CLASSIFY_NEXT_INDEX_DROP : MMB_CLASSIFY_NEXT_INDEX_MATCH)
 
 typedef struct {
-  /* match */
+
+  u32 index;
+  //u32 next_table_index;
+  u32 previous_index;
+
   u8 *mask;
   u32 skip;
   u32 match;
-  u8 *key;
-  u32 table_index;
-  
   
 } mmb_table_t;
 
@@ -202,16 +208,16 @@ typedef struct {
 
   uword match_count;
 
-  u8 *mmask;
-  u32 mskip; 
-  u32 mmatch;
-  u8 *mkey;
-  u32 mtable_index;
+  u8 *classify_mask;
+  u32 classify_skip; 
+  u32 classify_match;
+  u8 *classify_key;
+  u32 classify_table_index;
 
-  u8 *tmask; /* XXX: in dedicated struct for efficient access in node */
-  u32 tskip;
-  u32 tmatch;
-  u8 *tkey;
+  u8 *rewrite_mask; /* XXX: in dedicated struct for efficient access in node */
+  u32 rewrite_skip;
+  u32 rewrite_match;
+  u8 *rewrite_key;
 
   u8 has_strips:1;
   u8 whitelist:1;
@@ -227,7 +233,8 @@ typedef struct {
    u16 msg_id_base;
 
    mmb_rule_t *rules;  /*! Rules vector, per if, per dir */
-   
+   mmb_table_t *tables; /*! Tables vector */   
+
    u8 feature_arc_index;
    u32 *sw_if_indexes;
    /* convenience */
