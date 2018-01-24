@@ -180,6 +180,7 @@ static clib_error_t* mmb_enable_disable_fn(vlib_main_t * vm,
 static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node, 
                                u32 rule_index, int is_add);
 static int mmb_classify_del_table(u32 *table_index, int del_chain);
+static void attach_table_intfc(u32 table_index, int is_add);
 
 static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule)
 {
@@ -373,7 +374,7 @@ flush_rules_command_fn(vlib_main_t * vm,
   if (vec_len(mm->tables) == 0)
      return 0;
 
-  first_table_index = &mm->tables[0].index;
+  first_table_index = mm->tables[0].index;
   attach_table_intfc(first_table_index, 0);
 
   vec_foreach_index(rule_index, rules) {
@@ -383,7 +384,7 @@ flush_rules_command_fn(vlib_main_t * vm,
     free_rule(rule);
   }
 
-  mmb_classify_del_table(first_table_index, 1);
+  mmb_classify_del_table(&first_table_index, 1);
   vec_delete(mm->tables, vec_len(mm->tables), 0);
 
   if (vec_len(rules))
