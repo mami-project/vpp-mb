@@ -435,7 +435,7 @@ insert_rule_command_fn(vlib_main_t * vm,
     "Syntax error: rule number must be an integer greater than 0");
 }
 
-static int vnet_set_mmb_classify_intfc(vlib_main_t * vm, u32 sw_if_index,
+static int vnet_set_mmb_classify_intfc(vlib_main_t *vm, u32 sw_if_index,
                                   u32 ip4_table_index, u32 ip6_table_index,
                                   u32 is_add) {
 
@@ -466,9 +466,9 @@ static int vnet_set_mmb_classify_intfc(vlib_main_t * vm, u32 sw_if_index,
           return VNET_API_ERROR_NO_SUCH_TABLE;
         }
       /* Return ok on ADD operaton if feature is already enabled */
-      if (is_add &&
+      /*if (is_add &&
           mcm->classify_table_index_by_sw_if_index[ti][sw_if_index] != ~0)
-          return 0;
+          return 0;*/
 
       if (is_add)
         mcm->classify_table_index_by_sw_if_index[ti][sw_if_index] = pct[ti];
@@ -949,7 +949,7 @@ static u8 mmb_mask_and_key(mmb_rule_t *rule) {
    if (0);
 #define _(a,b) else if (rule->l3 == ETHERNET_TYPE_##b) {\
                  mmb_##a##_mask_and_key(rule, mask, key);}
-   foreach_mmb_network_proto
+  foreach_mmb_network_proto
 #undef _
   
   /* Scan forward looking for the first significant mask octet */
@@ -968,38 +968,31 @@ static u8 mmb_mask_and_key(mmb_rule_t *rule) {
     u64 *tmp = (u64 *) (mask + (i-sizeof(u32x4)));
       if (*tmp || *(tmp+1))
         break;
-      match--;
-   }
-   if (match == 0)
-     clib_warning ("BUG: match 0");
-   _vec_len(mask) = match * sizeof(u32x4);
-   _vec_len(key) = match * sizeof(u32x4);
+    match--;
+  }
+  if (match == 0)
+    clib_warning ("BUG: match 0");
+  _vec_len(mask) = match * sizeof(u32x4);
+  _vec_len(key) = match * sizeof(u32x4);
   
   rule->classify_mask = mask;
   rule->classify_skip = skip;
   rule->classify_match = match;
   rule->classify_key = key;
 
-  /*vl_print(mmb_main.vlib_main,"skip:%u match:%u lenmask:%u lenkey:%u",skip,match,vec_len(mask),vec_len(key));
-  vl_print(mmb_main.vlib_main,"MASK");
-  for (i=0;i<vec_len(mask);i++) 
-     vl_print(mmb_main.vlib_main,"%02X",mask[i]);
-  vl_print(mmb_main.vlib_main,"KEY");
-  for (i=0;i<vec_len(key);i++) 
-     vl_print(mmb_main.vlib_main,"%02X",key[i]);*/
-
   return 1;
 }
 
 static int
-mmb_classify_add_del_table_tiny (u8 *mask, u32 skip, u32 match,
-			    u32 next_table_index, u32 miss_next_index, u32 *table_index,
-			    int is_add)
+mmb_classify_add_table(u8 *mask, u32 skip, u32 match,
+			              u32 *table_index, u32 next_table_index,
+			               int max_entries)
 {
   mmb_main_t *mm = &mmb_main;
   vnet_classify_main_t *cm = mm->classify_main;
-  u32 nbuckets = 1;
-  u32 memory_size = 2 << 13;
+  u32 nbuckets = max_entries;
+  u32 memory_size = nbuckets++ << 14; /* ??? */
+  u32 miss_next_index = IP_LOOKUP_NEXT_REWRITE;
   u32 current_data_flag = 0;
   int current_data_offset = 0;
 
@@ -1008,31 +1001,23 @@ mmb_classify_add_del_table_tiny (u8 *mask, u32 skip, u32 match,
 				      memory_size, skip, match,
 				      next_table_index, miss_next_index,
 				      table_index, current_data_flag,
-				      current_data_offset, is_add,
-				      1 /* delete_chain */);
+				      current_data_offset, 1, 1);
   clib_mem_set_heap (oldheap);
   return ret;
 }
 
 static int
-mmb_classify_add_del_table_small (u8 *mask, u32 skip, u32 match,
-			    u32 next_table_index, u32 miss_next_index, u32 *table_index,
-			    int is_add)
+mmb_classify_del_table(u32 *table_index, int del_chain)
 {
   mmb_main_t *mm = &mmb_main;
   vnet_classify_main_t *cm = mm->classify_main;
-  u32 nbuckets = 32;
-  u32 memory_size = 2 << 20;
-  u32 current_data_flag = 0;
-  int current_data_offset = 0;
 
   void *oldheap = clib_mem_set_heap (cm->vlib_main->heap_base);
-  int ret = vnet_classify_add_del_table (cm, mask, nbuckets,
-				      memory_size, skip, match,
-				      next_table_index, miss_next_index,
-				      table_index, current_data_flag,
-				      current_data_offset, is_add,
-				      1 /* delete_chain */);
+  int ret = vnet_classify_add_del_table (cm, 0, 0,
+				      0, 0, 0,
+				      0, 0,
+				      table_index, 0,
+				      0, 0, del_chain);
   clib_mem_set_heap (oldheap);
   return ret;
 }
@@ -1051,6 +1036,23 @@ mmb_classify_update_table (u32 *table_index, u32 next_table_index)
   return ret;
 }
 
+static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node, 
+                            u32 rule_index, int is_add) {
+  mmb_main_t *mm = &mmb_main;
+  vnet_classify_main_t *cm = mm->classify_main;
+
+  void *oldheap = clib_mem_set_heap (cm->vlib_main->heap_base);
+  int ret = vnet_classify_add_del_session (mm->classify_main, 
+                                table_index, key, 
+                                next_node, 
+                                rule_index, /* XXX */
+                                0 /* advance */, 
+                                0 /* action*/, 
+                                0 /* metadata */,
+                                is_add);
+  clib_mem_set_heap (oldheap);
+  return ret;
+}
 
 /*
  * return 1 if masks are equals
@@ -1083,8 +1085,6 @@ static void attach_table_intfc(u32 table_index) {
      vl_print(mm->vlib_main, "table:%u attached to if:%u", table_index,
                sw_if_index);
   }
-
-
 }
 
 static_always_inline u32 find_table(u8* mask, u32 skip, u32 match) {
@@ -1092,29 +1092,91 @@ static_always_inline u32 find_table(u8* mask, u32 skip, u32 match) {
    mmb_main_t *mm = &mmb_main;
    mmb_table_t *tables = mm->tables;
    mmb_table_t *table;
+   u32 index;
 
-   vec_foreach(table, tables) {
+   vec_foreach_index(index, tables) {
+      table = &tables[index];
       if (mask_equal(table->mask, mask) && table->skip == skip
             && table->match == match)
-         return table->index;
+         return index;
    }
 
    return ~0;
 }
 
 static_always_inline void add_table(u32 index, u8* mask, u32 skip, 
-                                    u32 match, u32 previous_index) {
+                                    u32 match, u32 previous_index,
+                                    u32 entry_count, u32 size) {
 
   mmb_main_t *mm = &mmb_main;
   mmb_table_t table;
 
+  memset(&table, 0, sizeof(mmb_table_t));
   table.index = index;
   table.mask = mask;
   table.skip = skip;
   table.match = match;
   table.previous_index = previous_index;
+  table.next_index = ~0;
+  table.entry_count = entry_count;
+  table.size = size;
 
   vec_add1(mm->tables, table);
+}
+
+static void realloc_table(mmb_table_t *table) {
+  /* Increase table size by a factor MMB_TABLE_SIZE_RATIO */
+
+  mmb_main_t *mm = &mmb_main;
+  mmb_table_t *tables = mm->tables;
+  mmb_rule_t *rule, *rules = mm->rules;
+  u32 old_index = table->index;
+  u32 index;
+
+  /* create bigger table */
+  table->index = ~0;
+  table->size *= MMB_TABLE_SIZE_RATIO;  
+  mmb_classify_add_table(table->mask, table->skip, table->match,
+			                &table->index, table->next_index, table->size);
+  vl_print(mm->vlib_main, "new table of size %u created at index %u to replace index %u", 
+               table->size, table->index, old_index);
+
+  /* add sessions from old table */
+  vec_foreach_index(index, rules) {
+    rule = &rules[index];
+    if (rule->classify_table_index == old_index) {
+      mmb_add_del_session(table->index, rule->classify_key, 
+                      target_is_drop(rule), index, 1); 
+      vl_print(mm->vlib_main, "added session %u to table %u", 
+               index, table->index);
+    }
+  }  
+
+  /* chain new table to previous */
+  if (table->previous_index != ~0) {
+      mmb_table_t *previous_table;
+      vec_foreach(previous_table, tables) {
+         if (previous_table->index == table->previous_index)
+           break;
+      }
+      vl_print(mm->vlib_main, "chaining table %u to previous table at index %u", 
+               table->index, previous_table->index);
+      mmb_classify_update_table (&previous_table->index, table->index);
+      previous_table->next_index = table->index;
+  } else /* if first table, update classifier */
+     attach_table_intfc(table->index);
+
+  /* delete old sessions and table */
+  vec_foreach(rule, rules) {
+    if (rule->classify_table_index == old_index) {
+      vl_print(mm->vlib_main, "deleting session from table %u", 
+               old_index);
+      mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                          target_is_drop(rule), index, 0); 
+      rule->classify_table_index = table->index;
+    }
+  }  
+  mmb_classify_del_table(&old_index, 0);
 }
 
 static u8 add_to_classifier(mmb_rule_t *rule) {
@@ -1128,76 +1190,62 @@ static u8 add_to_classifier(mmb_rule_t *rule) {
   mmb_main_t *mm = &mmb_main;
   u32 rule_index = vec_len(mm->rules);
   u32 table_count = vec_len(mm->tables);
-
+  int ret, next_node = target_is_drop(rule);
   mmb_mask_and_key(rule);
-  int action = target_is_drop(rule);
 
   if (table_count == 0) {
       /* First rule, add table, session and chain table to if */
-      mmb_classify_add_del_table_small(rule->classify_mask, 
+      mmb_classify_add_table(rule->classify_mask, 
          rule->classify_skip, rule->classify_match,
-         ~0, IP_LOOKUP_NEXT_REWRITE,
-			&rule->classify_table_index, /* next_table_index */
-			1);
+			&rule->classify_table_index, ~0, MMB_TABLE_SIZE_INIT);
 
-       vnet_classify_add_del_session (mm->classify_main, 
-                                      rule->classify_table_index, 
-                                      rule->classify_key, 
-                                      ~0, /* should be our node */ /* XXX drops */
-                                      rule_index /* opaque_index */, /* XXX */ 
-                                      0 /* advance */, 
-                                      action /* action*/, 
-                                      0 /* metadata */,
-                                      1 /* is_add */);
+      ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                                next_node, rule_index, 1);
 
-        add_table(rule->classify_table_index, rule->classify_mask, 
-                  rule->classify_skip, rule->classify_match, ~0);
-        attach_table_intfc(rule->classify_table_index);
+      add_table(rule->classify_table_index, rule->classify_mask, 
+                rule->classify_skip, rule->classify_match, ~0,
+                1, MMB_TABLE_SIZE_INIT);
+      attach_table_intfc(rule->classify_table_index);
   } else {
 
-    u32 table_index = find_table(rule->classify_mask, rule->classify_skip, 
-                                 rule->classify_match);
-    if (table_index == ~0) {
+    u32 mmb_table = find_table(rule->classify_mask, 
+                                    rule->classify_skip, 
+                                    rule->classify_match);
+    if (mmb_table == ~0) {
       /* Table does not exist, create it, add rule, and chain it to last table */
-      mmb_classify_add_del_table_small(rule->classify_mask, 
+      mmb_classify_add_table(rule->classify_mask, 
          rule->classify_skip, rule->classify_match,
-         ~0, IP_LOOKUP_NEXT_REWRITE,
-			&rule->classify_table_index, /* next_table_index */
-			1);
+			&rule->classify_table_index, ~0, MMB_TABLE_SIZE_INIT);
       
-       vnet_classify_add_del_session (mm->classify_main, 
-                                      rule->classify_table_index, 
-                                      rule->classify_key, 
-                                      ~0, /* should be our node */ /* XXX drops */
-                                      rule_index /* opaque_index */, /* XXX */ 
-                                      0 /* advance */, 
-                                      action /* action*/, 
-                                      0 /* metadata */,
-                                      1 /* is_add */);
+      ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                                next_node, rule_index, 1);
 
-        u32 last_table_index = mm->tables[table_count-1].index;	
-        mmb_classify_update_table (&last_table_index, rule->classify_table_index);
+      mmb_table_t *last_table = &mm->tables[table_count-1];
+      u32 last_table_index = last_table->index;	
+      mmb_classify_update_table (&last_table_index, rule->classify_table_index);
+      last_table->next_index = rule->classify_table_index;
 
-        add_table(rule->classify_table_index, rule->classify_mask, 
-                  rule->classify_skip, rule->classify_match, last_table_index);
+      add_table(rule->classify_table_index, rule->classify_mask, 
+                rule->classify_skip, rule->classify_match, last_table_index,
+                1, MMB_TABLE_SIZE_INIT);
 
-        vl_print(mm->vlib_main, "table:%u created and chained after table:%u", 
-                 rule->classify_table_index, last_table_index);
-    } else {
+      vl_print(mm->vlib_main, "table:%u created and chained after table:%u", 
+               rule->classify_table_index, last_table_index);
+    } else { /* Found table */
+
+      mmb_table_t *table = &mm->tables[mmb_table];
+      if (table->entry_count == table->size)  /* Realloc table */
+         realloc_table(table);   
+
       /* Table exists, add session */
-      rule->classify_table_index = table_index;
-       vnet_classify_add_del_session (mm->classify_main, 
-                                      rule->classify_table_index, 
-                                      rule->classify_key, 
-                                      ~0, /* should be our node */ 
-                                      rule_index /* opaque_index */, 
-                                      0 /* advance */, 
-                                      action /* action*/, 
-                                      0 /* metadata */,
-                                      1 /* is_add */);
-        vl_print(mm->vlib_main, "session added to table:%u", 
-                 rule->classify_table_index);
-      /* XXX: check size of table */
+      rule->classify_table_index = table->index;
+      ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                      next_node, rule_index, 1);
+      vl_print(mm->vlib_main, "session added to table:%u rv:%d", 
+               rule->classify_table_index, ret);
+      if (ret) /* entry already in table (or some other error) */
+        return 0;
+      table->entry_count++;
     }
   }
 
@@ -1241,7 +1289,8 @@ clib_error_t *parse_rule(unformat_input_t * input,
   if ( (error = validate_rule(rule)) )
     return error;
 
-  add_to_classifier(rule);
+  if (!add_to_classifier(rule))
+    return clib_error_return(0, "Could not add rule to classifier");
 
   return 0;
 }

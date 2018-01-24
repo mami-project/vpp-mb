@@ -229,7 +229,7 @@ mmb_classify_inline (vlib_main_t * vm,
               if (e0) { // match
                   vnet_buffer(b0)->l2_classify.opaque_index
                     = e0->opaque_index;
-                  next0 = e0->action;
+                  next0 = e0->next_index;
                   hits++;
                 }
               else
@@ -254,7 +254,7 @@ mmb_classify_inline (vlib_main_t * vm,
                         {
                           vnet_buffer(b0)->l2_classify.opaque_index
                             = e0->opaque_index;
-                          next0 = e0->action;
+                          next0 = e0->next_index;
                           hits++;
                           break;
                         }

@@ -178,15 +178,20 @@ typedef struct {
    u8 reverse; /*! whitelist (strip only) */
 } mmb_target_t;
 
-#define target_is_drop(rule) \
+#define target_is_drop(rule)\
     ((vec_len(rule->targets) == 1 && rule->targets[0].keyword == MMB_TARGET_DROP)\
      ? MMB_CLASSIFY_NEXT_INDEX_DROP : MMB_CLASSIFY_NEXT_INDEX_MATCH)
+
+#define MMB_TABLE_SIZE_INIT 2
+#define MMB_TABLE_SIZE_RATIO 4
 
 typedef struct {
 
   u32 index;
-  //u32 next_table_index;
+  u32 next_index;
   u32 previous_index;
+  u32 entry_count; 
+  u32 size;   /*! table capacity */
 
   u8 *mask;
   u32 skip;
