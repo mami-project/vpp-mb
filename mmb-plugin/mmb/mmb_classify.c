@@ -27,7 +27,7 @@
 typedef struct {
   u32 sw_if_index;
   u32 next_index;
-  u32 table_index;
+  //u32 table_index;
   u32 rule_index;
   u32 offset;
   u8 packet_data[16];
@@ -40,8 +40,8 @@ format_mmb_classify_trace(u8 * s, va_list * args)
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   mmb_classify_trace_t * t = va_arg (*args, mmb_classify_trace_t *);
 
-  s = format (s, "MMB_CLASSIFY: sw_if_index %d next %d rule %d table %d offset %d",
-              t->sw_if_index, t->next_index, t->rule_index, t->table_index, t->offset);
+  s = format (s, "MMB_CLASSIFY: sw_if_index %d next %d rule %d offset %d",
+              t->sw_if_index, t->next_index, t->rule_index, t->offset);
   //s = format (s, "\n%U",
 	//      format_ip4_header, t->packet_data, sizeof (t->packet_data));
   s = format (s, "\n%U", format_hex_bytes, t->packet_data, sizeof (t->packet_data));
@@ -78,7 +78,6 @@ mmb_classify_inline (vlib_main_t * vm,
   vnet_classify_main_t * vcm = mcm->vnet_classify_main;
   f64 now = vlib_time_now (vm);
   u32 hits = 0;
-  u32 misses = 0;
   u32 drop = 0;
 
   from = vlib_frame_vector_args (frame);
@@ -170,15 +169,15 @@ mmb_classify_inline (vlib_main_t * vm,
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
 
-  while (n_left_from > 0)
-    {
+  while (n_left_from > 0) {
+
       u32 n_left_to_next;
 
       vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
 
       /* Not enough load/store slots to dual loop... */
-      while (n_left_from > 0 && n_left_to_next > 0)
-        {
+      while (n_left_from > 0 && n_left_to_next > 0) {
+
           u32 bi0;
           vlib_buffer_t * b0;
           u32 next0 = MMB_CLASSIFY_NEXT_INDEX_MISS;
@@ -189,8 +188,7 @@ mmb_classify_inline (vlib_main_t * vm,
           u8 * h0;
 
           /* Stride 3 seems to work best */
-          if (PREDICT_TRUE (n_left_from > 3))
-            {
+          if (PREDICT_TRUE (n_left_from > 3)) {
               vlib_buffer_t * p1 = vlib_get_buffer(vm, from[3]);
               vnet_classify_table_t * tp1;
               u32 table_index1;
@@ -198,13 +196,12 @@ mmb_classify_inline (vlib_main_t * vm,
 
               table_index1 = vnet_buffer(p1)->l2_classify.table_index;
 
-              if (PREDICT_TRUE (table_index1 != ~0))
-                {
+              if (PREDICT_TRUE (table_index1 != ~0)) {
                   tp1 = pool_elt_at_index (vcm->tables, table_index1);
                   phash1 = vnet_buffer(p1)->l2_classify.hash;
                   vnet_classify_prefetch_entry (tp1, phash1);
-                }
-            }
+              }
+          }
 
           /* Speculatively enqueue b0 to the current next frame */
           bi0 = from[0];
@@ -219,61 +216,46 @@ mmb_classify_inline (vlib_main_t * vm,
           table_index0 = vnet_buffer(b0)->l2_classify.table_index;
           e0 = 0;
           t0 = 0;
-          vnet_buffer(b0)->l2_classify.opaque_index = ~0;
           
-          if (PREDICT_TRUE(table_index0 != ~0))
-            {
+          vnet_buffer(b0)->l2_classify.opaque_index = ~0;
+
+          if (PREDICT_TRUE(table_index0 != ~0)) {
               hash0 = vnet_buffer(b0)->l2_classify.hash;
               t0 = pool_elt_at_index (vcm->tables, table_index0);
               e0 = vnet_classify_find_entry (t0, (u8 *) h0, hash0, now);
               if (e0) { // match
-                  vnet_buffer(b0)->l2_classify.opaque_index
-                    = e0->opaque_index;
+                  vnet_buffer(b0)->l2_classify.opaque_index = e0->opaque_index;  
                   next0 = e0->next_index;
                   hits++;
-                }
-              else
-                {
-                  misses++;
-                  while (1)
-                    {
-                      if (t0->next_table_index != ~0)
-                        t0 = pool_elt_at_index (vcm->tables,
-                                                t0->next_table_index);
-                      else
-                        { 
-                          next0 = MMB_CLASSIFY_NEXT_INDEX_MISS;
-                          misses++;
-                          break;
-                        }
+              } 
+              
+              while (1) {
+                 if (t0->next_table_index != ~0)
+                   t0 = pool_elt_at_index (vcm->tables,
+                                             t0->next_table_index);
+                 else { 
+                   break;
+                 }
 
-                      hash0 = vnet_classify_hash_packet (t0, (u8 *) h0);
-                      e0 = vnet_classify_find_entry
-                        (t0, (u8 *) h0, hash0, now);
-                      if (e0)
-                        {
-                          vnet_buffer(b0)->l2_classify.opaque_index
-                            = e0->opaque_index;
-                          next0 = e0->next_index;
-                          hits++;
-                          break;
-                        }
-                    }
-                }
-            }
+                 hash0 = vnet_classify_hash_packet(t0, (u8 *) h0);
+                 e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
+                 if (e0) {
+                    vnet_buffer(b0)->l2_classify.opaque_index = e0->opaque_index;  
+                    next0 = e0->next_index;
+                    hits++;
+                 }
+              }
+          }
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
-                            && (b0->flags & VLIB_BUFFER_IS_TRACED)))
-            {
+                            && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
               mmb_classify_trace_t * t =
                 vlib_add_trace (vm, node, b0, sizeof (*t));
               t->sw_if_index = vnet_buffer(b0)->sw_if_index[VLIB_RX];
               t->next_index = next0;
-              t->table_index = t0 ? t0 - vcm->tables : ~0;
               t->rule_index = vnet_buffer(b0)->l2_classify.opaque_index;
-              t->offset = (t0 && e0) ? vnet_classify_get_offset (t0, e0): ~0;
               clib_memcpy (t->packet_data, vlib_buffer_get_current(b0),
 		                     sizeof (t->packet_data));
-            }
+           }
 
           /* Verify speculative enqueue, maybe switch current next frame */
           vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
@@ -283,9 +265,6 @@ mmb_classify_inline (vlib_main_t * vm,
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
 
-  vlib_node_increment_counter (vm, node->node_index,
-                               MMB_CLASSIFY_ERROR_MISS,
-                               misses);
   vlib_node_increment_counter (vm, node->node_index,
                                MMB_CLASSIFY_ERROR_HIT, 
                                hits); /* TODO update this */
