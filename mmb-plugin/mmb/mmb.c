@@ -536,16 +536,10 @@ static void ip6_header_host_to_net(ip6_header_t *ip) {
    ip->dst_address.as_u64[1] = clib_host_to_net_u64(ip->dst_address.as_u64[1]); 
 }
 
-static u8 mmb_icmp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, u8 offset) {
+static_always_inline void mmb_icmp_mask_and_key_inline(icmp46_header_t *icmp_mask,
+     icmp46_header_t *icmp_key, u8 field, u8 *value) {
 
-  u8 *value;
-  mmb_match_t *match;
-  icmp46_header_t *icmp_mask = (icmp46_header_t *) (mask+offset);
-  icmp46_header_t *icmp_key = (icmp46_header_t *) (key+offset);
- 
-  vec_foreach(match, rule->matches) {
-   value = match->value;
-   switch (match->field) {
+   switch (field) {
       case MMB_FIELD_ICMP_TYPE:
          icmp_mask->type = 0xff;
          icmp_key->type = *value;
@@ -564,24 +558,34 @@ static u8 mmb_icmp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, u8 offset) 
       default:
          break;
     }
+}
+
+static void mmb_icmp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, u8 offset,
+                                int is_match) {
+
+  icmp46_header_t *icmp_mask = (icmp46_header_t *) (mask+offset);
+  icmp46_header_t *icmp_key = (icmp46_header_t *) (key+offset);
+
+  if (is_match) {
+     mmb_match_t *match;
+     vec_foreach(match, rule->matches) {
+       mmb_icmp_mask_and_key_inline(icmp_mask, icmp_key, match->field, match->value);
+     }
+  } else {
+     mmb_target_t *target;
+     vec_foreach(target, rule->targets) {
+       mmb_icmp_mask_and_key_inline(icmp_mask, icmp_key, target->field, target->value);
+     }
   }
 
   icmp46_header_host_to_net(icmp_mask);
   icmp46_header_host_to_net(icmp_key);
-
-  return 1;
 }
 
-static u8 mmb_udp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, u8 offset) {
+static_always_inline void mmb_udp_mask_and_key_inline(udp_header_t *udp_mask, 
+   udp_header_t *udp_key, u8 field, u8 *value) {
 
-  u8 *value;
-  mmb_match_t *match;
-  udp_header_t *udp_mask = (udp_header_t *) (mask+offset);
-  udp_header_t *udp_key = (udp_header_t *) (key+offset);
- 
-  vec_foreach(match, rule->matches) {
-   value = match->value;
-   switch (match->field) {
+  switch (field) {
       case MMB_FIELD_UDP_SPORT:
          udp_mask->src_port = 0xffff;
          udp_key->src_port = bytes_to_u32(value);
@@ -604,24 +608,34 @@ static u8 mmb_udp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, u8 offset) {
       default:
          break;
     }
+}
+
+static void mmb_udp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, 
+                               u8 offset, int is_match) {
+
+  udp_header_t *udp_mask = (udp_header_t *) (mask+offset);
+  udp_header_t *udp_key = (udp_header_t *) (key+offset);
+
+   if (is_match) {
+     mmb_match_t *match;
+     vec_foreach(match, rule->matches) {
+       mmb_udp_mask_and_key_inline(udp_mask, udp_key, match->field, match->value);
+     }
+  } else {
+     mmb_target_t *target;
+     vec_foreach(target, rule->targets) {
+       mmb_udp_mask_and_key_inline(udp_mask, udp_key, target->field, target->value);
+     }
   }
 
   udp_header_host_to_net(udp_mask);
   udp_header_host_to_net(udp_key);
-   
-  return 1;
 }
 
-static u8 mmb_tcp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, u8 offset) {
+static_always_inline void mmb_tcp_mask_and_key_inline(tcp_header_t *tcp_mask, 
+     tcp_header_t *tcp_key, u8 field, u8 *value) {
 
-  mmb_match_t *match;
-  u8 *value;
-  tcp_header_t *tcp_mask = (tcp_header_t *) (mask+offset);
-  tcp_header_t *tcp_key = (tcp_header_t *) (key+offset);
- 
-  vec_foreach(match, rule->matches) {
-   value = match->value;
-   switch (match->field) {
+  switch (field) {
       case MMB_FIELD_TCP_SPORT:
          tcp_mask->src_port = 0xffff;
          tcp_key->src_port = bytes_to_u32(value);
@@ -708,15 +722,111 @@ static u8 mmb_tcp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, u8 offset) {
       default:
          break;
     }
+}
+
+static void mmb_tcp_mask_and_key(mmb_rule_t *rule, u8 *mask, 
+              u8 *key, u8 offset, int is_match) {
+ 
+  tcp_header_t *tcp_mask = (tcp_header_t *) (mask+offset);
+  tcp_header_t *tcp_key = (tcp_header_t *) (key+offset);
+
+  if (is_match) {
+     mmb_match_t *match;
+     vec_foreach(match, rule->matches) {
+       mmb_tcp_mask_and_key_inline(tcp_mask, tcp_key, match->field, match->value);
+     }
+  } else {
+     mmb_target_t *target;
+     vec_foreach(target, rule->targets) {
+       mmb_tcp_mask_and_key_inline(tcp_mask, tcp_key, target->field, target->value);
+     }
   }
 
   tcp_header_host_to_net(tcp_mask);
   tcp_header_host_to_net(tcp_key);
-
-  return 1;
 }
 
-static u8 mmb_ip4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key) {
+static_always_inline void mmb_ip4_mask_and_key_inline(ip4_header_t *ip_mask, 
+     ip4_header_t *ip_key, u8 field, u8 *value) {
+
+  switch (field) {    
+   case MMB_FIELD_IP4_VER:
+     ip_mask->ip_version_and_header_length |= 0xf0;
+     ip_key->ip_version_and_header_length |= (*value << 4);
+     break;
+   case MMB_FIELD_IP4_IHL:
+      ip_mask->ip_version_and_header_length |= 0x0f;
+      ip_key->ip_version_and_header_length |= *value;
+      break;
+   case MMB_FIELD_IP4_DSCP:
+      ip_mask->tos |= 0xfc;
+      ip_key->tos |= (*value << 2);
+      break;
+   case MMB_FIELD_IP4_ECN:
+      ip_mask->tos |= 0x03;
+      ip_key->tos |= *value;
+      break;
+   case MMB_FIELD_IP4_LEN:
+      ip_mask->length = 0xffff;
+      ip_key->length = bytes_to_u32(value);
+      break;
+   case MMB_FIELD_IP4_ID:
+      ip_mask->fragment_id = 0xffff;
+      ip_key->fragment_id = bytes_to_u32(value);
+      break;
+   case MMB_FIELD_IP4_FLAGS:
+      ip_mask->flags_and_fragment_offset |= 0xc000;
+      ip_key->flags_and_fragment_offset |= (*value << 13);
+      break;
+   case MMB_FIELD_IP4_FRAG_OFFSET:
+      ip_mask->flags_and_fragment_offset |= 0x1fff;
+      ip_key->flags_and_fragment_offset |= bytes_to_u32(value);
+      break;
+   case MMB_FIELD_IP4_RES: /* congestion ?? */
+      ip_mask->flags_and_fragment_offset |= IP4_HEADER_FLAG_CONGESTION;
+      if (*value)
+         ip_key->flags_and_fragment_offset |= IP4_HEADER_FLAG_CONGESTION;
+      break;
+   case MMB_FIELD_IP4_DF:
+      ip_mask->flags_and_fragment_offset |= IP4_HEADER_FLAG_DONT_FRAGMENT;
+      if (*value)
+        ip_key->flags_and_fragment_offset |= IP4_HEADER_FLAG_DONT_FRAGMENT;
+      break;
+   case MMB_FIELD_IP4_MF:
+      ip_mask->flags_and_fragment_offset |= IP4_HEADER_FLAG_MORE_FRAGMENTS;
+      if (*value)
+        ip_key->flags_and_fragment_offset |= IP4_HEADER_FLAG_MORE_FRAGMENTS;
+      break;
+   case MMB_FIELD_IP4_TTL:
+      ip_mask->ttl = 0xff;
+      ip_key->ttl = *value;
+      break;
+   case MMB_FIELD_IP4_PROTO:
+      ip_mask->protocol = 0xff;
+      ip_key->protocol = *value;
+      break;
+   case MMB_FIELD_IP4_CHECKSUM:
+      ip_mask->checksum = 0xffff;
+      ip_key->checksum = bytes_to_u32(value);
+      break;
+   case MMB_FIELD_IP4_SADDR:
+      /* subnet mask, corrected subnet value */
+      ip_mask->src_address.as_u32 = 0xffffffff << (32-value[4]); 
+      ip_key->src_address.as_u32 = bytes_to_u32(value) & ip_mask->src_address.as_u32;
+      break;
+   case MMB_FIELD_IP4_DADDR:
+      ip_mask->dst_address.as_u32 = 0xffffffff << (32-value[4]);
+      ip_key->dst_address.as_u32 = bytes_to_u32(value) & ip_mask->dst_address.as_u32;
+      break;
+   case MMB_FIELD_IP4_PAYLOAD:
+      /* XXX */
+      break;
+   default:
+      break;
+ }
+}
+
+static void mmb_ip4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, int is_match) {
  /* ip4
   * 0: ip-ver, ip-ihl, ip-dscp, ip-ecn, ip-len, ip-id, ip-flags, ip-res,
   *    ip-df, ip-mf, ip-frag-offset, ip-ttl, ip-proto, ip-checksum, ip-saddr
@@ -742,98 +852,32 @@ static u8 mmb_ip4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key) {
   *
   *
   */
-  mmb_match_t *match;
-  u8 *value;
+
   ip4_header_t *ip_mask = (ip4_header_t *) mask;
   ip4_header_t *ip_key = (ip4_header_t *) key;
-  
+ 
+  if (is_match) {
 #ifdef MMB_MATCH_IP_VERSION
-  ip_mask->ip_version_and_header_length = 0xf0;
-  ip_key->ip_version_and_header_length = 0x40;
-#elif
-  if (vec_len(rule->matches) == 0) {
      ip_mask->ip_version_and_header_length = 0xf0;
-     ip_key->ip_version_and_header_length = 0x40;  
-  }
+     ip_key->ip_version_and_header_length = 0x40;
+#elif
+     if (vec_len(rule->matches) == 0) {
+        ip_mask->ip_version_and_header_length = 0xf0;
+        ip_key->ip_version_and_header_length = 0x40;  
+     }
 #endif
+  }
 
-  vec_foreach(match, rule->matches) {
-    value = match->value;
-    switch (match->field) {    
-      case MMB_FIELD_IP4_VER:
-        ip_mask->ip_version_and_header_length |= 0xf0;
-        ip_key->ip_version_and_header_length |= (*value << 4);
-        break;
-      case MMB_FIELD_IP4_IHL:
-         ip_mask->ip_version_and_header_length |= 0x0f;
-         ip_key->ip_version_and_header_length |= *value;
-         break;
-      case MMB_FIELD_IP4_DSCP:
-         ip_mask->tos |= 0xfc;
-         ip_key->tos |= (*value << 2);
-         break;
-      case MMB_FIELD_IP4_ECN:
-         ip_mask->tos |= 0x03;
-         ip_key->tos |= *value;
-         break;
-      case MMB_FIELD_IP4_LEN:
-         ip_mask->length = 0xffff;
-         ip_key->length = bytes_to_u32(value);
-         break;
-      case MMB_FIELD_IP4_ID:
-         ip_mask->fragment_id = 0xffff;
-         ip_key->fragment_id = bytes_to_u32(value);
-         break;
-      case MMB_FIELD_IP4_FLAGS:
-         ip_mask->flags_and_fragment_offset |= 0xc000;
-         ip_key->flags_and_fragment_offset |= (*value << 13);
-         break;
-      case MMB_FIELD_IP4_FRAG_OFFSET:
-         ip_mask->flags_and_fragment_offset |= 0x1fff;
-         ip_key->flags_and_fragment_offset |= bytes_to_u32(value);
-         break;
-      case MMB_FIELD_IP4_RES: /* congestion ?? */
-         ip_mask->flags_and_fragment_offset |= IP4_HEADER_FLAG_CONGESTION;
-         if (*value)
-            ip_key->flags_and_fragment_offset |= IP4_HEADER_FLAG_CONGESTION;
-         break;
-      case MMB_FIELD_IP4_DF:
-         ip_mask->flags_and_fragment_offset |= IP4_HEADER_FLAG_DONT_FRAGMENT;
-         if (*value)
-           ip_key->flags_and_fragment_offset |= IP4_HEADER_FLAG_DONT_FRAGMENT;
-         break;
-      case MMB_FIELD_IP4_MF:
-         ip_mask->flags_and_fragment_offset |= IP4_HEADER_FLAG_MORE_FRAGMENTS;
-         if (*value)
-           ip_key->flags_and_fragment_offset |= IP4_HEADER_FLAG_MORE_FRAGMENTS;
-         break;
-      case MMB_FIELD_IP4_TTL:
-         ip_mask->ttl = 0xff;
-         ip_key->ttl = *value;
-         break;
-      case MMB_FIELD_IP4_PROTO:
-         ip_mask->protocol = 0xff;
-         ip_key->protocol = *value;
-         break;
-      case MMB_FIELD_IP4_CHECKSUM:
-         ip_mask->checksum = 0xffff;
-         ip_key->checksum = bytes_to_u32(value);
-         break;
-      case MMB_FIELD_IP4_SADDR:
-         /* subnet mask, corrected subnet value */
-         ip_mask->src_address.as_u32 = 0xffffffff << (32-value[4]); 
-         ip_key->src_address.as_u32 = bytes_to_u32(value) & ip_mask->src_address.as_u32;
-         break;
-      case MMB_FIELD_IP4_DADDR:
-         ip_mask->dst_address.as_u32 = 0xffffffff << (32-value[4]);
-         ip_key->dst_address.as_u32 = bytes_to_u32(value) & ip_mask->dst_address.as_u32;
-         break;
-      case MMB_FIELD_IP4_PAYLOAD:
-         /* XXX */
-         break;
-      default:
-         break;
-    }
+  if (is_match) {
+     mmb_match_t *match;
+     vec_foreach(match, rule->matches) {
+       mmb_ip4_mask_and_key_inline(ip_mask, ip_key, match->field, match->value);
+     }
+  } else {
+     mmb_target_t *target;
+     vec_foreach(target, rule->targets) {
+       mmb_ip4_mask_and_key_inline(ip_mask, ip_key, target->field, target->value);
+     }
   }
 
   ip4_header_host_to_net(ip_mask);
@@ -841,57 +885,15 @@ static u8 mmb_ip4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key) {
 
    if (0);
 #define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b) {\
-                 mmb_##a##_mask_and_key(rule, mask, key, 20);}
+                 mmb_##a##_mask_and_key(rule, mask, key, 20, is_match);}
    foreach_mmb_transport_proto
 #undef _
-
-  return 1;
 }
 
-static u8 mmb_ip6_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key) {
-   /* ip6
-    * 0: ip6-ver, ip6-traffic-class, ip6-flow-label, ip6-len, ip6-next,
-    *    ip6-hop-limit, ip6-saddr (8 bytes)
-    *
-    * 1: ip6-saddr (8 bytes), ip6-daddr (8 bytes)
-    *
-    * 2: ip6-daddr (8 bytes)
-    *    udp: udp-sport, udp-dport, udp-len, udp-checksum
-    *    icmp: icmp-type, icmp-code, icmp-checksum, icmp-payload (0:3, 4 bytes)
-    *    tcp: tcp-sport, tcp-dport, tcp-seq-num, tcp-ack-num
-    *    icmp: icmp-payload (8:23, 16 bytes)
-    *    tcp: tcp-offset, tcp-flags (all), tcp-win, tcp-checksum, tcp-urg-ptr,
-    *    tcp-opt: 
-    *
-    * 3: udp: udp-payload (20:35, 16 bytes)
-    *    icmp: icmp-payload (24:39, 16 bytes)
-    *    tcp-opt: 
-    *
-    *
-    * 4: udp: udp-payload (36:51, 16 bytes)
-    *    icmp: icmp-payload (40:55, 16 bytes)
-    *    tcp-opt: 
-    *
-    *
-    */
-  mmb_match_t *match;
-  u8 *value;
-  ip6_header_t *ip_mask = (ip6_header_t *) mask;
-  ip6_header_t *ip_key = (ip6_header_t *) key;
+static_always_inline void mmb_ip6_mask_and_key_inline(ip6_header_t *ip_mask,
+      ip6_header_t *ip_key, u8 field, u8 *value) {
 
-#ifdef MMB_MATCH_IP_VERSION
-  ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
-  ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
-#elif
-  if (vec_len(rule->matches) == 0) {
-  ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
-  ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
-  }
-#endif
- 
-  vec_foreach(match, rule->matches) {
-    value = match->value;
-    switch (match->field) {
+   switch (field) {
       case MMB_FIELD_IP6_VER:
          ip_mask->ip_version_traffic_class_and_flow_label |= 0xf0000000;
          ip_key->ip_version_traffic_class_and_flow_label |= (*value << 28);
@@ -934,6 +936,62 @@ static u8 mmb_ip6_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key) {
       default:
          break;
     }
+
+}
+
+static void mmb_ip6_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, int is_match) {
+   /* ip6
+    * 0: ip6-ver, ip6-traffic-class, ip6-flow-label, ip6-len, ip6-next,
+    *    ip6-hop-limit, ip6-saddr (8 bytes)
+    *
+    * 1: ip6-saddr (8 bytes), ip6-daddr (8 bytes)
+    *
+    * 2: ip6-daddr (8 bytes)
+    *    udp: udp-sport, udp-dport, udp-len, udp-checksum
+    *    icmp: icmp-type, icmp-code, icmp-checksum, icmp-payload (0:3, 4 bytes)
+    *    tcp: tcp-sport, tcp-dport, tcp-seq-num, tcp-ack-num
+    *    icmp: icmp-payload (8:23, 16 bytes)
+    *    tcp: tcp-offset, tcp-flags (all), tcp-win, tcp-checksum, tcp-urg-ptr,
+    *    tcp-opt: 
+    *
+    * 3: udp: udp-payload (20:35, 16 bytes)
+    *    icmp: icmp-payload (24:39, 16 bytes)
+    *    tcp-opt: 
+    *
+    *
+    * 4: udp: udp-payload (36:51, 16 bytes)
+    *    icmp: icmp-payload (40:55, 16 bytes)
+    *    tcp-opt: 
+    *
+    *
+    */
+
+
+   ip6_header_t *ip_mask = (ip6_header_t *) mask;
+   ip6_header_t *ip_key = (ip6_header_t *) key;
+
+   if (is_match) {
+#ifdef MMB_MATCH_IP_VERSION
+     ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
+     ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
+#elif
+     if (vec_len(rule->matches) == 0) {
+       ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
+       ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
+     }
+#endif
+   }
+ 
+  if (is_match) {
+     mmb_match_t *match;
+     vec_foreach(match, rule->matches) {
+       mmb_ip6_mask_and_key_inline(ip_mask, ip_key, match->field, match->value);
+     }
+  } else {
+     mmb_target_t *target;
+     vec_foreach(target, rule->targets) {
+       mmb_ip6_mask_and_key_inline(ip_mask, ip_key, target->field, target->value);
+     }
   }
 
   ip6_header_host_to_net(ip_mask);
@@ -941,18 +999,16 @@ static u8 mmb_ip6_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key) {
 
    if (0);
 #define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b) {\
-                 mmb_##a##_mask_and_key(rule, mask, key, 40);}
+                 mmb_##a##_mask_and_key(rule, mask, key, 40, is_match);}
    foreach_mmb_transport_proto
 #undef _
-
-  return 1;
 }
 
 /**
  * Compute mask, key, skip and match from a rule.
  * 
  */
-static u8 mmb_mask_and_key(mmb_rule_t *rule) {
+static void mmb_mask_and_key_aux(mmb_rule_t *rule, int is_match) {
   u32 skip = 0;
   u32 match = 0;
   u8 *mask = 0;
@@ -964,7 +1020,7 @@ static u8 mmb_mask_and_key(mmb_rule_t *rule) {
 
    if (0);
 #define _(a,b) else if (rule->l3 == ETHERNET_TYPE_##b) {\
-                 mmb_##a##_mask_and_key(rule, mask, key);}
+                 mmb_##a##_mask_and_key(rule, mask, key, is_match);}
   foreach_mmb_network_proto
 #undef _
   
@@ -991,12 +1047,24 @@ static u8 mmb_mask_and_key(mmb_rule_t *rule) {
   _vec_len(mask) = match * sizeof(u32x4);
   _vec_len(key) = match * sizeof(u32x4);
   
-  rule->classify_mask = mask;
-  rule->classify_skip = skip;
-  rule->classify_match = match;
-  rule->classify_key = key;
+  if (is_match) {
+     rule->classify_mask = mask;
+     rule->classify_skip = skip;
+     rule->classify_match = match;
+     rule->classify_key = key;
+  } else {
+     rule->rewrite_mask = mask;
+     rule->rewrite_skip = skip;
+     rule->rewrite_match = match;
+     rule->rewrite_key = key;
+  }
+}
 
-  return 1;
+static_always_inline void mmb_mask_and_key(mmb_rule_t *rule) {
+   mmb_mask_and_key_aux(rule, 1);
+   if (!is_drop(rule)) { /* XXX tcp opts */
+      mmb_mask_and_key_aux(rule, 0);
+   }
 }
 
 static int
@@ -1162,7 +1230,7 @@ static void realloc_table(mmb_table_t *table) {
     rule = &rules[index];
     if (rule->classify_table_index == old_index) {
       mmb_add_del_session(table->index, rule->classify_key, 
-                      target_is_drop(rule), index, 1); 
+                      next_if_match(rule), index, 1); 
       vl_print(mm->vlib_main, "added session %u to table %u", 
                index, table->index);
     }
@@ -1206,7 +1274,7 @@ static u8 add_to_classifier(mmb_rule_t *rule) {
   mmb_main_t *mm = &mmb_main;
   u32 rule_index = vec_len(mm->rules);
   u32 table_count = vec_len(mm->tables);
-  int ret, next_node = target_is_drop(rule);
+  int ret, next_node = next_if_match(rule);
   mmb_mask_and_key(rule);
 
   if (table_count == 0) {

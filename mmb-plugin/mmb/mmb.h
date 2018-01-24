@@ -178,8 +178,10 @@ typedef struct {
    u8 reverse; /*! whitelist (strip only) */
 } mmb_target_t;
 
-#define target_is_drop(rule)\
-    ((vec_len(rule->targets) == 1 && rule->targets[0].keyword == MMB_TARGET_DROP)\
+#define is_drop(rule)\
+     (vec_len(rule->targets) == 1 && rule->targets[0].keyword == MMB_TARGET_DROP)
+#define next_if_match(rule)\
+    (is_drop(rule)\
      ? MMB_CLASSIFY_NEXT_INDEX_DROP : MMB_CLASSIFY_NEXT_INDEX_MATCH)
 
 #define MMB_TABLE_SIZE_INIT 2

@@ -417,6 +417,19 @@ void target_tcp_options(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *
   }
 }
 
+
+static void mmb_rewrite(mmb_rule_t *rule, vlib_buffer_t *b) {
+  //rule->rewrite_mask, rule->rewrite_skip, 
+  //rule->rewrite_match, rule->rewrite_key
+  u32 skip = rule->rewrite_skip;
+  u32 match = rule->rewrite_match;
+  u8 *key = rule->rewrite_key;
+  u8 *mask = rule->rewrite_mask;
+
+  rule->match_count++;
+  return;
+}
+
 /************************
  *  Node entry function
  ***********************/
@@ -433,8 +446,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   mmb_next_t next_index;
   u32 pkts_done = 0;
 
-  mmb_tcp_options_t tcp_options;
-  init_tcp_options(&tcp_options);
+  //mmb_tcp_options_t tcp_options;
+  //init_tcp_options(&tcp_options);
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -471,7 +484,10 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       /* If packet matched */
       u32 rule_index = vnet_buffer(b0)->l2_classify.opaque_index;
-      if (rule_index != ~0 /*TODO remove when only tcp (with options) packets are coming here*/ && ip0->protocol == IP_PROTOCOL_TCP)
+      mmb_rewrite(rules+rule_index, b0);    
+
+      //TODO remove when only tcp (with option1s) packets are coming here
+      /*if (rule_index != ~0 && ip0->protocol == IP_PROTOCOL_TCP)
       {
         mmb_rule_t *rule = rules+rule_index;
         if (rule->opts_in_targets)//TODO should (normally) be removed when only packets with targets-containing-tcp-options are coming here
@@ -481,7 +497,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
         }
 
         rule->match_count++;
-      }
+      }*/
 
       /* one more packet processed */
       pkts_done++;
@@ -505,7 +521,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   vlib_node_increment_counter (vm, mmb_node->index, 
                                MMB_ERROR_DONE, pkts_done);
   
-  free_tcp_options(&tcp_options);
+  //free_tcp_options(&tcp_options);
 
   return frame->n_vectors;
 }
@@ -575,7 +591,7 @@ VNET_FEATURE_INIT (ip6_mmb_rewrite_feature, static) = {
 static clib_error_t *
 mmb_rewrite_init (vlib_main_t *vm)
 {
-  mmb_main.feature_arc_index = vlib_node_add_next(vm, ip4_mmb_rewrite_node.index, ip4_rewrite_node.index);
+  //mmb_main.feature_arc_index = vlib_node_add_next(vm, ip4_mmb_rewrite_node.index, ip4_rewrite_node.index);
   return 0;
 }
 
