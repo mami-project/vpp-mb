@@ -413,7 +413,8 @@ void target_tcp_options(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *
 }
 
 
-static_always_inline void mmb_rewrite(mmb_rule_t *rule, u8 *p) {
+static_always_inline void mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, 
+                                      vlib_buffer_t *b, u8 *p) {
 
   u32 skip_u64 = rule->rewrite_skip * 2;
   u32 match = rule->rewrite_match;
@@ -445,6 +446,40 @@ static_always_inline void mmb_rewrite(mmb_rule_t *rule, u8 *p) {
     default:
       abort();
   }
+
+ ip4_header_t *iph = (ip4_header_t *)p;
+ u16 checksum;
+ switch(rule->l4)
+  { /* XXX */
+    case IP_PROTOCOL_ICMP: {
+      icmp46_header_t *icmph = (icmp46_header_t *)p;
+      icmph->checksum = 0;
+      ip_csum_t csum = ip_incremental_checksum(0, icmph, 
+           clib_net_to_host_u16(iph->length) - sizeof(*iph));
+      icmph->checksum = ~ip_csum_fold(csum);
+
+      break;
+    }
+    case IP_PROTOCOL_UDP: {
+      udp_header_t *udph = (udp_header_t *)p;
+      checksum = ip4_tcp_udp_compute_checksum(vm, b, iph);
+      /* RFC 7011 section 10.3.2 */
+      if (checksum == 0)
+        checksum = 0xffff;
+      udph->checksum = checksum;
+
+      break;
+    }
+    case IP_PROTOCOL_TCP: {
+      tcp_header_t *tcph = (tcp_header_t *)p;
+      tcph->checksum = ip4_tcp_udp_compute_checksum(vm, b, iph);
+      break;
+    }
+    default:
+      break;
+  }
+
+  iph->checksum = ip4_header_checksum(iph);
 
   rule->match_count++;
 }
@@ -505,7 +540,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       /* If packet matched */
       u32 rule_index = vnet_buffer(b0)->l2_classify.opaque_index;
-      mmb_rewrite(rules+rule_index, p0);    
+      mmb_rewrite(vm, rules+rule_index, b0, p0);    
 
       //TODO remove when only tcp (with option1s) packets are coming here
       /*if (rule_index != ~0 && ip0->protocol == IP_PROTOCOL_TCP)
