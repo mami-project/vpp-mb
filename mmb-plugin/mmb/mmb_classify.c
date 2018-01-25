@@ -66,9 +66,9 @@ static char * mmb_classify_error_strings[] = {
 
 static inline uword
 mmb_classify_inline (vlib_main_t * vm,
-                      vlib_node_runtime_t * node,
-                      vlib_frame_t * frame,
-                      mmb_classify_table_id_t tid)
+                     vlib_node_runtime_t * node,
+                     vlib_frame_t * frame,
+                     mmb_classify_table_id_t tid)
 {
   u32 n_left_from, * from, * to_next;
   mmb_classify_next_index_t next_index;
@@ -112,22 +112,22 @@ mmb_classify_inline (vlib_main_t * vm,
       b1 = vlib_get_buffer (vm, bi1);
       h1 = vlib_buffer_get_current(b1);
 
-      sw_if_index0 = vnet_buffer (b0)->sw_if_index[VLIB_RX];
+      sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
       table_index0 = mcm->classify_table_index_by_sw_if_index[tid][sw_if_index0];
 
-      sw_if_index1 = vnet_buffer (b1)->sw_if_index[VLIB_RX];
+      sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
       table_index1 = mcm->classify_table_index_by_sw_if_index[tid][sw_if_index1];
 
-      t0 = pool_elt_at_index (vcm->tables, table_index0);
-      t1 = pool_elt_at_index (vcm->tables, table_index1);
+      t0 = pool_elt_at_index(vcm->tables, table_index0);
+      t1 = pool_elt_at_index(vcm->tables, table_index1);
 
       vnet_buffer(b0)->l2_classify.hash =
-        vnet_classify_hash_packet (t0, (u8 *) h0);
-      vnet_classify_prefetch_bucket (t0, vnet_buffer(b0)->l2_classify.hash);
+        vnet_classify_hash_packet(t0, (u8 *) h0);
+      vnet_classify_prefetch_bucket(t0, vnet_buffer(b0)->l2_classify.hash);
 
       vnet_buffer(b1)->l2_classify.hash =
-        vnet_classify_hash_packet (t1, (u8 *) h1);
-      vnet_classify_prefetch_bucket (t1, vnet_buffer(b1)->l2_classify.hash);
+        vnet_classify_hash_packet(t1, (u8 *) h1);
+      vnet_classify_prefetch_bucket(t1, vnet_buffer(b1)->l2_classify.hash);
 
       vnet_buffer(b0)->l2_classify.table_index = table_index0;
       vnet_buffer(b1)->l2_classify.table_index = table_index1;

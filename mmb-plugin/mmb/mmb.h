@@ -22,6 +22,9 @@
 
 #include <mmb/mmb_classify.h>
 
+/* Comment out to remove calls to vlib_cli_output() */
+//#define MMB_DEBUG
+
 #define MMB_PLUGIN_BUILD_VER "0.1"
 
 #define MMB_TYPE_FIELD           1

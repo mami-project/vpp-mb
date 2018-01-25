@@ -97,9 +97,10 @@ static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
 
 static_always_inline void 
 mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * node,
-                    ip4_header_t *iph, u32 next, u32 sw_if_index)
+                    u8 *p, u32 next, u32 sw_if_index)
 {
    mmb_trace_t *t = vlib_add_trace (vm, node, b, sizeof (*t));
+   ip4_header_t *iph = (ip4_header_t*)p;
 
    t->proto = iph->protocol;
    t->rule_index = vnet_buffer(b)->l2_classify.opaque_index;
@@ -151,12 +152,6 @@ static_always_inline u8 mmb_memcpy(u8 *dst, u8 *from, u8 length)
 
 static_always_inline u32 get_sw_if_index(vlib_buffer_t *b) {
   return vnet_buffer(b)->sw_if_index[VLIB_RX];
-}
-
-static_always_inline void *get_ip_header(vlib_buffer_t *b) {
-  u8 *p = vlib_buffer_get_current(b);
-  //p += ethernet_buffer_header_size(b);
-  return p;
 }
 
 /************************
@@ -418,16 +413,40 @@ void target_tcp_options(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *
 }
 
 
-static void mmb_rewrite(mmb_rule_t *rule, vlib_buffer_t *b) {
-  //rule->rewrite_mask, rule->rewrite_skip, 
-  //rule->rewrite_match, rule->rewrite_key
-  u32 skip = rule->rewrite_skip;
+static_always_inline void mmb_rewrite(mmb_rule_t *rule, u8 *p) {
+
+  u32 skip_u64 = rule->rewrite_skip * 2;
   u32 match = rule->rewrite_match;
-  u8 *key = rule->rewrite_key;
-  u8 *mask = rule->rewrite_mask;
+  u64 *key = (u64 *)rule->rewrite_key;
+  u64 *mask = (u64 *)rule->rewrite_mask;
+  u64 *data64 = (u64 *)p;  
+
+  data64[0 + skip_u64] = (data64[0 + skip_u64] & mask[0]) | key[0];
+  data64[1 + skip_u64] = (data64[1 + skip_u64] & mask[1]) | key[1];
+  switch (match) {
+    case 5:
+      data64[8 + skip_u64] = (data64[8 + skip_u64] & mask[8]) | key[8];
+      data64[9 + skip_u64] = (data64[9 + skip_u64] & mask[9]) | key[9];
+      /* FALLTHROUGH */
+    case 4:
+      data64[6 + skip_u64] = (data64[6 + skip_u64] & mask[6]) | key[6];
+      data64[7 + skip_u64] = (data64[7 + skip_u64] & mask[7]) | key[7];
+      /* FALLTHROUGH */
+    case 3:
+      data64[4 + skip_u64] = (data64[4 + skip_u64] & mask[4]) | key[4];
+      data64[5 + skip_u64] = (data64[5 + skip_u64] & mask[5]) | key[5];
+      /* FALLTHROUGH */
+    case 2:
+      data64[2 + skip_u64] = (data64[2 + skip_u64] & mask[2]) | key[2];
+      data64[3 + skip_u64] = (data64[3 + skip_u64] & mask[3]) | key[3];
+      /* FALLTHROUGH */
+    case 1:
+      break;
+    default:
+      abort();
+  }
 
   rule->match_count++;
-  return;
 }
 
 /************************
@@ -468,7 +487,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       u32 bi0;
       vlib_buffer_t *b0;
       u32 next0 = MMB_NEXT_FORWARD;
-      ip4_header_t *ip0;
+      u8 *p0;
 
       /* speculatively enqueue b0 to the current next frame */
       bi0 = from[0];
@@ -480,11 +499,13 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       /* get vlib buffer, IP header */
       b0 = vlib_get_buffer (vm, bi0);
-      ip0 = get_ip_header(b0);
+      p0 = vlib_buffer_get_current(b0);
+      /*    prefetch next packet, next rule:     vlib_prefetch_buffer_header (p1, STORE);
+        CLIB_PREFETCH (p1->data, CLIB_CACHE_LINE_BYTES, STORE); */      
 
       /* If packet matched */
       u32 rule_index = vnet_buffer(b0)->l2_classify.opaque_index;
-      mmb_rewrite(rules+rule_index, b0);    
+      mmb_rewrite(rules+rule_index, p0);    
 
       //TODO remove when only tcp (with option1s) packets are coming here
       /*if (rule_index != ~0 && ip0->protocol == IP_PROTOCOL_TCP)
@@ -506,7 +527,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
                         && (b0->flags & VLIB_BUFFER_IS_TRACED)))
       {
-        mmb_trace_ip_packet(vm, b0, node, ip0, next0, sw_if_index);
+        mmb_trace_ip_packet(vm, b0, node, p0, next0, sw_if_index);
       }
 
       /* verify speculative enqueue, maybe switch current next frame */

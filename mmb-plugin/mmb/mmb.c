@@ -352,7 +352,6 @@ list_rules_command_fn(vlib_main_t * vm,
   if (!unformat_is_eof(input))
     return clib_error_return(0, "Syntax error: unexpected additional element");
 
-  mmb_main_t *mm = &mmb_main;
   vl_print(vm, "%U", mmb_format_rules, mm->rules);
 
   return 0;
@@ -1053,6 +1052,10 @@ static void mmb_mask_and_key_aux(mmb_rule_t *rule, int is_match) {
      rule->classify_match = match;
      rule->classify_key = key;
   } else {
+     /* flip mask */
+     vec_foreach_index(i, mask) 
+       mask[i] = ~mask[i];
+
      rule->rewrite_mask = mask;
      rule->rewrite_skip = skip;
      rule->rewrite_match = match;
@@ -1064,6 +1067,19 @@ static_always_inline void mmb_mask_and_key(mmb_rule_t *rule) {
    mmb_mask_and_key_aux(rule, 1);
    if (!is_drop(rule)) { /* XXX tcp opts */
       mmb_mask_and_key_aux(rule, 0);
+        u32 skip = rule->rewrite_skip;
+        u32 match = rule->rewrite_match;
+        u8 *key = rule->rewrite_key;
+        u8 *mask = rule->rewrite_mask;
+      int i;
+      vl_print(mmb_main.vlib_main,"skip:%u match:%u lenmask:%u lenkey:%u",
+                       skip,match,vec_len(mask),vec_len(key));
+      vl_print(mmb_main.vlib_main,"MASK");
+      for (i=0;i<vec_len(mask);i++) 
+         vl_print(mmb_main.vlib_main,"%02X",mask[i]);
+      vl_print(mmb_main.vlib_main,"KEY");
+      for (i=0;i<vec_len(key);i++) 
+         vl_print(mmb_main.vlib_main,"%02X",key[i]);
    }
 }
 
