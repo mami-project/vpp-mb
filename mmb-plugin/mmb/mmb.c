@@ -42,7 +42,11 @@
 #undef vl_endianfun
 
 /* instantiate all the print functions we know about */
-#define vl_print(handle, ...) vlib_cli_output (handle, __VA_ARGS__)
+#ifdef MMB_DEBUG
+#  define vl_print(handle, ...) vlib_cli_output (handle, __VA_ARGS__)
+#else
+#  define vl_print(handle, ...) 
+#endif
 #define vl_printfun
 #include <mmb/mmb_all_api_h.h> 
 #undef vl_printfun
