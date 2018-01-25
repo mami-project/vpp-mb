@@ -310,7 +310,7 @@ enable_command_fn(vlib_main_t * vm,
    vec_add1(mm->sw_if_indexes, sw_if_index);
    if (mm->enabled)
       mmb_enable_disable(sw_if_index, 1);
-   vl_print(vm, "mmb enabled on %U\n", format_vnet_sw_if_index_name, 
+   vlib_cli_output(vm, "mmb enabled on %U\n", format_vnet_sw_if_index_name, 
              mm->vnet_main, sw_if_index);
 
    return 0;
@@ -343,7 +343,7 @@ disable_command_fn(vlib_main_t * vm,
 
    vec_delete(mm->sw_if_indexes, 1, index);
    mmb_enable_disable(sw_if_index, 0); /* TODO: del related tables */
-   vl_print(vm, "mmb disabled on %U\n", format_vnet_sw_if_index_name, 
+   vlib_cli_output(vm, "mmb disabled on %U\n", format_vnet_sw_if_index_name, 
           mm->vnet_main, sw_if_index);
 
   return 0;
@@ -353,10 +353,12 @@ static clib_error_t*
 list_rules_command_fn(vlib_main_t * vm,
                           unformat_input_t * input,
                           vlib_cli_command_t * cmd) {
+  mmb_main_t *mm = &mmb_main;
+
   if (!unformat_is_eof(input))
     return clib_error_return(0, "Syntax error: unexpected additional element");
-
-  vl_print(vm, "%U", mmb_format_rules, mm->rules);
+  
+  vlib_cli_output(vm, "%U", mmb_format_rules, mm->rules);
 
   return 0;
 }
@@ -446,7 +448,7 @@ insert_rule_command_fn(vlib_main_t * vm,
       if (!mm->enabled) 
          mmb_enable_disable_all(1);
 
-      vl_print(vm, "Inserted rule at index %u: %U", 
+      vlib_cli_output(vm, "Inserted rule at index %u: %U", 
                rule_index+1, mmb_format_rule, &rule);
       return 0;
    } 
@@ -1378,7 +1380,7 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
    if (!mm->enabled) 
       mmb_enable_disable_all(1);
   
-  vl_print(vm, "Added rule: %U", mmb_format_rule, &rule);
+  vlib_cli_output(vm, "Added rule: %U", mmb_format_rule, &rule);
   return 0;
 }
 
