@@ -447,12 +447,15 @@ static_always_inline void mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule,
       abort();
   }
 
- ip4_header_t *iph = (ip4_header_t *)p;
+ /* update checksums */
+
  u16 checksum;
- switch(rule->l4)
-  { /* XXX */
+ ip4_header_t *iph = (ip4_header_t *)p;
+ void *next_header = ip4_next_header(iph);
+ 
+  switch (rule->l4) { // XXX 
     case IP_PROTOCOL_ICMP: {
-      icmp46_header_t *icmph = (icmp46_header_t *)p;
+      icmp46_header_t *icmph = (icmp46_header_t*) next_header;
       icmph->checksum = 0;
       ip_csum_t csum = ip_incremental_checksum(0, icmph, 
            clib_net_to_host_u16(iph->length) - sizeof(*iph));
@@ -460,25 +463,31 @@ static_always_inline void mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule,
 
       break;
     }
+
     case IP_PROTOCOL_UDP: {
-      udp_header_t *udph = (udp_header_t *)p;
+      udp_header_t *udph = (udp_header_t*) next_header;
+      udph->checksum = 0;
       checksum = ip4_tcp_udp_compute_checksum(vm, b, iph);
-      /* RFC 7011 section 10.3.2 */
+      // RFC 7011 section 10.3.2 
       if (checksum == 0)
         checksum = 0xffff;
       udph->checksum = checksum;
 
       break;
     }
+
     case IP_PROTOCOL_TCP: {
-      tcp_header_t *tcph = (tcp_header_t *)p;
+      tcp_header_t *tcph = (tcp_header_t*) next_header;
+      tcph->checksum = 0;
       tcph->checksum = ip4_tcp_udp_compute_checksum(vm, b, iph);
       break;
     }
+
     default:
       break;
   }
 
+  /* ip4 checksum */
   iph->checksum = ip4_header_checksum(iph);
 
   rule->match_count++;
@@ -583,7 +592,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 }
 
 vlib_node_registration_t ip4_mmb_rewrite_node;
-static uword
+static uword //XXX: duplicate node per transport proto
 mmb_node_ip4_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
   return mmb_node_fn(vm, node, frame, 0, &ip4_mmb_rewrite_node);
