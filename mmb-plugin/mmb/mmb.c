@@ -1071,21 +1071,21 @@ static void mmb_mask_and_key_aux(mmb_rule_t *rule, int is_match) {
 
 static_always_inline void mmb_mask_and_key(mmb_rule_t *rule) {
    mmb_mask_and_key_aux(rule, 1);
+   /*u32 skip = rule->classify_skip;
+   u32 match = rule->classify_match;
+   u8 *key = rule->classify_key;
+   u8 *mask = rule->classify_mask;
+   int i;
+   vl_print(mmb_main.vlib_main,"skip:%u match:%u lenmask:%u lenkey:%u",
+                    skip,match,vec_len(mask),vec_len(key));
+   vl_print(mmb_main.vlib_main,"MASK");
+   for (i=0;i<vec_len(mask);i++) 
+      vl_print(mmb_main.vlib_main,"%02X",mask[i]);
+   vl_print(mmb_main.vlib_main,"KEY");
+   for (i=0;i<vec_len(key);i++) 
+      vl_print(mmb_main.vlib_main,"%02X",key[i]);*/
    if (!is_drop(rule)) { /* XXX tcp opts */
       mmb_mask_and_key_aux(rule, 0);
-        u32 skip = rule->rewrite_skip;
-        u32 match = rule->rewrite_match;
-        u8 *key = rule->rewrite_key;
-        u8 *mask = rule->rewrite_mask;
-      int i;
-      vl_print(mmb_main.vlib_main,"skip:%u match:%u lenmask:%u lenkey:%u",
-                       skip,match,vec_len(mask),vec_len(key));
-      vl_print(mmb_main.vlib_main,"MASK");
-      for (i=0;i<vec_len(mask);i++) 
-         vl_print(mmb_main.vlib_main,"%02X",mask[i]);
-      vl_print(mmb_main.vlib_main,"KEY");
-      for (i=0;i<vec_len(key);i++) 
-         vl_print(mmb_main.vlib_main,"%02X",key[i]);
    }
 }
 
@@ -1188,8 +1188,8 @@ static void attach_table_intfc(u32 table_index, int is_add) {
      sw_if_index = mm->sw_if_indexes[i];
      vnet_set_mmb_classify_intfc(mm->vlib_main, sw_if_index,
                                  table_index, ~0, is_add);
-     vl_print(mm->vlib_main, "table:%u %sttached if%u", table_index,
-              (is_add) ? "a" : "de", sw_if_index);
+     vl_print(mm->vlib_main, "table:%u add:%d if%u", table_index,
+              is_add, sw_if_index);
   }
 }
 
@@ -1236,6 +1236,7 @@ static void realloc_table(mmb_table_t *table) {
   mmb_main_t *mm = &mmb_main;
   mmb_table_t *tables = mm->tables;
   mmb_rule_t *rule, *rules = mm->rules;
+  mmb_table_t *previous_table, *next_table;
   u32 old_index = table->index;
   u32 index;
 
@@ -1260,17 +1261,30 @@ static void realloc_table(mmb_table_t *table) {
 
   /* chain new table to previous */
   if (table->previous_index != ~0) {
-      mmb_table_t *previous_table;
+
       vec_foreach(previous_table, tables) {
          if (previous_table->index == table->previous_index)
            break;
       }
       vl_print(mm->vlib_main, "chaining table %u to previous table at index %u", 
                table->index, previous_table->index);
+
       mmb_classify_update_table (&previous_table->index, table->index);
       previous_table->next_index = table->index;
+
   } else /* if first table, update classifier */
      attach_table_intfc(table->index, 1);
+
+  /* update next table field prev_index */
+  if (table->next_index != ~0) {
+      vec_foreach(next_table, tables) {
+         if (next_table->index == table->next_index)
+           break;
+      } 
+      vl_print(mm->vlib_main, "chaining table %u to next table at index %u", 
+               table->index, next_table->index);    
+      next_table->previous_index = table->index;
+  }
 
   /* delete old sessions and table */
   vec_foreach(rule, rules) {
