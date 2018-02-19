@@ -686,7 +686,7 @@ static_always_inline u8* mmb_format_value(u8 *s, va_list *args) {
     case MMB_FIELD_IP6_SADDR:
     case MMB_FIELD_IP6_DADDR:
       s = format(s, "%U", mmb_format_ip6_address, bytes);
-      break;// TODO:ports in text ?
+      break;
 
     default: /* 40 chars = 20 bytes = field (var) + cond (4) + [..] */
       vec_foreach_index(index, bytes) {

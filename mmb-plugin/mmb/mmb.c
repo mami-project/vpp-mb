@@ -500,11 +500,15 @@ static int vnet_set_mmb_classify_intfc(vlib_main_t *vm, u32 sw_if_index,
   return 0;
 }
 
-static void icmp46_header_host_to_net(icmp46_header_t *icmp) {
+static void icmp46_header_host_to_net(u8 *header) {
+   icmp46_header_t *icmp = (icmp46_header_t *) header;
+
    icmp->checksum = clib_host_to_net_u16(icmp->checksum);
 }
 
-static void tcp_header_host_to_net(tcp_header_t *tcp) {
+static void tcp_header_host_to_net(u8 *header) {
+   tcp_header_t *tcp = (tcp_header_t *) header;
+
    tcp->src_port = clib_host_to_net_u16(tcp->src_port);
    tcp->dst_port = clib_host_to_net_u16(tcp->dst_port);
    tcp->seq_number = clib_host_to_net_u32(tcp->seq_number);
@@ -514,14 +518,18 @@ static void tcp_header_host_to_net(tcp_header_t *tcp) {
    tcp->urgent_pointer = clib_host_to_net_u16(tcp->urgent_pointer);
 }
 
-static void udp_header_host_to_net(udp_header_t *udp) {
+static void udp_header_host_to_net(u8 *header) {
+   udp_header_t *udp = (udp_header_t *) header;
+
    udp->src_port = clib_host_to_net_u16(udp->src_port);
    udp->dst_port = clib_host_to_net_u16(udp->dst_port);
    udp->length = clib_host_to_net_u16(udp->length);
    udp->checksum = clib_host_to_net_u16(udp->checksum);
 }
 
-static void ip4_header_host_to_net(ip4_header_t *ip) {
+static void ip4_header_host_to_net(u8 *header) {
+   ip4_header_t *ip = (ip4_header_t *) header;
+
    ip->length = clib_host_to_net_u16(ip->length);
    ip->fragment_id = clib_host_to_net_u16(ip->fragment_id);
    ip->flags_and_fragment_offset = 
@@ -531,7 +539,9 @@ static void ip4_header_host_to_net(ip4_header_t *ip) {
    ip->dst_address.as_u32 = clib_host_to_net_u32(ip->dst_address.as_u32);
 }
 
-static void ip6_header_host_to_net(ip6_header_t *ip) {
+static void ip6_header_host_to_net(u8 *header) {
+   ip6_header_t *ip = (ip6_header_t *) header;
+
    ip->ip_version_traffic_class_and_flow_label = 
      clib_host_to_net_u32(ip->ip_version_traffic_class_and_flow_label);
    ip->payload_length = clib_host_to_net_u16(ip->payload_length);
@@ -541,8 +551,10 @@ static void ip6_header_host_to_net(ip6_header_t *ip) {
    ip->dst_address.as_u64[1] = clib_host_to_net_u64(ip->dst_address.as_u64[1]); 
 }
 
-static_always_inline void mmb_icmp_mask_and_key_inline(icmp46_header_t *icmp_mask,
-     icmp46_header_t *icmp_key, u8 field, u8 *value) {
+static_always_inline void mmb_icmp_mask_and_key_inline(u8 *mask, u8 *key, 
+                                                       u8 field, u8 *value) {
+  icmp46_header_t *icmp_mask = (icmp46_header_t *) mask;
+  icmp46_header_t *icmp_key = (icmp46_header_t *) key;
 
    switch (field) {
       case MMB_FIELD_ICMP_TYPE:
@@ -565,30 +577,10 @@ static_always_inline void mmb_icmp_mask_and_key_inline(icmp46_header_t *icmp_mas
     }
 }
 
-static void mmb_icmp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, u8 offset,
-                                int is_match) {
-
-  icmp46_header_t *icmp_mask = (icmp46_header_t *) (mask+offset);
-  icmp46_header_t *icmp_key = (icmp46_header_t *) (key+offset);
-
-  if (is_match) {
-     mmb_match_t *match;
-     vec_foreach(match, rule->matches) {
-       mmb_icmp_mask_and_key_inline(icmp_mask, icmp_key, match->field, match->value);
-     }
-  } else {
-     mmb_target_t *target;
-     vec_foreach(target, rule->targets) {
-       mmb_icmp_mask_and_key_inline(icmp_mask, icmp_key, target->field, target->value);
-     }
-  }
-
-  icmp46_header_host_to_net(icmp_mask);
-  icmp46_header_host_to_net(icmp_key);
-}
-
-static_always_inline void mmb_udp_mask_and_key_inline(udp_header_t *udp_mask, 
-   udp_header_t *udp_key, u8 field, u8 *value) {
+static_always_inline void mmb_udp_mask_and_key_inline(u8 *mask, u8 *key, 
+                                                      u8 field, u8 *value) {
+  udp_header_t *udp_mask = (udp_header_t *) mask;
+  udp_header_t *udp_key = (udp_header_t *) key;
 
   switch (field) {
       case MMB_FIELD_UDP_SPORT:
@@ -615,30 +607,10 @@ static_always_inline void mmb_udp_mask_and_key_inline(udp_header_t *udp_mask,
     }
 }
 
-static void mmb_udp_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, 
-                               u8 offset, int is_match) {
-
-  udp_header_t *udp_mask = (udp_header_t *) (mask+offset);
-  udp_header_t *udp_key = (udp_header_t *) (key+offset);
-
-   if (is_match) {
-     mmb_match_t *match;
-     vec_foreach(match, rule->matches) {
-       mmb_udp_mask_and_key_inline(udp_mask, udp_key, match->field, match->value);
-     }
-  } else {
-     mmb_target_t *target;
-     vec_foreach(target, rule->targets) {
-       mmb_udp_mask_and_key_inline(udp_mask, udp_key, target->field, target->value);
-     }
-  }
-
-  udp_header_host_to_net(udp_mask);
-  udp_header_host_to_net(udp_key);
-}
-
-static_always_inline void mmb_tcp_mask_and_key_inline(tcp_header_t *tcp_mask, 
-     tcp_header_t *tcp_key, u8 field, u8 *value) {
+static_always_inline void mmb_tcp_mask_and_key_inline(u8 *mask, u8 *key, 
+                                                      u8 field, u8 *value) {
+  tcp_header_t *tcp_mask = (tcp_header_t *) mask;
+  tcp_header_t *tcp_key = (tcp_header_t *) key;
 
   switch (field) {
       case MMB_FIELD_TCP_SPORT:
@@ -729,30 +701,10 @@ static_always_inline void mmb_tcp_mask_and_key_inline(tcp_header_t *tcp_mask,
     }
 }
 
-static void mmb_tcp_mask_and_key(mmb_rule_t *rule, u8 *mask, 
-              u8 *key, u8 offset, int is_match) {
- 
-  tcp_header_t *tcp_mask = (tcp_header_t *) (mask+offset);
-  tcp_header_t *tcp_key = (tcp_header_t *) (key+offset);
-
-  if (is_match) {
-     mmb_match_t *match;
-     vec_foreach(match, rule->matches) {
-       mmb_tcp_mask_and_key_inline(tcp_mask, tcp_key, match->field, match->value);
-     }
-  } else {
-     mmb_target_t *target;
-     vec_foreach(target, rule->targets) {
-       mmb_tcp_mask_and_key_inline(tcp_mask, tcp_key, target->field, target->value);
-     }
-  }
-
-  tcp_header_host_to_net(tcp_mask);
-  tcp_header_host_to_net(tcp_key);
-}
-
-static_always_inline void mmb_ip4_mask_and_key_inline(ip4_header_t *ip_mask, 
-     ip4_header_t *ip_key, u8 field, u8 *value) {
+static_always_inline void mmb_ip4_mask_and_key_inline(u8 *mask, u8 *key, 
+                                                      u8 field, u8 *value) {
+  ip4_header_t *ip_mask = (ip4_header_t *) mask;
+  ip4_header_t *ip_key = (ip4_header_t *) key;
 
   switch (field) {    
    case MMB_FIELD_IP4_VER:
@@ -831,72 +783,10 @@ static_always_inline void mmb_ip4_mask_and_key_inline(ip4_header_t *ip_mask,
  }
 }
 
-static void mmb_ip4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, int is_match) {
- /* ip4
-  * 0: ip-ver, ip-ihl, ip-dscp, ip-ecn, ip-len, ip-id, ip-flags, ip-res,
-  *    ip-df, ip-mf, ip-frag-offset, ip-ttl, ip-proto, ip-checksum, ip-saddr
-  *
-  * 1: ip-daddr
-  *    udp: udp-sport, udp-dport, udp-len, udp-checksum, udp-payload (0:3, 4 bytes)
-  *    icmp: icmp-type, icmp-code, icmp-checksum, icmp-payload (0:7, 8 bytes)
-  *    tcp: tcp-sport, tcp-dport, tcp-seq-num, tcp-ack-num
-  *
-  * 2: udp: udp-payload (4:19, 16 bytes)
-  *    icmp: icmp-payload (8:23, 16 bytes)
-  *    tcp: tcp-offset, tcp-flags (all), tcp-win, tcp-checksum, tcp-urg-ptr,
-  *    tcp-opt: 
-  *
-  * 3: udp: udp-payload (20:35, 16 bytes)
-  *    icmp: icmp-payload (24:39, 16 bytes)
-  *    tcp-opt: 
-  *
-  *
-  * 4: udp: udp-payload (36:51, 16 bytes)
-  *    icmp: icmp-payload (40:55, 16 bytes)
-  *    tcp-opt: 
-  *
-  *
-  */
-
-  ip4_header_t *ip_mask = (ip4_header_t *) mask;
-  ip4_header_t *ip_key = (ip4_header_t *) key;
- 
-  if (is_match) {
-#ifdef MMB_MATCH_IP_VERSION
-     ip_mask->ip_version_and_header_length = 0xf0;
-     ip_key->ip_version_and_header_length = 0x40;
-#elif
-     if (vec_len(rule->matches) == 0) {
-        ip_mask->ip_version_and_header_length = 0xf0;
-        ip_key->ip_version_and_header_length = 0x40;  
-     }
-#endif
-  }
-
-  if (is_match) {
-     mmb_match_t *match;
-     vec_foreach(match, rule->matches) {
-       mmb_ip4_mask_and_key_inline(ip_mask, ip_key, match->field, match->value);
-     }
-  } else {
-     mmb_target_t *target;
-     vec_foreach(target, rule->targets) {
-       mmb_ip4_mask_and_key_inline(ip_mask, ip_key, target->field, target->value);
-     }
-  }
-
-  ip4_header_host_to_net(ip_mask);
-  ip4_header_host_to_net(ip_key);
-
-   if (0);
-#define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b) {\
-                 mmb_##a##_mask_and_key(rule, mask, key, 20, is_match);}
-   foreach_mmb_transport_proto
-#undef _
-}
-
-static_always_inline void mmb_ip6_mask_and_key_inline(ip6_header_t *ip_mask,
-      ip6_header_t *ip_key, u8 field, u8 *value) {
+static_always_inline void mmb_ip6_mask_and_key_inline(u8 *mask, u8 *key, 
+                                                      u8 field, u8 *value) {
+  ip6_header_t *ip_mask = (ip6_header_t *) mask;
+  ip6_header_t *ip_key = (ip6_header_t *) key;
 
    switch (field) {
       case MMB_FIELD_IP6_VER:
@@ -941,72 +831,134 @@ static_always_inline void mmb_ip6_mask_and_key_inline(ip6_header_t *ip_mask,
       default:
          break;
     }
-
 }
 
-static void mmb_ip6_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, int is_match) {
-   /* ip6
-    * 0: ip6-ver, ip6-traffic-class, ip6-flow-label, ip6-len, ip6-next,
-    *    ip6-hop-limit, ip6-saddr (8 bytes)
-    *
-    * 1: ip6-saddr (8 bytes), ip6-daddr (8 bytes)
-    *
-    * 2: ip6-daddr (8 bytes)
-    *    udp: udp-sport, udp-dport, udp-len, udp-checksum
-    *    icmp: icmp-type, icmp-code, icmp-checksum, icmp-payload (0:3, 4 bytes)
-    *    tcp: tcp-sport, tcp-dport, tcp-seq-num, tcp-ack-num
-    *    icmp: icmp-payload (8:23, 16 bytes)
-    *    tcp: tcp-offset, tcp-flags (all), tcp-win, tcp-checksum, tcp-urg-ptr,
-    *    tcp-opt: 
-    *
-    * 3: udp: udp-payload (20:35, 16 bytes)
-    *    icmp: icmp-payload (24:39, 16 bytes)
-    *    tcp-opt: 
-    *
-    *
-    * 4: udp: udp-payload (36:51, 16 bytes)
-    *    icmp: icmp-payload (40:55, 16 bytes)
-    *    tcp-opt: 
-    *
-    *
-    */
+static void mmb_l4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
+                               int is_match) {
+  mmb_match_t *match;
+  mmb_target_t *target;
 
-
-   ip6_header_t *ip_mask = (ip6_header_t *) mask;
-   ip6_header_t *ip_key = (ip6_header_t *) key;
-
-   if (is_match) {
-#ifdef MMB_MATCH_IP_VERSION
-     ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
-     ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
-#elif
-     if (vec_len(rule->matches) == 0) {
-       ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
-       ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
-     }
-#endif
-   }
- 
-  if (is_match) {
-     mmb_match_t *match;
-     vec_foreach(match, rule->matches) {
-       mmb_ip6_mask_and_key_inline(ip_mask, ip_key, match->field, match->value);
+  if (is_match) {     
+    vec_foreach(match, rule->matches) {
+       if (0);
+#define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b) {\
+                 mmb_##a##_mask_and_key_inline(mask, key, match->field, match->value);}
+   foreach_mmb_transport_proto
+#undef _
      }
   } else {
-     mmb_target_t *target;
-     vec_foreach(target, rule->targets) {
-       mmb_ip6_mask_and_key_inline(ip_mask, ip_key, target->field, target->value);
+     
+    vec_foreach(target, rule->targets) {
+       if (0);
+#define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b) {\
+                 mmb_##a##_mask_and_key_inline(mask, key, target->field, target->value);}
+   foreach_mmb_transport_proto
+#undef _
      }
   }
 
-  ip6_header_host_to_net(ip_mask);
-  ip6_header_host_to_net(ip_key);
+   /* l4 network order */
+   switch (rule->l4) {
+      case IP_PROTOCOL_ICMP:
+         icmp46_header_host_to_net(mask);
+         icmp46_header_host_to_net(key);
+         break;
+      case IP_PROTOCOL_UDP:
+         udp_header_host_to_net(mask);
+         udp_header_host_to_net(key);
+         break;
+      case IP_PROTOCOL_TCP:
+        tcp_header_host_to_net(mask);
+        tcp_header_host_to_net(key);
+         break;
+      default:
+         break;
+   }
+}
 
-   if (0);
-#define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b) {\
-                 mmb_##a##_mask_and_key(rule, mask, key, 40, is_match);}
-   foreach_mmb_transport_proto
+static void mmb_ip4_match_protocol(mmb_rule_t *rule, u8 *mask, u8 *key) {
+
+  ip4_header_t *ip_mask = (ip4_header_t *) mask;
+  ip4_header_t *ip_key = (ip4_header_t *) key;
+
+#ifdef MMB_MATCH_IP_VERSION
+   ip_mask->ip_version_and_header_length = 0xf0;
+   ip_key->ip_version_and_header_length = 0x40;
+#elif
+   if (vec_len(rule->matches) == 0) {
+     ip_mask->ip_version_and_header_length = 0xf0;
+     ip_key->ip_version_and_header_length = 0x40;  
+   }
+#endif
+}
+
+static void mmb_ip6_match_protocol(mmb_rule_t *rule, u8 *mask, u8 *key) {
+
+  ip6_header_t *ip_mask = (ip6_header_t *) mask;
+  ip6_header_t *ip_key = (ip6_header_t *) key;
+
+#ifdef MMB_MATCH_IP_VERSION
+   ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
+   ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
+#elif
+   if (vec_len(rule->matches) == 0) {
+      ip_mask->ip_version_traffic_class_and_flow_label = 0xf0000000;
+      ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
+   }
+#endif
+}
+
+
+static void mmb_l3_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
+                               int is_match) {
+  mmb_match_t *match;
+  mmb_target_t *target;
+
+  if (is_match) {     
+    vec_foreach(match, rule->matches) {
+      if (0);
+#define _(a,b) else if (rule->l3 == ETHERNET_TYPE_##b) {\
+                 mmb_##a##_mask_and_key_inline(mask, key, match->field, match->value);}
+  foreach_mmb_network_proto
 #undef _
+
+     }
+  } else {
+    vec_foreach(target, rule->targets) {
+      if (0);
+#define _(a,b) else if (rule->l3 == ETHERNET_TYPE_##b) {\
+                 mmb_##a##_mask_and_key_inline(mask, key, target->field, target->value);}
+  foreach_mmb_network_proto
+#undef _
+     }
+  }
+
+   /* l3 network order */
+   switch (rule->l3) {
+
+      case ETHERNET_TYPE_IP4:
+         if (is_match) 
+            mmb_ip4_match_protocol(rule, mask, key);
+
+         ip4_header_host_to_net(mask);
+         ip4_header_host_to_net(key);
+
+         mmb_l4_mask_and_key(rule, mask+20, key+20, is_match);
+         break;
+
+      case ETHERNET_TYPE_IP6:
+         if (is_match) 
+            mmb_ip6_match_protocol(rule, mask, key);
+
+         ip6_header_host_to_net(mask);
+         ip6_header_host_to_net(key);
+
+         mmb_l4_mask_and_key(rule, mask+40, key+40, is_match);
+         break;
+
+      default:
+         break;
+   }
 }
 
 /**
@@ -1023,11 +975,7 @@ static void mmb_mask_and_key_aux(mmb_rule_t *rule, int is_match) {
   vec_validate_aligned(mask, MMB_CLASSIFY_MAX_MASK_LEN-1, sizeof(u32x4));
   vec_validate_aligned(key, MMB_CLASSIFY_MAX_MASK_LEN-1, sizeof(u32x4));
 
-   if (0);
-#define _(a,b) else if (rule->l3 == ETHERNET_TYPE_##b) {\
-                 mmb_##a##_mask_and_key(rule, mask, key, is_match);}
-  foreach_mmb_network_proto
-#undef _
+  mmb_l3_mask_and_key(rule, mask, key, is_match);
   
   /* Scan forward looking for the first significant mask octet */
   for (i = 0; i < vec_len(mask); i++)
@@ -1048,7 +996,7 @@ static void mmb_mask_and_key_aux(mmb_rule_t *rule, int is_match) {
     match--;
   }
   if (match == 0)
-    clib_warning ("BUG: match 0");
+    clib_warning("BUG: match 0");
   _vec_len(mask) = match * sizeof(u32x4);
   _vec_len(key) = match * sizeof(u32x4);
   
@@ -1071,6 +1019,9 @@ static void mmb_mask_and_key_aux(mmb_rule_t *rule, int is_match) {
 
 static_always_inline void mmb_mask_and_key(mmb_rule_t *rule) {
    mmb_mask_and_key_aux(rule, 1);
+   if (!is_drop(rule)) { /* XXX tcp opts */
+      mmb_mask_and_key_aux(rule, 0);
+   }
    /*u32 skip = rule->classify_skip;
    u32 match = rule->classify_match;
    u8 *key = rule->classify_key;
@@ -1084,9 +1035,6 @@ static_always_inline void mmb_mask_and_key(mmb_rule_t *rule) {
    vl_print(mmb_main.vlib_main,"KEY");
    for (i=0;i<vec_len(key);i++) 
       vl_print(mmb_main.vlib_main,"%02X",key[i]);*/
-   if (!is_drop(rule)) { /* XXX tcp opts */
-      mmb_mask_and_key_aux(rule, 0);
-   }
 }
 
 static int
