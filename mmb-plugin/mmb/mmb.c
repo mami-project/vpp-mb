@@ -65,7 +65,6 @@
 #define foreach_mmb_plugin_api_msg
 
 /* internal macros */
-#define MMB_MAX_FIELD_LEN 64
 #define MMB_DEFAULT_ETHERNET_TYPE ETHERNET_TYPE_IP4
 #define MMB_MATCH_IP_VERSION
 
@@ -551,10 +550,26 @@ static void ip6_header_host_to_net(u8 *header) {
    ip->dst_address.as_u64[1] = clib_host_to_net_u64(ip->dst_address.as_u64[1]); 
 }
 
-static_always_inline void mmb_icmp_mask_and_key_inline(u8 *mask, u8 *key, 
-                                                       u8 field, u8 *value) {
-  icmp46_header_t *icmp_mask = (icmp46_header_t *) mask;
-  icmp46_header_t *icmp_key = (icmp46_header_t *) key;
+/**
+ * header_size: size of header whose payload is written
+ * offset: header offset
+ *
+ */
+static_always_inline void mmb_match_payload(u8 *mask, u8 *key, u8 *value,
+                                            int offset, int header_size) {
+   int byte_count = clib_min(vec_len(value),
+                         MMB_CLASSIFY_MAX_MASK_LEN-header_size-offset);
+
+   clib_memcpy(key+offset+header_size, value, byte_count);
+   for (int i=0; i<byte_count; i++)
+      mask[offset+header_size+i] = 0xff;
+}
+
+static_always_inline void mmb_icmp_mask_and_key_inline(u8 *mask, 
+                          u8 *key, int offset, u8 field, u8 *value) {
+
+  icmp46_header_t *icmp_mask = (icmp46_header_t *) (mask+offset);
+  icmp46_header_t *icmp_key = (icmp46_header_t *) (key+offset);
 
    switch (field) {
       case MMB_FIELD_ICMP_TYPE:
@@ -569,18 +584,18 @@ static_always_inline void mmb_icmp_mask_and_key_inline(u8 *mask, u8 *key,
          icmp_mask->checksum = 0xffff;
          icmp_key->checksum = bytes_to_u32(value);
          break;
-      case MMB_FIELD_ICMP_PAYLOAD:
-         /* XXX */
+      case MMB_FIELD_ICMP_PAYLOAD: 
+         mmb_match_payload(mask, key, value, offset, sizeof(icmp46_header_t));
          break;
       default:
          break;
     }
 }
 
-static_always_inline void mmb_udp_mask_and_key_inline(u8 *mask, u8 *key, 
+static_always_inline void mmb_udp_mask_and_key_inline(u8 *mask, u8 *key, int offset,
                                                       u8 field, u8 *value) {
-  udp_header_t *udp_mask = (udp_header_t *) mask;
-  udp_header_t *udp_key = (udp_header_t *) key;
+  udp_header_t *udp_mask = (udp_header_t *) (mask+offset);
+  udp_header_t *udp_key = (udp_header_t *) (key+offset);
 
   switch (field) {
       case MMB_FIELD_UDP_SPORT:
@@ -600,17 +615,17 @@ static_always_inline void mmb_udp_mask_and_key_inline(u8 *mask, u8 *key,
          udp_key->checksum = bytes_to_u32(value);
          break;
       case MMB_FIELD_UDP_PAYLOAD:
-         /* XXX */
+         mmb_match_payload(mask, key, value, offset, sizeof(udp_header_t));
          break;
       default:
          break;
     }
 }
 
-static_always_inline void mmb_tcp_mask_and_key_inline(u8 *mask, u8 *key, 
+static_always_inline void mmb_tcp_mask_and_key_inline(u8 *mask, u8 *key, int offset,
                                                       u8 field, u8 *value) {
-  tcp_header_t *tcp_mask = (tcp_header_t *) mask;
-  tcp_header_t *tcp_key = (tcp_header_t *) key;
+  tcp_header_t *tcp_mask = (tcp_header_t *) (mask+offset);
+  tcp_header_t *tcp_key = (tcp_header_t *) (key+offset);
 
   switch (field) {
       case MMB_FIELD_TCP_SPORT:
@@ -693,8 +708,9 @@ static_always_inline void mmb_tcp_mask_and_key_inline(u8 *mask, u8 *key,
          tcp_mask->urgent_pointer = 0xffff;
          tcp_key->urgent_pointer = bytes_to_u32(value);
          break;
-      case MMB_FIELD_TCP_PAYLOAD:
-         /* XXX */
+      case MMB_FIELD_TCP_PAYLOAD: 
+         /* XXX: add 10 tables, 1 offset per option line ? */
+         mmb_match_payload(mask, key, value, offset, sizeof(tcp_header_t));
          break;
       default:
          break;
@@ -776,7 +792,7 @@ static_always_inline void mmb_ip4_mask_and_key_inline(u8 *mask, u8 *key,
       ip_key->dst_address.as_u32 = bytes_to_u32(value) & ip_mask->dst_address.as_u32;
       break;
    case MMB_FIELD_IP4_PAYLOAD:
-      /* XXX */
+      mmb_match_payload(mask, key, value, 0, sizeof(ip4_header_t));
       break;
    default:
       break;
@@ -826,14 +842,14 @@ static_always_inline void mmb_ip6_mask_and_key_inline(u8 *mask, u8 *key,
          ip_key->dst_address.as_u64[1] = bytes_to_u64(value+8) & ip_mask->dst_address.as_u64[1];
          break;
       case MMB_FIELD_IP6_PAYLOAD: 
-         /* XXX */
+         mmb_match_payload(mask, key, value, 0, sizeof(ip6_header_t));
          break;
       default:
          break;
     }
 }
 
-static void mmb_l4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
+static void mmb_l4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, int offset,
                                int is_match) {
   mmb_match_t *match;
   mmb_target_t *target;
@@ -842,7 +858,7 @@ static void mmb_l4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
     vec_foreach(match, rule->matches) {
        if (0);
 #define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b) {\
-                 mmb_##a##_mask_and_key_inline(mask, key, match->field, match->value);}
+                 mmb_##a##_mask_and_key_inline(mask, key, offset, match->field, match->value);}
    foreach_mmb_transport_proto
 #undef _
      }
@@ -851,7 +867,7 @@ static void mmb_l4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
     vec_foreach(target, rule->targets) {
        if (0);
 #define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b) {\
-                 mmb_##a##_mask_and_key_inline(mask, key, target->field, target->value);}
+                 mmb_##a##_mask_and_key_inline(mask, key, offset, target->field, target->value);}
    foreach_mmb_transport_proto
 #undef _
      }
@@ -860,16 +876,16 @@ static void mmb_l4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
    /* l4 network order */
    switch (rule->l4) {
       case IP_PROTOCOL_ICMP:
-         icmp46_header_host_to_net(mask);
-         icmp46_header_host_to_net(key);
+         icmp46_header_host_to_net(mask+offset);
+         icmp46_header_host_to_net(key+offset);
          break;
       case IP_PROTOCOL_UDP:
-         udp_header_host_to_net(mask);
-         udp_header_host_to_net(key);
+         udp_header_host_to_net(mask+offset);
+         udp_header_host_to_net(key+offset);
          break;
       case IP_PROTOCOL_TCP:
-        tcp_header_host_to_net(mask);
-        tcp_header_host_to_net(key);
+         tcp_header_host_to_net(mask+offset);
+         tcp_header_host_to_net(key+offset);
          break;
       default:
          break;
@@ -943,7 +959,7 @@ static void mmb_l3_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
          ip4_header_host_to_net(mask);
          ip4_header_host_to_net(key);
 
-         mmb_l4_mask_and_key(rule, mask+20, key+20, is_match);
+         mmb_l4_mask_and_key(rule, mask, key, 20, is_match);
          break;
 
       case ETHERNET_TYPE_IP6:
@@ -953,7 +969,7 @@ static void mmb_l3_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
          ip6_header_host_to_net(mask);
          ip6_header_host_to_net(key);
 
-         mmb_l4_mask_and_key(rule, mask+40, key+40, is_match);
+         mmb_l4_mask_and_key(rule, mask, key, 40, is_match);
          break;
 
       default:

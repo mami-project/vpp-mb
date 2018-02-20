@@ -304,6 +304,9 @@ uword mmb_unformat_value(unformat_input_t *input, va_list *args) {
       }
       unformat_free(sub_input);
     }
+
+    if (vec_len(*bytes) > MMB_MAX_FIELD_LEN) 
+      return 0;
     
   } else if (unformat (input, "%lu", &decimal)) {
      u64_tobytes(bytes, decimal, 8);

@@ -138,6 +138,8 @@
 #define cond_toindex(macro) macro-MMB_FIRST_COND
 #define cond_tomacro(index) index+MMB_FIRST_COND
 
+#define MMB_MAX_FIELD_LEN 64
+
 /* cli-name,protocol-name */
 #define foreach_mmb_transport_proto       \
 _(tcp,TCP)                                    \
