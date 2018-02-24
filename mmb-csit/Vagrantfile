@@ -32,7 +32,6 @@ $install_prereqs = <<-SHELL
 SHELL
 
 $install_vpp = <<-SHELL
-    sudo apt-get -y purge vpp\*
     mkdir -p /mnt/huge
     sudo apt-get install -y vpp vpp-lib vpp-dev vpp-plugins vpp-dpdk-dkms
 SHELL
