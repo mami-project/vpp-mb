@@ -378,9 +378,11 @@ flush_rules_command_fn(vlib_main_t * vm,
   if (vec_len(mm->tables) == 0)
      return 0;
 
+  /* detach first table */
   first_table_index = mm->tables[0].index;
   attach_table_intfc(first_table_index, 0);
 
+  /* delete sessions */
   vec_foreach_index(rule_index, rules) {
     mmb_rule_t *rule = &rules[rule_index];
     mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
@@ -388,9 +390,11 @@ flush_rules_command_fn(vlib_main_t * vm,
     free_rule(rule);
   }
 
+  /* delete tables */
   mmb_classify_del_table(&first_table_index, 1);
   vec_delete(mm->tables, vec_len(mm->tables), 0);
 
+  /* delete rules */
   if (vec_len(rules))
     vec_delete(rules, vec_len(rules), 0);
 
@@ -832,14 +836,18 @@ static_always_inline void mmb_ip6_mask_and_key_inline(u8 *mask, u8 *key,
       case MMB_FIELD_IP6_SADDR:
          ip_mask->src_address.as_u64[0] = 0xffffffffffffffff << (64-value[16]);
          ip_mask->src_address.as_u64[1] = 0xffffffffffffffff << (128-value[16]);
-         ip_key->src_address.as_u64[0] = bytes_to_u64(value) & ip_mask->src_address.as_u64[0];
-         ip_key->src_address.as_u64[1] = bytes_to_u64(value+8) & ip_mask->src_address.as_u64[1];
+         ip_key->src_address.as_u64[0] = bytes_to_u64(value) 
+                                         & ip_mask->src_address.as_u64[0];
+         ip_key->src_address.as_u64[1] = bytes_to_u64(value+8) 
+                                         & ip_mask->src_address.as_u64[1];
          break;
       case MMB_FIELD_IP6_DADDR:
          ip_mask->dst_address.as_u64[0] = 0xffffffffffffffff << (64-value[16]);
          ip_mask->dst_address.as_u64[1] = 0xffffffffffffffff << (128-value[16]);
-         ip_key->dst_address.as_u64[0] = bytes_to_u64(value) & ip_mask->dst_address.as_u64[0];
-         ip_key->dst_address.as_u64[1] = bytes_to_u64(value+8) & ip_mask->dst_address.as_u64[1];
+         ip_key->dst_address.as_u64[0] = bytes_to_u64(value) 
+                                         & ip_mask->dst_address.as_u64[0];
+         ip_key->dst_address.as_u64[1] = bytes_to_u64(value+8) 
+                                         & ip_mask->dst_address.as_u64[1];
          break;
       case MMB_FIELD_IP6_PAYLOAD: 
          mmb_match_payload(mask, key, value, 0, sizeof(ip6_header_t));
@@ -1038,19 +1046,6 @@ static_always_inline void mmb_mask_and_key(mmb_rule_t *rule) {
    if (!is_drop(rule)) { /* XXX tcp opts */
       mmb_mask_and_key_aux(rule, 0);
    }
-   /*u32 skip = rule->classify_skip;
-   u32 match = rule->classify_match;
-   u8 *key = rule->classify_key;
-   u8 *mask = rule->classify_mask;
-   int i;
-   vl_print(mmb_main.vlib_main,"skip:%u match:%u lenmask:%u lenkey:%u",
-                    skip,match,vec_len(mask),vec_len(key));
-   vl_print(mmb_main.vlib_main,"MASK");
-   for (i=0;i<vec_len(mask);i++) 
-      vl_print(mmb_main.vlib_main,"%02X",mask[i]);
-   vl_print(mmb_main.vlib_main,"KEY");
-   for (i=0;i<vec_len(key);i++) 
-      vl_print(mmb_main.vlib_main,"%02X",key[i]);*/
 }
 
 static int
@@ -1115,7 +1110,7 @@ static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node,
   int ret = vnet_classify_add_del_session (mm->classify_main, 
                                 table_index, key, 
                                 next_node, 
-                                rule_index, /* XXX */
+                                rule_index, 
                                 0 /* advance */, 
                                 0 /* action*/, 
                                 0 /* metadata */,
@@ -1157,8 +1152,8 @@ static void attach_table_intfc(u32 table_index, int is_add) {
   }
 }
 
-static_always_inline u32 find_table(u8* mask, u32 skip, u32 match) {
-   /* return table index that for this rule, or ~0 if not found  */
+static_always_inline u32 find_table(mmb_rule_t *rule) {
+   /* return table index that contains this rule session, or ~0 if not found  */
    mmb_main_t *mm = &mmb_main;
    mmb_table_t *tables = mm->tables;
    mmb_table_t *table;
@@ -1166,8 +1161,9 @@ static_always_inline u32 find_table(u8* mask, u32 skip, u32 match) {
 
    vec_foreach_index(index, tables) {
       table = &tables[index];
-      if (mask_equal(table->mask, mask) && table->skip == skip
-            && table->match == match)
+      if (mask_equal(table->mask, rule->classify_mask) 
+            && table->skip == rule->classify_skip
+            && table->match == rule->classify_match)
          return index;
    }
 
@@ -1194,9 +1190,9 @@ static_always_inline void add_table(u32 index, u8* mask, u32 skip,
   vec_add1(mm->tables, table);
 }
 
-static void realloc_table(mmb_table_t *table) {
+static void realloc_table(mmb_table_t *table, int is_enlarge) {
   /* Increase table size by a factor MMB_TABLE_SIZE_RATIO */
-
+  /* XXX: shrink */
   mmb_main_t *mm = &mmb_main;
   mmb_table_t *tables = mm->tables;
   mmb_rule_t *rule, *rules = mm->rules;
@@ -1204,9 +1200,12 @@ static void realloc_table(mmb_table_t *table) {
   u32 old_index = table->index;
   u32 index;
 
-  /* create bigger table */
+  /* create resized table */
   table->index = ~0;
-  table->size *= MMB_TABLE_SIZE_RATIO;  
+  if (is_enlarge)
+    table->size *= MMB_TABLE_SIZE_INC_RATIO;
+  else 
+    table->size /= MMB_TABLE_SIZE_DEC_RATIO;
   mmb_classify_add_table(table->mask, table->skip, table->match,
 			                &table->index, table->next_index, table->size);
   vl_print(mm->vlib_main, "new table of size %u created at index %u to replace index %u", 
@@ -1217,7 +1216,7 @@ static void realloc_table(mmb_table_t *table) {
     rule = &rules[index];
     if (rule->classify_table_index == old_index) {
       mmb_add_del_session(table->index, rule->classify_key, 
-                      next_if_match(rule), index, 1); 
+                          next_if_match(rule), index, 1); 
       vl_print(mm->vlib_main, "added session %u to table %u", 
                index, table->index);
     }
@@ -1256,7 +1255,7 @@ static void realloc_table(mmb_table_t *table) {
       vl_print(mm->vlib_main, "deleting session from table %u", 
                old_index);
       mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                          0, index, 0); 
+                          0, 0, 0); 
       rule->classify_table_index = table->index;
     }
   }  
@@ -1292,9 +1291,8 @@ static u8 add_to_classifier(mmb_rule_t *rule) {
       attach_table_intfc(rule->classify_table_index, 1);
   } else {
 
-    u32 mmb_table = find_table(rule->classify_mask, 
-                                    rule->classify_skip, 
-                                    rule->classify_match);
+    u32 mmb_table = find_table(rule);
+
     if (mmb_table == ~0) {
       /* Table does not exist, create it, add rule, and chain it to last table */
       mmb_classify_add_table(rule->classify_mask, 
@@ -1319,7 +1317,7 @@ static u8 add_to_classifier(mmb_rule_t *rule) {
 
       mmb_table_t *table = &mm->tables[mmb_table];
       if (table->entry_count == table->size)  /* Realloc table */
-         realloc_table(table);   
+         realloc_table(table, 1);   
 
       /* Table exists, add session */
       rule->classify_table_index = table->index;
@@ -1334,6 +1332,23 @@ static u8 add_to_classifier(mmb_rule_t *rule) {
   }
 
   return 1;
+}
+
+clib_error_t *parse_rule(unformat_input_t * input, 
+                                      mmb_rule_t *rule) {
+  if (unformat(input, "last")) 
+    rule->last_match = 1;
+  if (!unformat(input, "%U", mmb_unformat_rule, rule))
+    return clib_error_return(0, "Invalid rule");
+  
+  clib_error_t *error;
+  if ( (error = validate_rule(rule)) )
+    return error;
+
+  if (!add_to_classifier(rule))
+    return clib_error_return(0, "Could not add rule to classifier");
+
+  return 0;
 }
 
 static clib_error_t *
@@ -1355,27 +1370,10 @@ add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input,
   if (rule_has_tcp_options(&rule))
      mm->opts_in_rules = 1;
 
-   if (!mm->enabled) 
-      mmb_enable_disable_all(1);
+  if (!mm->enabled) 
+     mmb_enable_disable_all(1);
   
   vlib_cli_output(vm, "Added rule: %U", mmb_format_rule, &rule);
-  return 0;
-}
-
-clib_error_t *parse_rule(unformat_input_t * input, 
-                                      mmb_rule_t *rule) {
-  if (unformat(input, "last")) 
-    rule->last_match = 1;
-  if (!unformat(input, "%U", mmb_unformat_rule, rule))
-    return clib_error_return(0, "Invalid rule");
-  
-  clib_error_t *error;
-  if ( (error = validate_rule(rule)) )
-    return error;
-
-  if (!add_to_classifier(rule))
-    return clib_error_return(0, "Could not add rule to classifier");
-
   return 0;
 }
 
@@ -1384,42 +1382,55 @@ del_rule_command_fn(vlib_main_t *vm,
                     unformat_input_t *input,
                     vlib_cli_command_t *cmd) {
    unformat_input_tolower(input);
-   u32 rule_index;
+   u32 rule_index, table_index;
    mmb_main_t *mm = &mmb_main;
-   mmb_rule_t *rules = mm->rules;
+   mmb_rule_t *rule, *rules = mm->rules;
+   mmb_table_t *table;
 
-   if (unformat(input, "%u", &rule_index)) {
+   if (!unformat(input, "%u", &rule_index)) 
+      return clib_error_return(0, 
+              "Syntax error: rule number must be an integer greater than 0");
 
-      if (rule_index > 0 && rule_index <= vec_len(rules)) {
-
-         if (unformat_is_eof(input)) {
-            rule_index--; 
-            mmb_rule_t *rule = &rules[rule_index];
-            free_rule(rule);
-            vec_delete(rules, 1, rule_index);
-
-            /* flags */
-            update_flags(mm, rules);
-
-            if (mm->enabled && vec_len(rules) == 0) 
-               mmb_enable_disable_all(0);
-
-            /* XXX: rebuild classifier: if table contains more than 1 session, del session,
-                if table contains 1 session, del sess, del table, update table linked list
-               
-              */
-            return 0;
-         } 
-
-         return clib_error_return(0, 
-               "Syntax error: unexpected additional element");
-      }
-
+   if (rule_index <= 0 || rule_index > vec_len(rules)) 
       return clib_error_return(0, "No rule at this index");
+
+   if (!unformat_is_eof(input)) 
+      return clib_error_return(0, 
+               "Syntax error: unexpected additional element");
+
+   /* single rule, flush */
+   if (vec_len(rules) == 1)
+      return flush_rules_command_fn(vm, input, cmd);
+
+   rule_index--; 
+   rule = &rules[rule_index];
+   vec_delete(rules, 1, rule_index);
+
+   table_index = find_table(rule);
+   table = &mm->tables[table_index];
+
+   /* XXX: rebuild classifier: if table contains more than 1 session, del session,
+       if table contains 1 session, del sess, del table, update table linked list
+      
+    */
+   if (table->entry_count > 1) {
+      mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                          0, 0, 0);
+      table = &mm->tables[table_index]; 
+      table->entry_count--;
+      if (table->entry_count <= table->size / MMB_TABLE_SIZE_DEC_THRESHOLD)
+         realloc_table(table, 0); 
+   } else {
+      /* delete session, delete table, re-chain */
    }
- 
-   return clib_error_return(0, 
-    "Syntax error: rule number must be an integer greater than 0");
+
+   free_rule(rule);
+   update_flags(mm, rules);
+
+   if (mm->enabled && vec_len(rules) == 0) 
+      mmb_enable_disable_all(0);
+
+   return 0;
 }
 
 static_always_inline void translate_ip4_ecn(u8 field, u8 **value) {

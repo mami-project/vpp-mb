@@ -190,11 +190,13 @@ typedef struct {
      ? MMB_CLASSIFY_NEXT_INDEX_DROP : MMB_CLASSIFY_NEXT_INDEX_MATCH)
 
 #define MMB_TABLE_SIZE_INIT 2
-#define MMB_TABLE_SIZE_RATIO 4
+#define MMB_TABLE_SIZE_INC_RATIO 2
+#define MMB_TABLE_SIZE_DEC_RATIO 2
+#define MMB_TABLE_SIZE_DEC_THRESHOLD 4
 
 typedef struct {
 
-  u32 index;
+  u32 index; /* index in classify */
   u32 next_index;
   u32 previous_index;
   u32 entry_count; 
