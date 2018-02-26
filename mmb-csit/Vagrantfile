@@ -62,7 +62,7 @@ def add_dut(config, name, mgmt_ip, port1, port2, port3, port4, with_mmb)
     node.vm.network "private_network", type: "dhcp", auto_config: false, virtualbox__intnet: port3
     node.vm.network "private_network", type: "dhcp", auto_config: false, virtualbox__intnet: port4
     node.vm.provider "virtualbox" do |vb|
-      vb.memory = "3232"
+      vb.memory = "1024" #"3232"
       vb.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc4", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc5", "allow-all"]
@@ -103,7 +103,7 @@ def add_tg(config, name, mgmt_ip, port1, port2, port3, port4, port5, port6)
     node.vm.network "private_network", type: "dhcp", auto_config: false, virtualbox__intnet: port5
     node.vm.network "private_network", type: "dhcp", auto_config: false, virtualbox__intnet: port6
     node.vm.provider "virtualbox" do |vb|
-      vb.memory = "2048"
+      vb.memory = "1024" #"2048"
       vb.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc4", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc5", "allow-all"]

@@ -9,7 +9,7 @@ sudo vagrant plugin install vagrant-cachier
 
 # start csit VMs
 (vagrant destroy -f; vagrant up --parallel --provision)
-#TODO: check if mandatory; if so, try using -f (to avoid typing "yes") and try providing password "csit" automatically instead of typing it too
+#TODO: try using -f (to avoid typing "yes") and try providing password "csit" automatically instead of typing it too
 echo csit@192.168.255.10{0,1,2} | xargs -n 1 ssh-copy-id
 
 # create virtual environment and install dependencies
