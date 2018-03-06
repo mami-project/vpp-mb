@@ -1152,6 +1152,27 @@ static void attach_table_intfc(u32 table_index, int is_add) {
   }
 }
 
+/**
+ * Return internal index of table with given classify index
+ *
+ */
+static_always_inline u32 find_table_internal_index(int index) {
+   mmb_main_t *mm = &mmb_main;
+   mmb_table_t *tables = mm->tables, *table;
+   u32 table_index;
+
+   if (index == ~0)
+      return ~0;
+
+   vec_foreach_index(table_index, tables) {
+      table = &tables[table_index];
+      if (table->index == index)
+        return table_index;
+   }
+
+   return ~0;
+}
+
 static_always_inline u32 find_table(mmb_rule_t *rule) {
    /* return table index that contains this rule session, or ~0 if not found  */
    mmb_main_t *mm = &mmb_main;
@@ -1190,13 +1211,59 @@ static_always_inline void add_table(u32 index, u8* mask, u32 skip,
   vec_add1(mm->tables, table);
 }
 
+/**
+ * re-chain tables in mmb_main and in classify
+ * @param to_table: 1 to rechain table->previous_index and table->next_index
+ *                    to table->index
+ *                  0 to rechain table->previous_index to table->next_index             
+ * 
+ **/
+static void rechain_table(mmb_table_t *table, int to_table) {
+
+  mmb_main_t *mm = &mmb_main;
+  mmb_table_t *tables = mm->tables;
+  u32 previous_table_index = find_table_internal_index(table->previous_index);
+  u32 next_table_index = find_table_internal_index(table->next_index);
+  mmb_table_t *previous_table = (previous_table_index != ~0) 
+                                ? &tables[previous_table_index] : NULL;
+  mmb_table_t *next_table = (next_table_index != ~0) 
+                            ? &tables[next_table_index] : NULL;
+
+  /* classify indices for re-chaining */
+  int after_previous, before_next;
+  if (to_table) {
+    after_previous = table->index;
+    before_next = table->index;
+  } else { /* omit table */
+    after_previous = table->next_index;
+    before_next = table->previous_index;
+  }
+
+  /* chain new table to previous */
+  if (previous_table != NULL) {
+      vl_print(mm->vlib_main, "chaining table %u to previous table at index %u", 
+         after_previous, previous_table->index);
+
+      mmb_classify_update_table(&previous_table->index, after_previous);
+      previous_table->next_index = after_previous;
+
+  } else { /* if first table, update classifier */
+     attach_table_intfc(after_previous, 1);
+  }
+
+  /* update next table field prev_index */
+  if (next_table != NULL) {
+      vl_print(mm->vlib_main, "chaining table %u to next table at index %u", 
+            before_next, next_table->index);    
+      next_table->previous_index = before_next;
+   }
+}
+
 static void realloc_table(mmb_table_t *table, int is_enlarge) {
   /* Increase table size by a factor MMB_TABLE_SIZE_RATIO */
   /* XXX: shrink */
   mmb_main_t *mm = &mmb_main;
-  mmb_table_t *tables = mm->tables;
   mmb_rule_t *rule, *rules = mm->rules;
-  mmb_table_t *previous_table, *next_table;
   u32 old_index = table->index;
   u32 index;
 
@@ -1222,32 +1289,7 @@ static void realloc_table(mmb_table_t *table, int is_enlarge) {
     }
   }  
 
-  /* chain new table to previous */
-  if (table->previous_index != ~0) {
-
-      vec_foreach(previous_table, tables) {
-         if (previous_table->index == table->previous_index)
-           break;
-      }
-      vl_print(mm->vlib_main, "chaining table %u to previous table at index %u", 
-               table->index, previous_table->index);
-
-      mmb_classify_update_table (&previous_table->index, table->index);
-      previous_table->next_index = table->index;
-
-  } else /* if first table, update classifier */
-     attach_table_intfc(table->index, 1);
-
-  /* update next table field prev_index */
-  if (table->next_index != ~0) {
-      vec_foreach(next_table, tables) {
-         if (next_table->index == table->next_index)
-           break;
-      } 
-      vl_print(mm->vlib_main, "chaining table %u to next table at index %u", 
-               table->index, next_table->index);    
-      next_table->previous_index = table->index;
-  }
+  rechain_table(table, 1);
 
   /* delete old sessions and table */
   vec_foreach(rule, rules) {
@@ -1352,7 +1394,7 @@ clib_error_t *parse_rule(unformat_input_t * input,
 }
 
 static clib_error_t *
-add_rule_command_fn (vlib_main_t * vm, unformat_input_t * input, 
+add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input, 
                      vlib_cli_command_t * cmd) {
   unformat_input_tolower(input);
 
@@ -1385,14 +1427,14 @@ del_rule_command_fn(vlib_main_t *vm,
    u32 rule_index, table_index;
    mmb_main_t *mm = &mmb_main;
    mmb_rule_t *rule, *rules = mm->rules;
-   mmb_table_t *table;
+   mmb_table_t *table, *tables = mm->tables;
 
    if (!unformat(input, "%u", &rule_index)) 
       return clib_error_return(0, 
               "Syntax error: rule number must be an integer greater than 0");
-
    if (rule_index <= 0 || rule_index > vec_len(rules)) 
       return clib_error_return(0, "No rule at this index");
+   rule_index--; 
 
    if (!unformat_is_eof(input)) 
       return clib_error_return(0, 
@@ -1401,30 +1443,35 @@ del_rule_command_fn(vlib_main_t *vm,
    /* single rule, flush */
    if (vec_len(rules) == 1)
       return flush_rules_command_fn(vm, input, cmd);
-
-   rule_index--; 
+   
    rule = &rules[rule_index];
-   vec_delete(rules, 1, rule_index);
+   
+   table_index = find_table_internal_index(rule->classify_table_index);
+   table = &tables[table_index];
 
-   table_index = find_table(rule);
-   table = &mm->tables[table_index];
+   vl_print(mm->vlib_main, "rule at index:%u table internal index:%u classify index:%u", 
+                  rule_index,table_index, rule->classify_table_index);
 
-   /* XXX: rebuild classifier: if table contains more than 1 session, del session,
-       if table contains 1 session, del sess, del table, update table linked list
-      
-    */
-   if (table->entry_count > 1) {
-      mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                          0, 0, 0);
-      table = &mm->tables[table_index]; 
-      table->entry_count--;
-      if (table->entry_count <= table->size / MMB_TABLE_SIZE_DEC_THRESHOLD)
-         realloc_table(table, 0); 
-   } else {
-      /* delete session, delete table, re-chain */
+   /* del session */
+   vl_print(mm->vlib_main, "deleting session from table %u", rule->classify_table_index);
+   mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                       0, 0, 0);
+   table->entry_count--;
+
+   if (table->entry_count == 0) {
+      vl_print(mm->vlib_main, "table:%u is empty, deleting", 
+               rule->classify_table_index);
+      rechain_table(table, 0);
+      mmb_classify_del_table(&rule->classify_table_index, 0);
+      vec_delete(mm->tables, 1, table_index);
+   } else if (table->entry_count <= table->size / MMB_TABLE_SIZE_DEC_THRESHOLD) {
+      vl_print(mm->vlib_main, "table:%u is too large, shrinking", 
+               rule->classify_table_index);
+      realloc_table(table, 0); 
    }
 
    free_rule(rule);
+   vec_delete(rules, 1, rule_index);
    update_flags(mm, rules);
 
    if (mm->enabled && vec_len(rules) == 0) 
