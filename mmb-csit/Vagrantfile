@@ -117,5 +117,5 @@ end
 Vagrant.configure(2) do |config|
   add_tg(config,  "tg",   "192.168.255.100/24", net_prefix + "tg_tg", net_prefix + "tg_tg", net_prefix + "tg_dut1_1", net_prefix + "tg_dut1_2", net_prefix + "tg_dut2_1", net_prefix + "tg_dut2_2")
   add_dut(config, "dut1", "192.168.255.101/24", net_prefix + "tg_dut1_1", net_prefix + "tg_dut1_2", net_prefix + "dut1_dut2_1", net_prefix + "dut1_dut2_2", false)
-  add_dut(config, "dut2", "192.168.255.102/24", net_prefix + "tg_dut2_1", net_prefix + "tg_dut2_2", net_prefix + "dut1_dut2_1", net_prefix + "dut1_dut2_2", true)
+#  add_dut(config, "dut2", "192.168.255.102/24", net_prefix + "tg_dut2_1", net_prefix + "tg_dut2_2", net_prefix + "dut1_dut2_1", net_prefix + "dut1_dut2_2", true)
 end
