@@ -11,8 +11,8 @@ source ./env/bin/activate
 export PYTHONPATH=$(pwd)
 ./resources/tools/topology/update_topology.py -f -v -o topologies/available/vagrant_pci.yaml topologies/available/vagrant.yaml
 
-# start ipv4 tests
-pybot -L TRACE -v TOPOLOGY_PATH:topologies/available/vagrant_pci.yaml -s ipv4 tests/
+# start VPP functional tests (ip4)
+pybot -L TRACE -v TOPOLOGY_PATH:topologies/available/vagrant_pci.yaml -s ip4 tests/vpp/func/
 
 # leave virtual environment
 deactivate

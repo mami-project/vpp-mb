@@ -33,7 +33,7 @@ SHELL
 
 $install_vpp = <<-SHELL
     mkdir -p /mnt/huge
-    sudo apt-get install -y vpp vpp-lib vpp-dev vpp-plugins vpp-dpdk-dkms
+    sudo apt-get install -y vpp vpp-dbg vpp-dev vpp-dpdk-dev vpp-dpdk-dkms vpp-lib vpp-plugins
 SHELL
 
 $install_mmb = <<-SHELL
@@ -62,7 +62,7 @@ def add_dut(config, name, mgmt_ip, port1, port2, port3, port4, with_mmb)
     node.vm.network "private_network", type: "dhcp", auto_config: false, virtualbox__intnet: port3
     node.vm.network "private_network", type: "dhcp", auto_config: false, virtualbox__intnet: port4
     node.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024" #"3232"
+      vb.memory = "3232"
       vb.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc4", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc5", "allow-all"]
@@ -103,7 +103,7 @@ def add_tg(config, name, mgmt_ip, port1, port2, port3, port4, port5, port6)
     node.vm.network "private_network", type: "dhcp", auto_config: false, virtualbox__intnet: port5
     node.vm.network "private_network", type: "dhcp", auto_config: false, virtualbox__intnet: port6
     node.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024" #"2048"
+      vb.memory = "2048"
       vb.customize ["modifyvm", :id, "--nicpromisc3", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc4", "allow-all"]
       vb.customize ["modifyvm", :id, "--nicpromisc5", "allow-all"]
@@ -117,5 +117,5 @@ end
 Vagrant.configure(2) do |config|
   add_tg(config,  "tg",   "192.168.255.100/24", net_prefix + "tg_tg", net_prefix + "tg_tg", net_prefix + "tg_dut1_1", net_prefix + "tg_dut1_2", net_prefix + "tg_dut2_1", net_prefix + "tg_dut2_2")
   add_dut(config, "dut1", "192.168.255.101/24", net_prefix + "tg_dut1_1", net_prefix + "tg_dut1_2", net_prefix + "dut1_dut2_1", net_prefix + "dut1_dut2_2", false)
-#  add_dut(config, "dut2", "192.168.255.102/24", net_prefix + "tg_dut2_1", net_prefix + "tg_dut2_2", net_prefix + "dut1_dut2_1", net_prefix + "dut1_dut2_2", true)
+  add_dut(config, "dut2", "192.168.255.102/24", net_prefix + "tg_dut2_1", net_prefix + "tg_dut2_2", net_prefix + "dut1_dut2_1", net_prefix + "dut1_dut2_2", true)
 end
