@@ -4,8 +4,8 @@
 sudo apt-get install -y virtualenv python-dev python-crypto libpcap-dev
 sudo vagrant plugin install vagrant-cachier
 
-# clone csit repo
-(rm -rf csit; git clone https://gerrit.fd.io/r/csit)
+# clone csit repo (same version as VPP: 17.10)
+(rm -rf csit; git clone https://gerrit.fd.io/r/csit; cd csit; git checkout rls1710)
 
 # start csit VMs
 (vagrant destroy -f; vagrant up --parallel --provision)
