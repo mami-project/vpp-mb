@@ -27,118 +27,184 @@
 
 #define MMB_PLUGIN_BUILD_VER "0.1"
 
-#define MMB_TYPE_FIELD           1
-#define MMB_TYPE_CONDITION       2
-#define MMB_TYPE_VALUE           3
-#define MMB_TYPE_TARGET          4
-#define MMB_TYPE_FIELD_OPT       5
+#define foreach_mmb_type \
+  _(FIELD)               \
+  _(CONDITION)           \
+  _(VALUE)               \
+  _(TARGET)              \
+  _(FIELD_OPT)
 
-#define MMB_COND_EQ              10
-#define MMB_COND_NEQ             11
-#define MMB_COND_LEQ             12
-#define MMB_COND_GEQ             13
-#define MMB_COND_LT              14
-#define MMB_COND_GT              15
+#define foreach_mmb_condition \
+  _(EQ,  "==")                \
+  _(NEQ, "!=")                \
+  _(LEQ, "<=")                \
+  _(GEQ, ">=")                \
+  _(LT,  "<")                 \
+  _(GT,  ">")
 
-#define MMB_TARGET_DROP          20
-#define MMB_TARGET_STRIP         21
-#define MMB_TARGET_MODIFY        22
-#define MMB_TARGET_ADD           23
+#define foreach_mmb_target \
+  _(DROP)                  \
+  _(STRIP)                 \
+  _(VALUE)                 \
+  _(MODIFY)                \
+  _(ADD)
 
-/* field macros */
-#define MMB_FIELD_INTERFACE_IN   108
-#define MMB_FIELD_INTERFACE_OUT  109
+#define foreach_mmb_field                         \
+  _(INTERFACE_IN, "in", 4, 1)                     \
+  _(INTERFACE_OUT, "out", 4, 1)                   \
+                                                  \
+  _(NET_PROTO, "net-proto", 2, 1)                 \
+                                                  \
+  _(IP4_VER, "ip-ver", 1, 1)                      \
+  _(IP4_IHL, "ip-ihl", 1, 1)                      \
+  _(IP4_DSCP, "ip-dscp", 1, 1)                    \
+  _(IP4_ECN, "ip-ecn", 1, 1)                      \
+  _(IP4_NON_ECT, "ip-non-ect", 1, 1)              \
+  _(IP4_ECT0, "ip-ect0", 1, 1)                    \
+  _(IP4_ECT1, "ip-ect1", 1, 1)                    \
+  _(IP4_CE, "ip-ce", 1, 1)                        \
+  _(IP4_LEN, "ip-len", 2, 1)                      \
+  _(IP4_ID, "ip-id", 2, 1)                        \
+  _(IP4_FLAGS, "ip-flags", 1, 1)                  \
+  _(IP4_RES, "ip-res", 1, 1)                      \
+  _(IP4_DF, "ip-df", 1, 1)                        \
+  _(IP4_MF, "ip-mf", 1, 1)                        \
+  _(IP4_FRAG_OFFSET, "ip-frag-offset", 2, 1)      \
+  _(IP4_TTL, "ip-ttl", 1, 1)                      \
+  _(IP4_PROTO, "ip-proto", 1, 1)                  \
+  _(IP4_CHECKSUM, "ip-checksum", 2, 1)            \
+  _(IP4_SADDR, "ip-saddr", 5, 1)                  \
+  _(IP4_DADDR, "ip-daddr", 5, 1)                  \
+  _(IP4_PAYLOAD, "ip-payload", 0, 0)              \
+                                                  \
+  _(IP6_VER, "ip6-ver", 1, 1)                     \
+  _(IP6_TRAFFIC_CLASS, "ip6-traffic-class", 1, 1) \
+  _(IP6_FLOW_LABEL, "ip6-flow-label", 3, 1)       \
+  _(IP6_LEN, "ip6-len", 2, 1)                     \
+  _(IP6_NEXT, "ip6-next", 1, 1)                   \
+  _(IP6_HOP_LIMIT, "ip6-hop-limit", 1, 1)         \
+  _(IP6_SADDR, "ip6-saddr", 17, 1)                \
+  _(IP6_DADDR, "ip6-daddr", 17, 1)                \
+  _(IP6_PAYLOAD, "ip6-payload", 0, 0)             \
+                                                  \
+  _(ICMP_TYPE, "icmp-type", 1, 1)                 \
+  _(ICMP_CODE, "icmp-code", 1, 1)                 \
+  _(ICMP_CHECKSUM, "icmp-checksum", 2, 1)         \
+  _(ICMP_PAYLOAD, "icmp-payload", 0, 0)           \
+                                                  \
+  _(UDP_SPORT, "udp-sport", 2, 1)                 \
+  _(UDP_DPORT, "udp-dport", 2, 1)                 \
+  _(UDP_LEN, "udp-len", 2, 1)                     \
+  _(UDP_CHECKSUM, "udp-checksum", 2, 1)           \
+  _(UDP_PAYLOAD, "udp-payload", 0, 0)             \
+                                                  \
+  _(TCP_SPORT, "tcp-sport", 2, 1)                 \
+  _(TCP_DPORT, "tcp-dport", 2, 1)                 \
+  _(TCP_SEQ_NUM, "tcp-seq-num", 4, 1)             \
+  _(TCP_ACK_NUM, "tcp-ack-num", 4, 1)             \
+  _(TCP_OFFSET, "tcp-offset", 1, 1)               \
+  _(TCP_RESERVED, "tcp-reserved", 1, 1)           \
+  _(TCP_FLAGS, "tcp-flags", 1, 1)                 \
+  _(TCP_CWR, "tcp-cwr", 1, 1)                     \
+  _(TCP_ECE, "tcp-ece", 1, 1)                     \
+  _(TCP_URG, "tcp-urg", 1, 1)                     \
+  _(TCP_ACK, "tcp-ack", 1, 1)                     \
+  _(TCP_PUSH, "tcp-push", 1, 1)                   \
+  _(TCP_RST, "tcp-rst", 1, 1)                     \
+  _(TCP_SYN, "tcp-syn", 1, 1)                     \
+  _(TCP_FIN, "tcp-fin", 1, 1)                     \
+  _(TCP_WINDOW, "tcp-win", 2, 1)                  \
+  _(TCP_CHECKSUM, "tcp-checksum", 2, 1)           \
+  _(TCP_URG_PTR, "tcp-urg-ptr", 2, 1)             \
+  _(TCP_PAYLOAD, "tcp-payload", 0, 0)             \
+                                                  \
+  _(TCP_OPT_MSS, "tcp-opt-mss", 2, 1)             \
+  _(TCP_OPT_WSCALE, "tcp-opt-wscale", 1, 1)       \
+  _(TCP_OPT_SACKP, "tcp-opt-sackp", 0, 1)         \
+  _(TCP_OPT_SACK, "tcp-opt-sack", 0, 0)           \
+  _(TCP_OPT_TIMESTAMP, "tcp-opt-timestamp", 8, 1) \
+  _(TCP_OPT_FAST_OPEN, "tcp-opt-fast-open", 0, 0) \
+  _(TCP_OPT_MPTCP, "tcp-opt-mptcp", 0, 0)         \
+  _(TCP_OPT, "tcp-opt", 0, 0)                     \
+                                                  \
+  _(ALL, "all", 0, 1)
 
-#define MMB_FIELD_NET_PROTO         110
-#define MMB_FIELD_IP4_VER           111
-#define MMB_FIELD_IP4_IHL           112
-#define MMB_FIELD_IP4_DSCP          113
-#define MMB_FIELD_IP4_ECN           114
-#define MMB_FIELD_IP4_NON_ECT       115
-#define MMB_FIELD_IP4_ECT0          116
-#define MMB_FIELD_IP4_ECT1          117
-#define MMB_FIELD_IP4_CE            118
-#define MMB_FIELD_IP4_LEN           119
-#define MMB_FIELD_IP4_ID            120
-#define MMB_FIELD_IP4_FLAGS         121
-#define MMB_FIELD_IP4_RES           122
-#define MMB_FIELD_IP4_DF            123
-#define MMB_FIELD_IP4_MF            124
-#define MMB_FIELD_IP4_FRAG_OFFSET   125
-#define MMB_FIELD_IP4_TTL           126
-#define MMB_FIELD_IP4_PROTO         127
-#define MMB_FIELD_IP4_CHECKSUM      128
-#define MMB_FIELD_IP4_SADDR         129
-#define MMB_FIELD_IP4_DADDR         130
-#define MMB_FIELD_IP4_PAYLOAD       131
+enum
+{
+  /* TYPES */
+  MMB_0_TYPE,
+#define _(m) MMB_TYPE_##m,
+  foreach_mmb_type
+#undef _
+  MMB_N_TYPE,
 
-#define MMB_FIELD_IP6_VER           132
-#define MMB_FIELD_IP6_TRAFFIC_CLASS 133
-#define MMB_FIELD_IP6_FLOW_LABEL    134
-#define MMB_FIELD_IP6_LEN           135
-#define MMB_FIELD_IP6_NEXT          136
-#define MMB_FIELD_IP6_HOP_LIMIT     137
-#define MMB_FIELD_IP6_SADDR         138
-#define MMB_FIELD_IP6_DADDR         139
-#define MMB_FIELD_IP6_PAYLOAD       140
+  /* CONDITIONS */
+  MMB_0_COND,
+#define _(m, s) MMB_COND_##m,
+  foreach_mmb_condition
+#undef _
+  MMB_N_COND,
 
-#define MMB_FIELD_ICMP_TYPE      141
-#define MMB_FIELD_ICMP_CODE      142
-#define MMB_FIELD_ICMP_CHECKSUM  143
-#define MMB_FIELD_ICMP_PAYLOAD   144
+  /* TARGETS */
+  MMB_0_TARGET,
+#define _(m) MMB_TARGET_##m,
+  foreach_mmb_target
+#undef _
+  MMB_N_TARGET,
 
-#define MMB_FIELD_UDP_SPORT      145
-#define MMB_FIELD_UDP_DPORT      146
-#define MMB_FIELD_UDP_LEN        147
-#define MMB_FIELD_UDP_CHECKSUM   148
-#define MMB_FIELD_UDP_PAYLOAD    149
+  /* FIELDS */
+  MMB_0_FIELD,
+#define _(m, s, l, fl) MMB_FIELD_##m,
+  foreach_mmb_field
+#undef _
+  MMB_N_FIELD,
 
-#define MMB_FIELD_TCP_SPORT      150
-#define MMB_FIELD_TCP_DPORT      151
-#define MMB_FIELD_TCP_SEQ_NUM    152
-#define MMB_FIELD_TCP_ACK_NUM    153
-#define MMB_FIELD_TCP_OFFSET     154
-#define MMB_FIELD_TCP_RESERVED   155
-#define MMB_FIELD_TCP_FLAGS      156
-#define MMB_FIELD_TCP_CWR        157
-#define MMB_FIELD_TCP_ECE        158
-#define MMB_FIELD_TCP_URG        159
-#define MMB_FIELD_TCP_ACK        160
-#define MMB_FIELD_TCP_PUSH       161
-#define MMB_FIELD_TCP_RST        162
-#define MMB_FIELD_TCP_SYN        163
-#define MMB_FIELD_TCP_FIN        164
-#define MMB_FIELD_TCP_WINDOW     165
-#define MMB_FIELD_TCP_CHECKSUM   166
-#define MMB_FIELD_TCP_URG_PTR    167
-#define MMB_FIELD_TCP_PAYLOAD    168
+  /* Private (only for cli->nodes) */
+  MMB_FIELD_TCP_OPT_ALL,
+};
 
-#define MMB_FIELD_TCP_OPT_MSS        169
-#define MMB_FIELD_TCP_OPT_WSCALE     170
-#define MMB_FIELD_TCP_OPT_SACKP      171
-#define MMB_FIELD_TCP_OPT_SACK       172
-#define MMB_FIELD_TCP_OPT_TIMESTAMP  173
-#define MMB_FIELD_TCP_OPT_FAST_OPEN  174
-#define MMB_FIELD_TCP_OPT_MPTCP      175
-#define MMB_FIELD_TCP_OPT            176
+#define is_macro_mmb_type(x) (x > MMB_0_TYPE && x < MMB_N_TYPE)
+#define is_macro_mmb_condition(x) (x > MMB_0_COND && x < MMB_N_COND)
+#define is_macro_mmb_target(x) (x > MMB_0_TARGET && x < MMB_N_TARGET)
+#define is_macro_mmb_field(x) (x > MMB_0_FIELD && x < MMB_N_FIELD)
 
-#define MMB_FIELD_ALL                177
+#define get_number_fields() MMB_N_FIELD-MMB_0_FIELD-1
+#define get_number_conditions() MMB_N_COND-MMB_0_COND-1
 
-/* opt_kind macro for 'strip all' */
-#define MMB_FIELD_TCP_OPT_ALL        255
-
-#define MMB_FIRST_FIELD MMB_FIELD_INTERFACE_IN
-#define MMB_LAST_FIELD MMB_FIELD_ALL
-#define MMB_FIRST_COND MMB_COND_EQ
-#define MMB_LAST_COND MMB_COND_GT
-
-/* mapping macros */
-#define field_toindex(macro) macro-MMB_FIRST_FIELD
-#define field_tomacro(index) index+MMB_FIRST_FIELD
-#define cond_toindex(macro) macro-MMB_FIRST_COND
-#define cond_tomacro(index) index+MMB_FIRST_COND
+#define field_toindex(macro) macro-MMB_0_FIELD-1
+#define field_tomacro(index) index+MMB_0_FIELD+1
+#define cond_toindex(macro) macro-MMB_0_COND-1
+#define cond_tomacro(index) index+MMB_0_COND+1
 
 #define MMB_MAX_FIELD_LEN 64
+
+const u8 fields_len = get_number_fields();
+
+const char * fields[] = {
+#define _(m, s, l, fl) s,
+  foreach_mmb_field
+#undef _
+};
+
+const u8 lens[] = {
+#define _(m, s, l, fl) l,
+  foreach_mmb_field
+#undef _
+};
+
+const u8 fixed_len[] = {
+#define _(m, s, l, fl) fl,
+  foreach_mmb_field
+#undef _
+};
+
+const u8 conditions_len = get_number_conditions();
+
+const char * conditions[] = {
+#define _(m, s) s,
+  foreach_mmb_condition
+#undef _
+};
 
 /* cli-name,protocol-name */
 #define foreach_mmb_transport_proto       \
@@ -263,12 +329,6 @@ typedef struct {
 mmb_main_t mmb_main;
 
 //extern vlib_node_registration_t mmb_node;
-
-extern const u8 fields_len;
-extern const char* fields[];
-extern const u8 lens[];
-extern const u8 conditions_len;
-extern const char* conditions[];
 
 u16 get_field_protocol(u8 field);
 u8 is_fixed_length(u8 field);

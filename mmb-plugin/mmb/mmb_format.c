@@ -410,8 +410,7 @@ u8* mmb_format_field(u8 *s, va_list *args) {
    u8 kind  = *va_arg(*args, u8*);
 
    u8 field_index = field_toindex(field);
-   if (field < MMB_FIRST_FIELD 
-    || field > MMB_LAST_FIELD)
+   if (!is_macro_mmb_field(field))
      ; 
    else if (field == MMB_FIELD_TCP_OPT && kind) {
      if (0);//TODO: print kind 0 in strip
@@ -429,8 +428,7 @@ u8* mmb_format_field(u8 *s, va_list *args) {
 
 u8* mmb_format_condition(u8 *s, va_list *args) {
   u8 condition = *va_arg(*args, u8*);
-  if (condition >= MMB_COND_EQ 
-    &&  condition <= MMB_COND_EQ+conditions_len)
+  if (is_macro_mmb_condition(condition))
     s = format(s, "%s", conditions[cond_toindex(condition)]);
   
   return s;
