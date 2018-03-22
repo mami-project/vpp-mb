@@ -150,10 +150,6 @@ static_always_inline u8 mmb_memcpy(u8 *dst, u8 *from, u8 length)
   return length;
 }
 
-static_always_inline u32 get_sw_if_index(vlib_buffer_t *b) {
-  return vnet_buffer(b)->sw_if_index[VLIB_RX];
-}
-
 /************************
  *      TCP options
  ***********************/
@@ -509,14 +505,13 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   mmb_next_t next_index;
   u32 pkts_done = 0;
 
-  //mmb_tcp_options_t tcp_options;
-  //init_tcp_options(&tcp_options);
+  //mmb_tcp_options_t tcp_options0, tcp_options1;
+  //init_tcp_options(&tcp_options0);
+  //init_tcp_options(&tcp_options1);
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
-
-  u32 sw_if_index = get_sw_if_index(vlib_get_buffer(vm, from[0]));
 
   while (n_left_from > 0)
   {
@@ -525,44 +520,144 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
     vlib_get_next_frame (vm, node, next_index,
 			 to_next, n_left_to_next);
 
-    /* one packet at a time */
+    /* Two packets at a time (if possible) */
+    while (n_left_from >= 4 && n_left_to_next >= 2)
+    {
+      u32 bi0, bi1;
+      vlib_buffer_t *b0, *b1;
+      u32 next0 = MMB_NEXT_FORWARD;
+      u32 next1 = MMB_NEXT_FORWARD;
+      u32 sw_if_index0, sw_if_index1;
+      u8 *p0, *p1;
+
+      /* Prefetch next iteration */
+      {
+        vlib_buffer_t *p2, *p3;
+
+        p2 = vlib_get_buffer (vm, from[2]);
+        p3 = vlib_get_buffer (vm, from[3]);
+
+        vlib_prefetch_buffer_header (p2, LOAD);
+        vlib_prefetch_buffer_header (p3, LOAD);
+
+        CLIB_PREFETCH (p2->data, CLIB_CACHE_LINE_BYTES, STORE);
+        CLIB_PREFETCH (p3->data, CLIB_CACHE_LINE_BYTES, STORE);
+      }
+
+      /* speculatively enqueue b0 and b1 to the current next frame */
+      to_next[0] = bi0 = from[0];
+      to_next[1] = bi1 = from[1];
+      from += 2;
+      to_next += 2;
+      n_left_from -= 2;
+      n_left_to_next -= 2;
+
+      /* get vlib buffers */
+      b0 = vlib_get_buffer (vm, bi0);
+      b1 = vlib_get_buffer (vm, bi1);
+
+      /* get IP headers as raw data */
+      p0 = vlib_buffer_get_current (b0);
+      p1 = vlib_buffer_get_current (b1);     
+
+      /* get matched rules */
+      u32 rule_index0 = vnet_buffer(b0)->l2_classify.opaque_index;
+      u32 rule_index1 = vnet_buffer(b1)->l2_classify.opaque_index;
+
+      /* rewrite both */
+      mmb_rewrite(vm, rules+rule_index0, b0, p0);
+      mmb_rewrite(vm, rules+rule_index1, b1, p1);
+
+      //TODO remove when only tcp (with option1s) packets are coming here
+      /*if (rule_index0 != ~0 && ip0->protocol == IP_PROTOCOL_TCP)
+      {
+        mmb_rule_t *rule = rules+rule_index0;
+        if (rule->opts_in_targets)//TODO should (normally) be removed when only packets with targets-containing-tcp-options are coming here
+        {
+          mmb_parse_tcp_options(ip4_next_header(ip0), &tcp_options0);
+          target_tcp_options(ip0, rule, &tcp_options0);
+        }
+
+        rule->match_count++;
+      }
+      if (rule_index1 != ~0 && ip1->protocol == IP_PROTOCOL_TCP)
+      {
+        mmb_rule_t *rule = rules+rule_index1;
+        if (rule->opts_in_targets)//TODO should (normally) be removed when only packets with targets-containing-tcp-options are coming here
+        {
+          mmb_parse_tcp_options(ip4_next_header(ip1), &tcp_options1);
+          target_tcp_options(ip1, rule, &tcp_options1);
+        }
+
+        rule->match_count++;
+      }*/
+
+      /* get incoming interfaces */
+      sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
+      sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
+
+      /* two more packets processed */
+      pkts_done += 2;
+
+      /* node trace (if enabled) */
+      if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
+      {
+        if (b0->flags & VLIB_BUFFER_IS_TRACED)
+          mmb_trace_ip_packet(vm, b0, node, p0, next0, sw_if_index0);
+
+        if (b1->flags & VLIB_BUFFER_IS_TRACED)
+          mmb_trace_ip_packet(vm, b1, node, p1, next1, sw_if_index1);
+      }
+
+      /* verify speculative enqueue, maybe switch current next frame */
+      vlib_validate_buffer_enqueue_x2 (vm, node, next_index,
+				       to_next, n_left_to_next,
+				       bi0, bi1, next0, next1);
+    }
+
+    /* One packet at a time, otherwise */
     while (n_left_from > 0 && n_left_to_next > 0)
     {
       u32 bi0;
       vlib_buffer_t *b0;
       u32 next0 = MMB_NEXT_FORWARD;
+      u32 sw_if_index0;
       u8 *p0;
 
       /* speculatively enqueue b0 to the current next frame */
-      bi0 = from[0];
-      to_next[0] = bi0;
+      to_next[0] = bi0 = from[0];
       from += 1;
       to_next += 1;
       n_left_from -= 1;
       n_left_to_next -= 1;
 
-      /* get vlib buffer, IP header */
+      /* get vlib buffer */
       b0 = vlib_get_buffer (vm, bi0);
-      p0 = vlib_buffer_get_current(b0);
-      /*    prefetch next packet, next rule:     vlib_prefetch_buffer_header (p1, STORE);
-        CLIB_PREFETCH (p1->data, CLIB_CACHE_LINE_BYTES, STORE); */      
 
-      /* If packet matched */
-      u32 rule_index = vnet_buffer(b0)->l2_classify.opaque_index;
-      mmb_rewrite(vm, rules+rule_index, b0, p0);    
+      /* get IP header as raw data */
+      p0 = vlib_buffer_get_current (b0);    
+
+      /* get matched rule */
+      u32 rule_index0 = vnet_buffer(b0)->l2_classify.opaque_index;
+
+      /* rewrite */
+      mmb_rewrite(vm, rules+rule_index0, b0, p0);
 
       //TODO remove when only tcp (with option1s) packets are coming here
-      /*if (rule_index != ~0 && ip0->protocol == IP_PROTOCOL_TCP)
+      /*if (rule_index0 != ~0 && ip0->protocol == IP_PROTOCOL_TCP)
       {
-        mmb_rule_t *rule = rules+rule_index;
+        mmb_rule_t *rule = rules+rule_index0;
         if (rule->opts_in_targets)//TODO should (normally) be removed when only packets with targets-containing-tcp-options are coming here
         {
-          mmb_parse_tcp_options(ip4_next_header(ip0), &tcp_options);
-          target_tcp_options(ip0, rule, &tcp_options);
+          mmb_parse_tcp_options(ip4_next_header(ip0), &tcp_options0);
+          target_tcp_options(ip0, rule, &tcp_options0);
         }
 
         rule->match_count++;
       }*/
+
+      /* get incoming interface */
+      sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
 
       /* one more packet processed */
       pkts_done++;
@@ -571,7 +666,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
                         && (b0->flags & VLIB_BUFFER_IS_TRACED)))
       {
-        mmb_trace_ip_packet(vm, b0, node, p0, next0, sw_if_index);
+        mmb_trace_ip_packet(vm, b0, node, p0, next0, sw_if_index0);
       }
 
       /* verify speculative enqueue, maybe switch current next frame */
@@ -586,7 +681,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   vlib_node_increment_counter (vm, mmb_node->index, 
                                MMB_ERROR_DONE, pkts_done);
   
-  //free_tcp_options(&tcp_options);
+  //free_tcp_options(&tcp_options0);
+  //free_tcp_options(&tcp_options1);
 
   return frame->n_vectors;
 }
