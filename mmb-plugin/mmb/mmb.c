@@ -78,96 +78,33 @@ VLIB_PLUGIN_REGISTER () = {
 };
 /* *INDENT-ON* */
 
-const u8 fields_len = 70;
-const char* fields[] = {
-  "in", "out",
-  "net-proto", "ip-ver", "ip-ihl",
-  "ip-dscp", "ip-ecn", "ip-non-ect",
-  "ip-ect0", "ip-ect1", "ip-ce",
-  "ip-len", "ip-id", "ip-flags",
-  "ip-res", "ip-df", "ip-mf",
-  "ip-frag-offset", "ip-ttl", "ip-proto",
-  "ip-checksum", "ip-saddr", "ip-daddr",
-  "ip-payload",
+const u8 fields_len = get_number_fields();
 
-  "ip6-ver", "ip6-traffic-class", "ip6-flow-label",
-  "ip6-len", "ip6-next", "ip6-hop-limit",
-  "ip6-saddr", "ip6-daddr", "ip6-payload",          /* 10 */
-
-  "icmp-type", "icmp-code", "icmp-checksum",
-  "icmp-payload", "udp-sport", "udp-dport",
-  "udp-len", "udp-checksum", "udp-payload", 
-  "tcp-sport", "tcp-dport", "tcp-seq-num", 
-  "tcp-ack-num", "tcp-offset", "tcp-reserved",
-  "tcp-urg-ptr", "tcp-cwr", "tcp-ece", 
-  "tcp-urg", "tcp-ack", "tcp-push", 
-  "tcp-rst", "tcp-syn", "tcp-fin", 
-  "tcp-flags", "tcp-win", "tcp-checksum", 
-  "tcp-payload",  "tcp-opt-mss", "tcp-opt-wscale",      /* 20 */
-  "tcp-opt-sackp", "tcp-opt-sack", "tcp-opt-timestamp", 
-  "tcp-opt-fast-open", "tcp-opt-mptcp", "tcp-opt",
-  "all"
+const char * fields[] = {
+#define _(m, s, l, fl) s,
+  foreach_mmb_field
+#undef _
 };
 
 const u8 lens[] = {
-  4, 4,
-  2, 1, 1,
-  1, 1, 1,
-  1, 1, 1,
-  2, 2, 1,
-  1, 1, 1,
-  2, 1, 1,
-  2, 5, 5,
-  0,
-  1, 1, 3,
-  2, 1, 1,
-  17,17,0,   /* 10 */
-
-  1, 1, 2,
-  0, 2, 2,
-  2, 2, 0, 
-  2, 2, 4,
-  4, 1, 1,
-  2, 1, 1, 
-  1, 1, 1, 
-  1, 1, 1, 
-  1, 2, 2, 
-  0, 2, 1,  /* 20 */
-  0, 0, 8, 
-  0, 0, 0,
-  0
+#define _(m, s, l, fl) l,
+  foreach_mmb_field
+#undef _
 };
 
 const u8 fixed_len[] = {
-  1, 1,
-  1, 1, 1,
-  1, 1, 1,
-  1, 1, 1,
-  1, 1, 1,
-  1, 1, 1,
-  1, 1, 1,
-  1, 1, 1,
-  0,
-  1, 1, 1,
-  1, 1, 1,
-  1, 1, 0,  /* 10 */
-  1, 1, 1,
-  0, 1, 1,
-  1, 1, 0, 
-  1, 1, 1,
-  1, 1, 1,
-  1, 1, 1,
-  1, 1, 1, 
-  1, 1, 1, 
-  1, 1, 1,
-  0, 1, 1, /* 20 */
-  1, 0, 1, 
-  0, 0, 0,
-  1
+#define _(m, s, l, fl) fl,
+  foreach_mmb_field
+#undef _
 };
 
-const u8 conditions_len = 6;
-const char* conditions[] = {"==", "!=", "<=", ">=", "<", ">"};
+const u8 conditions_len = get_number_conditions();
+
+const char * conditions[] = {
+#define _(m, s) s,
+  foreach_mmb_condition
+#undef _
+};
 
 static void free_rule(mmb_rule_t *rule);
 static void init_rule(mmb_rule_t *rule);

@@ -178,34 +178,6 @@ enum
 
 #define MMB_MAX_FIELD_LEN 64
 
-const u8 fields_len = get_number_fields();
-
-const char * fields[] = {
-#define _(m, s, l, fl) s,
-  foreach_mmb_field
-#undef _
-};
-
-const u8 lens[] = {
-#define _(m, s, l, fl) l,
-  foreach_mmb_field
-#undef _
-};
-
-const u8 fixed_len[] = {
-#define _(m, s, l, fl) fl,
-  foreach_mmb_field
-#undef _
-};
-
-const u8 conditions_len = get_number_conditions();
-
-const char * conditions[] = {
-#define _(m, s) s,
-  foreach_mmb_condition
-#undef _
-};
-
 /* cli-name,protocol-name */
 #define foreach_mmb_transport_proto       \
 _(tcp,TCP)                                    \
@@ -329,6 +301,12 @@ typedef struct {
 mmb_main_t mmb_main;
 
 //extern vlib_node_registration_t mmb_node;
+
+extern const u8 fields_len;
+extern const char* fields[];
+extern const u8 lens[];
+extern const u8 conditions_len;
+extern const char* conditions[];
 
 u16 get_field_protocol(u8 field);
 u8 is_fixed_length(u8 field);
