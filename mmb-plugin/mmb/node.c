@@ -27,6 +27,7 @@ static void set_icmp_field(icmp46_header_t *, u8, u64);
 static void set_udp_field(udp_header_t *, u8, u64);
 static void set_tcp_field(tcp_header_t *, u8, u64);
 
+static u8 rule_requires_tcp_options(mmb_rule_t *);
 static u8 tcp_option_exists(mmb_tcp_options_t *, u8);
 static u8 mmb_parse_tcp_options(tcp_header_t *, mmb_tcp_options_t *);
 static u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *);
@@ -499,6 +500,11 @@ static_always_inline u8 tcp_option_exists(mmb_tcp_options_t *options, u8 kind)
   return clib_bitmap_get_no_check(options->found, kind);
 }
 
+static_always_inline u8 rule_requires_tcp_options(mmb_rule_t *rule)
+{
+  return (rule->opts_in_matches || rule->opts_in_targets);
+}
+
 u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
 {
   u8 offset, opt_len, kind;
@@ -627,7 +633,7 @@ u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
   return offset;
 }
 
-static_always_inline u8 mmb_padding_tcp_options(u8 *data, u8 offset)
+u8 mmb_padding_tcp_options(u8 *data, u8 offset)
 {
   // Terminate TCP options
   if (offset % 4)
@@ -669,7 +675,7 @@ static_always_inline u64 mmb_bytes_to_u64(u8 *bytes)
   return mmb_n_bytes_to_u64(bytes, vec_len(bytes));
 }
 
-static_always_inline u64 mmb_n_bytes_to_u64(u8 *data, u8 length)
+u64 mmb_n_bytes_to_u64(u8 *data, u8 length)
 {
   u64 value = 0;
   u32 len = length-1;
@@ -682,7 +688,7 @@ static_always_inline u64 mmb_n_bytes_to_u64(u8 *data, u8 length)
   return value;
 }
 
-static_always_inline u8 mmb_value_compare(u64 a, u64 b, u8 condition, u8 reverse)
+u8 mmb_value_compare(u64 a, u64 b, u8 condition, u8 reverse)
 {
   u8 res;
 
@@ -796,12 +802,14 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
 
   /* Don't apply rules with a layer 4 different than the packet's one */
   /* Note: except for case l4 = IP_PROTOCOL_RESERVED -> "all" or only "ip-fields" in matching */
-  if (iph->protocol != l4 && l4 != IP_PROTOCOL_RESERVED)
+  if (l4 != IP_PROTOCOL_RESERVED && iph->protocol != l4)
     return 0;
 
-  mmb_match_t *match = rule->matches;
-  vec_foreach(match, rule->matches)
+  uword i;
+  vec_foreach_index(i, rule->matches)
   {
+    mmb_match_t *match = &rule->matches[i];
+
     /* "all" field -> MATCH */
     if (match->field == MMB_FIELD_ALL)
       return 1;
@@ -830,10 +838,13 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
 
       /* TCP field */
       case IP_PROTOCOL_TCP:
-        if ((match->field == MMB_FIELD_TCP_OPT 
-              && !mmb_matching_tcp_options(tcp_options, match))
-            || !mmb_matching_tcp(iph, match, b, is_output))
+        if (match->field == MMB_FIELD_TCP_OPT)
+        {
+          if (!mmb_matching_tcp_options(tcp_options, match))
             return 0;
+        }
+        else if (!mmb_matching_tcp(iph, match, b, is_output))
+          return 0;
         break;
 
       /* Unexpected field */
@@ -849,33 +860,33 @@ u8 packet_matches(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *tcp_op
 u8 mmb_matching_ip4(ip4_header_t *iph, mmb_match_t *match, vlib_buffer_t *b, int is_output)
 {
   /* "!ip-field" is always false for an IP packet */
-  if (match->condition == 0)
-    return !match->reverse;
-
-  u8 *payload;
-  u32 payload_length;
-  u32 rule_addr, rule_slash_mask;
-  u32 rule_netmask, ip_addr;
+  if (match->condition == 0 && match->reverse == 1)
+    return 0;
 
   switch(match->field)
   {
-    case MMB_FIELD_IP4_PAYLOAD: 
+    case MMB_FIELD_IP4_PAYLOAD: ;
       //TODO skip options if any ?
-      payload = get_ip_header(b, is_output) + sizeof(ip4_header_t);
-      payload_length = b->current_length - sizeof(ip4_header_t);
-      return mmb_true_condition(mmb_value_starts_with(payload, 
-                                                      payload_length, 
-                                                      match->value),
-                              match->reverse);
+      u8 *payload = get_ip_header(b, is_output) + sizeof(ip4_header_t);
+      u32 payload_length = b->current_length - sizeof(ip4_header_t);
+      if (!mmb_true_condition(mmb_value_starts_with(payload, payload_length, match->value),
+                              match->reverse))
+        return 0;
+      break;
+
     case MMB_FIELD_IP4_SADDR:
-    case MMB_FIELD_IP4_DADDR: 
+    case MMB_FIELD_IP4_DADDR: ;
+      u32 rule_addr, rule_slash_mask;
       mmb_parse_ip4_cidr_address(match->value, &rule_addr, &rule_slash_mask);
-      rule_netmask = 0xffffffff << (32 - rule_slash_mask);
-      ip_addr = get_ip_field(iph, match->field);
-      return mmb_value_compare((ip_addr & rule_netmask), (rule_addr & rule_netmask), match->condition, match->reverse);
+      u32 rule_netmask = 0xffffffff << (32 - rule_slash_mask);
+      u32 ip_addr = get_ip_field(iph, match->field);
+      if (!mmb_value_compare((ip_addr & rule_netmask), (rule_addr & rule_netmask), match->condition, match->reverse))
+        return 0;
+      break;
 
     default:
-      return mmb_value_compare(get_ip_field(iph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse);
+      if (!mmb_value_compare(get_ip_field(iph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+        return 0;
   }
 
    return 1;
@@ -884,24 +895,22 @@ u8 mmb_matching_ip4(ip4_header_t *iph, mmb_match_t *match, vlib_buffer_t *b, int
 u8 mmb_matching_icmp(ip4_header_t *iph, mmb_match_t *match, vlib_buffer_t *b, int is_output)
 {
   /* "!icmp-field" is always false for an ICMP packet */
-  if (match->condition == 0)
-    return !match->reverse;
+  if (match->condition == 0 && match->reverse == 1)
+    return 0;
 
   if (match->field == MMB_FIELD_ICMP_PAYLOAD)
   {
     u8 *payload = get_ip_header(b, is_output) + sizeof(ip4_header_t) + sizeof(icmp46_header_t);
     u32 payload_length = b->current_length - sizeof(ip4_header_t) - sizeof(icmp46_header_t);
-    return mmb_true_condition(mmb_value_starts_with(payload, 
-                                                    payload_length, 
-                                                    match->value),
-                            match->reverse);
+    if (!mmb_true_condition(mmb_value_starts_with(payload, payload_length, match->value),
+                            match->reverse))
+      return 0;
   }
   else
   {
       icmp46_header_t *icmph = ip4_next_header(iph);
-      return mmb_value_compare(get_icmp_field(icmph, match->field), 
-                               mmb_bytes_to_u64(match->value), 
-                               match->condition, match->reverse);
+      if (!mmb_value_compare(get_icmp_field(icmph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+        return 0;
   }
 
   return 1;
@@ -910,50 +919,50 @@ u8 mmb_matching_icmp(ip4_header_t *iph, mmb_match_t *match, vlib_buffer_t *b, in
 u8 mmb_matching_udp(ip4_header_t *iph, mmb_match_t *match, vlib_buffer_t *b, int is_output)
 {
   /* "!udp-field" is always false for a UDP packet */
-  if (match->condition == 0)
-    return !match->reverse;
+  if (match->condition == 0 && match->reverse == 1)
+    return 0;
 
   if (match->field == MMB_FIELD_UDP_PAYLOAD)
   {
     u8 *payload = get_ip_header(b, is_output) + sizeof(ip4_header_t) + sizeof(udp_header_t);
     u32 payload_length = b->current_length - sizeof(ip4_header_t) - sizeof(udp_header_t);
-    return mmb_true_condition(mmb_value_starts_with(payload, payload_length, match->value),
-                            match->reverse);
+    if (!mmb_true_condition(mmb_value_starts_with(payload, payload_length, match->value),
+                            match->reverse))
+      return 0;
   }
   else
   {
     udp_header_t *udph = ip4_next_header(iph);
-    return mmb_value_compare(get_udp_field(udph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse);
+    if (!mmb_value_compare(get_udp_field(udph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+      return 0;
   }
 
-  return 0;
+  return 1;
 }
 
 u8 mmb_matching_tcp(ip4_header_t *iph, mmb_match_t *match, vlib_buffer_t *b, int is_output)
 {
   /* "!tcp-field" is always false for a TCP packet */
-  if (match->condition == 0)
-    return !match->reverse;
+  if (match->condition == 0 && match->reverse == 1)
+    return 0;
 
   if (match->field == MMB_FIELD_TCP_PAYLOAD)
   {
     //TODO skip options if any ?
     u8 *payload = get_ip_header(b, is_output) + sizeof(ip4_header_t) + sizeof(tcp_header_t);
     u32 payload_length = b->current_length - sizeof(ip4_header_t) - sizeof(tcp_header_t);
-    return mmb_true_condition(mmb_value_starts_with(payload, 
-                                                    payload_length, 
-                                                    match->value),
-                              match->reverse);
+    if (!mmb_true_condition(mmb_value_starts_with(payload, payload_length, match->value),
+                            match->reverse))
+      return 0;
   }
   else
   {
     tcp_header_t *tcph = ip4_next_header(iph);
-    return mmb_value_compare(get_tcp_field(tcph, match->field), 
-                             mmb_bytes_to_u64(match->value), 
-                             match->condition, match->reverse);
+    if (!mmb_value_compare(get_tcp_field(tcph, match->field), mmb_bytes_to_u64(match->value), match->condition, match->reverse))
+      return 0;
   }
 
-  return 0;
+  return 1;
 }
 
 u8 mmb_matching_tcp_options(mmb_tcp_options_t *options, mmb_match_t *match)
@@ -962,14 +971,16 @@ u8 mmb_matching_tcp_options(mmb_tcp_options_t *options, mmb_match_t *match)
   if (match->opt_kind == 0 || match->opt_kind == MMB_FIELD_TCP_OPT_ALL)
   {
     /* do we have TCP options in this packet ? */
-    return mmb_true_condition(vec_len(options->parsed) > 0, 
-                            match->reverse);
+    if (!mmb_true_condition(vec_len(options->parsed) > 0, 
+                            match->reverse))
+      return 0;
   }
   else if (match->condition == 0)
   {
     /* only search for the existence of an option */
-    return mmb_true_condition(tcp_option_exists(options, match->opt_kind),
-                            match->reverse);
+    if (!mmb_true_condition(tcp_option_exists(options, match->opt_kind),
+                            match->reverse))
+      return 0;
   }
   else
   {
@@ -985,15 +996,14 @@ u8 mmb_matching_tcp_options(mmb_tcp_options_t *options, mmb_match_t *match)
     if (vec_len(match->value) > 8)
     {
       /* values > u64 */
-      return mmb_true_condition(mmb_value_starts_with(opt_data_ptr, 
-                                                      opt_length, 
-                                                      match->value),
-                                match->reverse);
+      if (!mmb_true_condition(mmb_value_starts_with(opt_data_ptr, opt_length, match->value),
+                              match->reverse))
+        return 0;
     }
-    else 
-       return mmb_value_compare(mmb_n_bytes_to_u64(opt_data_ptr, opt_length), 
+    else if (!mmb_value_compare(mmb_n_bytes_to_u64(opt_data_ptr, opt_length), 
                                 mmb_bytes_to_u64(match->value), 
-                                match->condition, match->reverse);
+                                match->condition, match->reverse))
+      return 0;
   }
 
   return 1;
@@ -1140,12 +1150,6 @@ static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options
   tcp_options->parsed[idx].is_stripped = 1;
 }
 
-static_always_inline u8 rule_requires_tcp_options(mmb_rule_t *rule)
-{
-  return (rule->opts_in_matches || rule->opts_in_targets);
-}
-
-
 /************************
  *  Node entry function
  ***********************/
@@ -1156,7 +1160,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
             vlib_node_registration_t *mmb_node)
 {
   mmb_main_t *mm = &mmb_main;
-  mmb_rule_t *rules = mm->rules, *rule;
+  mmb_rule_t *rules = mm->rules;
 
   u32 n_left_from, *from, *to_next;
   mmb_next_t next_index;
@@ -1164,6 +1168,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
   mmb_tcp_options_t tcp_options;
   init_tcp_options(&tcp_options);
+  u8 tcp_opts_loaded;
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -1200,15 +1205,24 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       u32 i, applied_rule_index = ~0;
       u8 l4_modified = 0;
+      tcp_opts_loaded = 0;
 
-      /* parse TCP options if necessary */
-      if (mm->opts_in_rules && ip0->protocol == IP_PROTOCOL_TCP)
-        mmb_parse_tcp_options(ip4_next_header(ip0), &tcp_options);
-     
       /* fetch each rule to find a match */
       vec_foreach_index(i, rules)
       {
-        rule = rules+i;
+        mmb_rule_t *rule = rules+i;
+
+        /* parse TCP options if necessary */
+        if (ip0->protocol == IP_PROTOCOL_TCP && rule_requires_tcp_options(rule))
+        {
+          if (!tcp_opts_loaded && !mmb_parse_tcp_options(ip4_next_header(ip0), &tcp_options))
+          {
+            /* Malformed TCP options -> let the packet go */
+            break;
+          }
+
+          tcp_opts_loaded = 1;
+        }
 
         if (packet_matches(ip0, rule, &tcp_options, b0, is_output))
         {
