@@ -39,7 +39,7 @@ SHELL
 $install_mmb = <<-SHELL
     sudo apt-get install -y autoconf libtool git
     sudo service vpp stop
-    (git clone https://github.com/mami-project/vpp-mb.git; cd vpp-mb; git checkout loop; git checkout 265f047468e92f15f0e88b7172034f78fd2aa1e9; cd mmb-plugin; autoreconf -fis; ./configure; make; sudo make install)
+    (git clone https://github.com/mami-project/vpp-mb.git; cd vpp-mb; git checkout loop; cd mmb-plugin; autoreconf -fis; ./configure; make; sudo make install)
     sudo service vpp start
 SHELL
 
