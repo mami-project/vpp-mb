@@ -28,7 +28,7 @@ typedef struct {
   u32 sw_if_index;
   u32 next_index;
   //u32 table_index;
-  u32 rule_index;
+  u32 *rule_indexes;
   u32 offset;
   u8 packet_data[16];
 } mmb_classify_trace_t;
@@ -40,8 +40,11 @@ format_mmb_classify_trace(u8 * s, va_list * args)
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   mmb_classify_trace_t * t = va_arg (*args, mmb_classify_trace_t *);
 
-  s = format (s, "MMB_CLASSIFY: sw_if_index %d next %d rule %d offset %d",
-              t->sw_if_index, t->next_index, t->rule_index, t->offset);
+  u32 *index;
+  vec_foreach(index, t->rule_indexes) {
+     s = format (s, "MMB_CLASSIFY: sw_if_index %d next %d rule %d offset %d\n",
+                 t->sw_if_index, t->next_index, *index, t->offset);
+  }
   s = format (s, "\n%U", format_hex_bytes, t->packet_data, sizeof (t->packet_data));
   return s;
 }
@@ -63,6 +66,10 @@ static char * mmb_classify_error_strings[] = {
   foreach_mmb_classify_error
 #undef _
 };
+
+static inline void update_index(vlib_buffer_t *b0) {
+   return;
+}
 
 static inline uword
 mmb_classify_inline (vlib_main_t * vm,
@@ -177,13 +184,14 @@ mmb_classify_inline (vlib_main_t * vm,
       while (n_left_from > 0 && n_left_to_next > 0) {
 
           u32 bi0;
-          vlib_buffer_t * b0;
+          vlib_buffer_t *b0;
           u32 next0 = MMB_CLASSIFY_NEXT_INDEX_MISS;
           u32 table_index0;
           vnet_classify_table_t * t0;
           vnet_classify_entry_t * e0;
           u64 hash0;
           u8 * h0;
+          u32 *matches;
 
           /* Stride 3 seems to work best */
           if (PREDICT_TRUE (n_left_from > 3)) {
@@ -214,15 +222,14 @@ mmb_classify_inline (vlib_main_t * vm,
           table_index0 = vnet_buffer(b0)->l2_classify.table_index;
           e0 = 0;
           t0 = 0;
-          
-          vnet_buffer(b0)->l2_classify.opaque_index = ~0;
+          matches = 0;
 
           if (PREDICT_TRUE(table_index0 != ~0)) {
               hash0 = vnet_buffer(b0)->l2_classify.hash;
               t0 = pool_elt_at_index (vcm->tables, table_index0);
               e0 = vnet_classify_find_entry (t0, (u8 *) h0, hash0, now);
               if (e0) { // match
-                  vnet_buffer(b0)->l2_classify.opaque_index = e0->opaque_index;  
+                  vec_add1(matches, e0->opaque_index);
                   next0 = e0->next_index;
                   hits++;
               } 
@@ -232,13 +239,14 @@ mmb_classify_inline (vlib_main_t * vm,
                    t0 = pool_elt_at_index (vcm->tables,
                                              t0->next_table_index);
                  else { 
+                   vnet_buffer(b0)->l2_classify.hash = (u64)matches;
                    break;
                  }
 
                  hash0 = vnet_classify_hash_packet(t0, (u8 *) h0);
                  e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
                  if (e0) {
-                    vnet_buffer(b0)->l2_classify.opaque_index = e0->opaque_index;  
+                    vec_add1(matches, e0->opaque_index);
                     next0 = e0->next_index;
                     hits++;
                  }
@@ -250,7 +258,7 @@ mmb_classify_inline (vlib_main_t * vm,
                 vlib_add_trace (vm, node, b0, sizeof (*t));
               t->sw_if_index = vnet_buffer(b0)->sw_if_index[VLIB_RX];
               t->next_index = next0;
-              t->rule_index = vnet_buffer(b0)->l2_classify.opaque_index;
+              t->rule_indexes = (u32*)vnet_buffer(b0)->l2_classify.hash;
               clib_memcpy (t->packet_data, vlib_buffer_get_current(b0),
 		                     sizeof (t->packet_data));
            }

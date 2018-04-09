@@ -47,7 +47,7 @@ static char * mmb_error_strings[] = {
 };
 
 typedef struct {
-  u32 rule_index;
+  u32 *rule_indexes;
   u8  proto;
   ip4_address_t src_address;
   ip4_address_t dst_address;
@@ -103,7 +103,7 @@ mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * no
    ip4_header_t *iph = (ip4_header_t*)p;
 
    t->proto = iph->protocol;
-   t->rule_index = vnet_buffer(b)->l2_classify.opaque_index;
+   t->rule_indexes = (u32*)vnet_buffer(b)->l2_classify.hash;
    t->src_address.as_u32 = iph->src_address.as_u32;
    t->dst_address.as_u32 = iph->dst_address.as_u32;
    t->next = next;
@@ -118,22 +118,18 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   mmb_trace_t * t = va_arg (*args, mmb_trace_t *);
   mmb_main_t mm = mmb_main;
+  u32 *rule_index;
 
-  if (t->rule_index != ~0) 
-    s = format(s, "mmb: if:%U sa:%U da:%U %U pkt matched rule %u, target %U\n",
-                   format_vnet_sw_if_index_name, mm.vnet_main, t->sw_if_index,
-                   format_ip4_address, t->src_address.data,
-                   format_ip4_address, t->dst_address.data,
-                   format_ip_protocol, t->proto,
-                   t->rule_index,
-                   mmb_format_next_node, t->next);
-  else 
-    s = format(s, "mmb: if:%U sa:%U da:%U %U pkt unmatched\n", 
-                   format_vnet_sw_if_index_name, mm.vnet_main, t->sw_if_index,
-                   format_ip4_address, t->src_address.data,
-                   format_ip4_address, t->dst_address.data,
-                   format_ip_protocol, t->proto);
-
+  vec_foreach(rule_index, t->rule_indexes) {
+   s = format(s, "pkt matched rule %u, target %U\n",                
+                rule_index,
+                mmb_format_next_node, t->next);
+  }
+  s = format(s, "mmb: if:%U sa:%U da:%U %U\n",
+                format_vnet_sw_if_index_name, mm.vnet_main, t->sw_if_index,
+                format_ip4_address, t->src_address.data,
+                format_ip4_address, t->dst_address.data,
+                format_ip_protocol, t->proto);
   s = format(s, "  mmb: %U", 
                 format_ip4_header, t->iph, t->iph->length);
 
@@ -560,13 +556,19 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       p0 = vlib_buffer_get_current (b0);
       p1 = vlib_buffer_get_current (b1);     
 
-      /* get matched rules */
-      u32 rule_index0 = vnet_buffer(b0)->l2_classify.opaque_index;
-      u32 rule_index1 = vnet_buffer(b1)->l2_classify.opaque_index;
+      /* get matched rules & rewrite */
+      u32 *rule_index0; //= vnet_buffer(b0)->l2_classify.opaque_index;
+      u32 *rule_index1; //= vnet_buffer(b1)->l2_classify.opaque_index;
+      u32 *rule_indexes0 = (u32 *)vnet_buffer(b0)->l2_classify.hash;
+      u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;   
+      vec_foreach(rule_index0, rule_indexes0) { 
+         mmb_rewrite(vm, rules+*rule_index0, b0, p0);
+      }
+      vec_foreach(rule_index1, rule_indexes1) { 
+         mmb_rewrite(vm, rules+*rule_index1, b1, p1);
+      }
 
-      /* rewrite both */
-      mmb_rewrite(vm, rules+rule_index0, b0, p0);
-      mmb_rewrite(vm, rules+rule_index1, b1, p1);
+      //mmb_rewrite(vm, rules+rule_index1, b1, p1);
 
       //TODO remove when only tcp (with option1s) packets are coming here
       /*if (rule_index0 != ~0 && ip0->protocol == IP_PROTOCOL_TCP)
@@ -638,10 +640,12 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       p0 = vlib_buffer_get_current (b0);    
 
       /* get matched rule */
-      u32 rule_index0 = vnet_buffer(b0)->l2_classify.opaque_index;
-
-      /* rewrite */
-      mmb_rewrite(vm, rules+rule_index0, b0, p0);
+      u32 *rule_index0;// = vnet_buffer(b0)->l2_classify.opaque_index;
+      u32 *rule_indexes0 = (u32 *)vnet_buffer(b0)->l2_classify.hash;
+      //mmb_rewrite(vm, rules+rule_index0, b0, p0); 
+      vec_foreach(rule_index0, rule_indexes0) { 
+         mmb_rewrite(vm, rules+*rule_index0, b0, p0);
+      }
 
       //TODO remove when only tcp (with option1s) packets are coming here
       /*if (rule_index0 != ~0 && ip0->protocol == IP_PROTOCOL_TCP)
