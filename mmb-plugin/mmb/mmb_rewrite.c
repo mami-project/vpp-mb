@@ -121,8 +121,8 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   u32 *rule_index;
 
   vec_foreach(rule_index, t->rule_indexes) {
-   s = format(s, "pkt matched rule %u, target %U\n",                
-                rule_index,
+   s = format(s, "pkt matched rule %u, target %U\n  ",           
+                *rule_index,
                 mmb_format_next_node, t->next);
   }
   s = format(s, "mmb: if:%U sa:%U da:%U %U\n",

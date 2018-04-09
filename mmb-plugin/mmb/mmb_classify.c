@@ -42,10 +42,10 @@ format_mmb_classify_trace(u8 * s, va_list * args)
 
   u32 *index;
   vec_foreach(index, t->rule_indexes) {
-     s = format (s, "MMB_CLASSIFY: sw_if_index %d next %d rule %d offset %d\n",
+     s = format(s, "MMB_CLASSIFY: sw_if_index %d next %d rule %d offset %d\n  ",
                  t->sw_if_index, t->next_index, *index, t->offset);
   }
-  s = format (s, "\n%U", format_hex_bytes, t->packet_data, sizeof (t->packet_data));
+  s = format(s, "\n%U", format_hex_bytes, t->packet_data, sizeof (t->packet_data));
   return s;
 }
 
