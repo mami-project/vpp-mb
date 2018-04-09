@@ -68,7 +68,7 @@
 #define MMB_DEFAULT_ETHERNET_TYPE ETHERNET_TYPE_IP4
 #define MMB_MATCH_IP_VERSION
 
-#define vec_insert_elt_last(V,E) vec_insert_elts(V,E,1,vec_len(V))
+#define vec_insert_elt_first(V,E) vec_insert_elts(V,E,1,0)
 #define vec_insert_elt(V,E,I) vec_insert_elts(V,E,1,I)
 
 /* *INDENT-OFF* */
@@ -1342,16 +1342,16 @@ add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input,
   init_rule(&rule);
   if ( (error = parse_rule(input, &rule)) )
     return error;
-  
+
   vec_add1(mm->rules, rule);
-  
+
   /* flags */
   if (rule_has_tcp_options(&rule))
      mm->opts_in_rules = 1;
 
   if (!mm->enabled) 
      mmb_enable_disable_all(1);
-  
+
   vlib_cli_output(vm, "Added rule: %U", mmb_format_rule, &rule);
   return 0;
 }
@@ -1585,7 +1585,8 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
        case MMB_FIELD_INTERFACE_OUT:
           if ( (error = validate_if(rule, match, field)) )
             return error;
-          vec_insert_elt_last(deletions, &index);
+           vlib_cli_output(mmb_main.vlib_main, "%u\n", index);
+          vec_insert_elt_first(deletions, &index);
           break;        
        default:
          break;
@@ -1593,11 +1594,13 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
    
      /* remove field if no value */
      if (vec_len(match->value) == 0 && match->field != MMB_FIELD_TCP_OPT)
-       vec_insert_elt_last(deletions, &index);
+       vec_insert_elt_first(deletions, &index);
    }
 
    /* delete interface fields */
    vec_foreach(deletion, deletions) {
+      vlib_cli_output(mmb_main.vlib_main, "deleting %u size:%u\n", *deletion, vec_len(rule->matches));
+
      mmb_match_t *match = &rule->matches[*deletion];
      vec_free(match->value);
      if (vec_len(rule->matches) == 1) {
@@ -1688,7 +1691,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
 
        clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
-       vec_insert_elt_last(rm_indexes, &index);
+       vec_insert_elt_first(rm_indexes, &index);
      } else if (keyword == MMB_TARGET_ADD) { 
 
         /* Ensure that field of strip target is a tcp opt. */
@@ -1705,12 +1708,12 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
        mmb_transport_option_t opt = to_transport_option(target);
        vec_add1(rule->opt_adds, opt);
        rule->has_adds = 1;
-       vec_insert_elt_last(rm_indexes, &index);
+       vec_insert_elt_first(rm_indexes, &index);
      } else if (keyword == MMB_TARGET_MODIFY) { 
         if  (MMB_FIELD_TCP_OPT_MSS <= field 
              && field < MMB_FIELD_ALL) {
           vec_add1(rule->opt_mods, *target);
-          vec_insert_elt_last(rm_indexes, &index);
+          vec_insert_elt_first(rm_indexes, &index);
         }
      }
    } 

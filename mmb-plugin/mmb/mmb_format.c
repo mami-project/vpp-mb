@@ -677,6 +677,7 @@ static_always_inline u8* mmb_format_ip6_address(u8 *s, va_list *args) {
 static_always_inline u8* mmb_format_value(u8 *s, va_list *args) {
   u8 *bytes = va_arg(*args, u8*);
   u8 field = va_arg(*args, u32);
+  if (bytes == 0 && field == 0) return s;
   u32 index, padding=mmb_field_str_len(field);
 
   switch (field) {
@@ -721,6 +722,7 @@ u8* mmb_format_target(u8 *s, va_list *args) {
                          mmb_format_field, &target->field, &target->opt_kind,
                          mmb_format_value, target->value, target->field
                          );
+   return s;
 }
 
 u8* mmb_format_rules(u8 *s, va_list *args) {
