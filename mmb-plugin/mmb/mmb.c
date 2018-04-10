@@ -1637,6 +1637,10 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
        return error;
 
      switch (field) {
+       case MMB_FIELD_IP4_SADDR:case MMB_FIELD_IP4_DADDR:
+       case MMB_FIELD_IP6_SADDR:case MMB_FIELD_IP6_DADDR:
+           rule->loop_packet = 1;
+           break;
        case MMB_FIELD_ALL:
          if (keyword != MMB_TARGET_STRIP || vec_len(value))
            return clib_error_return(0, "'all' in a <target> can only be used"

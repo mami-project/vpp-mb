@@ -20,7 +20,8 @@
 #include <mmb/mmb.h>
 
 #define foreach_mmb_next_node \
-  _(FORWARD, "Forward")     /*\
+  _(FORWARD, "Forward")     \
+  _(LOOP, "Loop")         /*\
   _(SLOW_PATH, "Slow Path")*/
 
 typedef enum {
@@ -404,9 +405,31 @@ void target_tcp_options(ip4_header_t *iph, mmb_rule_t *rule, mmb_tcp_options_t *
   }
 }
 
+static_always_inline void icmp_checksum(ip4_header_t *iph, icmp46_header_t* icmph) {
+   icmph->checksum = 0;
+   ip_csum_t csum = ip_incremental_checksum(0, icmph, 
+        clib_net_to_host_u16(iph->length) - sizeof(*iph));
+   icmph->checksum = ~ip_csum_fold(csum);
+}
 
-static_always_inline void mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, 
-                                      vlib_buffer_t *b, u8 *p) {
+static_always_inline void udp_checksum(vlib_main_t *vm, vlib_buffer_t *b, 
+                                       ip4_header_t *iph, udp_header_t *udph) {
+   udph->checksum = 0;
+   udph->checksum = ip4_tcp_udp_compute_checksum(vm, b, iph);
+   // RFC 7011 section 10.3.2 
+   if (udph->checksum == 0)
+     udph->checksum = 0xffff;
+}
+
+static_always_inline void tcp_checksum(vlib_main_t *vm, vlib_buffer_t *b, 
+                                       ip4_header_t *iph, tcp_header_t *tcph) {
+   tcph->checksum = 0;
+   tcph->checksum = ip4_tcp_udp_compute_checksum(vm, b, iph);
+}
+
+
+static_always_inline u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, 
+                                      vlib_buffer_t *b, u8 *p, u32 next) {
 
   u32 skip_u64 = rule->rewrite_skip * 2;
   u32 match = rule->rewrite_match;
@@ -440,49 +463,42 @@ static_always_inline void mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule,
   }
 
  /* update checksums */
-
- u16 checksum;
  ip4_header_t *iph = (ip4_header_t *)p;
  void *next_header = ip4_next_header(iph);
+ int compute_l4_checksum;
  
-  switch (rule->l4) { // XXX 
-    case IP_PROTOCOL_ICMP: {
-      icmp46_header_t *icmph = (icmp46_header_t*) next_header;
-      icmph->checksum = 0;
-      ip_csum_t csum = ip_incremental_checksum(0, icmph, 
-           clib_net_to_host_u16(iph->length) - sizeof(*iph));
-      icmph->checksum = ~ip_csum_fold(csum);
+  /* ip4 checksum */
+  iph->checksum = ip4_header_checksum(iph);
+  /* l4 checksum include pseudoheader */
+  if (rule->l4 == IP_PROTOCOL_RESERVED
+       && (iph->protocol == IP_PROTOCOL_TCP || iph->protocol == IP_PROTOCOL_UDP))
+    compute_l4_checksum = iph->protocol;
+  else 
+   compute_l4_checksum = rule->l4;   
 
+  switch (compute_l4_checksum) { // XXX 
+    case IP_PROTOCOL_ICMP: 
+      icmp_checksum(iph, (icmp46_header_t*) next_header);
       break;
-    }
 
-    case IP_PROTOCOL_UDP: {
-      udp_header_t *udph = (udp_header_t*) next_header;
-      udph->checksum = 0;
-      checksum = ip4_tcp_udp_compute_checksum(vm, b, iph);
-      // RFC 7011 section 10.3.2 
-      if (checksum == 0)
-        checksum = 0xffff;
-      udph->checksum = checksum;
-
+    case IP_PROTOCOL_UDP: 
+      udp_checksum(vm, b, iph, (udp_header_t*) next_header);
       break;
-    }
 
-    case IP_PROTOCOL_TCP: {
-      tcp_header_t *tcph = (tcp_header_t*) next_header;
-      tcph->checksum = 0;
-      tcph->checksum = ip4_tcp_udp_compute_checksum(vm, b, iph);
+    case IP_PROTOCOL_TCP: 
+      tcp_checksum(vm, b, iph, (tcp_header_t*) next_header);
       break;
-    }
 
     default:
       break;
   }
 
-  /* ip4 checksum */
-  iph->checksum = ip4_header_checksum(iph);
-
   rule->match_count++;
+
+   if (next == MMB_NEXT_LOOP || rule->loop_packet)
+      return MMB_NEXT_LOOP;
+   else
+      return MMB_NEXT_FORWARD;
 }
 
 /************************
@@ -530,14 +546,14 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       {
         vlib_buffer_t *p2, *p3;
 
-        p2 = vlib_get_buffer (vm, from[2]);
-        p3 = vlib_get_buffer (vm, from[3]);
+        p2 = vlib_get_buffer(vm, from[2]);
+        p3 = vlib_get_buffer(vm, from[3]);
 
-        vlib_prefetch_buffer_header (p2, LOAD);
-        vlib_prefetch_buffer_header (p3, LOAD);
+        vlib_prefetch_buffer_header(p2, LOAD);
+        vlib_prefetch_buffer_header(p3, LOAD);
 
-        CLIB_PREFETCH (p2->data, CLIB_CACHE_LINE_BYTES, STORE);
-        CLIB_PREFETCH (p3->data, CLIB_CACHE_LINE_BYTES, STORE);
+        CLIB_PREFETCH(p2->data, CLIB_CACHE_LINE_BYTES, STORE);
+        CLIB_PREFETCH(p3->data, CLIB_CACHE_LINE_BYTES, STORE);
       }
 
       /* speculatively enqueue b0 and b1 to the current next frame */
@@ -557,18 +573,16 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       p1 = vlib_buffer_get_current (b1);     
 
       /* get matched rules & rewrite */
-      u32 *rule_index0; //= vnet_buffer(b0)->l2_classify.opaque_index;
-      u32 *rule_index1; //= vnet_buffer(b1)->l2_classify.opaque_index;
+      u32 *rule_index0, *rule_index1; 
       u32 *rule_indexes0 = (u32 *)vnet_buffer(b0)->l2_classify.hash;
       u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;   
+
       vec_foreach(rule_index0, rule_indexes0) { 
-         mmb_rewrite(vm, rules+*rule_index0, b0, p0);
+         next0 = mmb_rewrite(vm, rules+*rule_index0, b0, p0, next0);
       }
       vec_foreach(rule_index1, rule_indexes1) { 
-         mmb_rewrite(vm, rules+*rule_index1, b1, p1);
+         next1 = mmb_rewrite(vm, rules+*rule_index1, b1, p1, next1);
       }
-
-      //mmb_rewrite(vm, rules+rule_index1, b1, p1);
 
       //TODO remove when only tcp (with option1s) packets are coming here
       /*if (rule_index0 != ~0 && ip0->protocol == IP_PROTOCOL_TCP)
@@ -640,11 +654,11 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       p0 = vlib_buffer_get_current (b0);    
 
       /* get matched rule */
-      u32 *rule_index0;// = vnet_buffer(b0)->l2_classify.opaque_index;
+      u32 *rule_index0;
       u32 *rule_indexes0 = (u32 *)vnet_buffer(b0)->l2_classify.hash;
-      //mmb_rewrite(vm, rules+rule_index0, b0, p0); 
+
       vec_foreach(rule_index0, rule_indexes0) { 
-         mmb_rewrite(vm, rules+*rule_index0, b0, p0);
+         next0 = mmb_rewrite(vm, rules+*rule_index0, b0, p0, next0);
       }
 
       //TODO remove when only tcp (with option1s) packets are coming here
@@ -717,7 +731,8 @@ VLIB_REGISTER_NODE(ip4_mmb_rewrite_node) =
 
   .n_next_nodes = MMB_N_NEXT,
   .next_nodes = {
-    [MMB_NEXT_FORWARD] = "ip4-lookup"
+    [MMB_NEXT_FORWARD] = "ip4-lookup",
+    [MMB_NEXT_LOOP] = "ip4-input"
   }
 };
 
@@ -741,7 +756,8 @@ VLIB_REGISTER_NODE(ip6_mmb_rewrite_node) =
 
   .n_next_nodes = MMB_N_NEXT,
   .next_nodes = {
-    [MMB_NEXT_FORWARD] = "ip6-lookup"
+    [MMB_NEXT_FORWARD] = "ip6-lookup",
+    [MMB_NEXT_LOOP] = "ip6-input",
   }
 };
 

@@ -49,6 +49,7 @@
   _(MODIFY)                \
   _(ADD)
 
+/* macro, CLI name, size, fixed len */
 #define foreach_mmb_field                         \
   _(INTERFACE_IN, "in", 4, 1)                     \
   _(INTERFACE_OUT, "out", 4, 1)                   \
@@ -277,6 +278,7 @@ typedef struct {
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
   u8 last_match:1;
+  u8 loop_packet:1;
 
 } mmb_rule_t;
 
