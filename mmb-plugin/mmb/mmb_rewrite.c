@@ -501,6 +501,9 @@ static_always_inline u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule,
       break;
   }
 
+  /* lb */
+  //vnet_buffer(b)->sw_if_index[VLIB_TX] = sw_if_index0;
+
   rule->match_count++;
 
    if (next == MMB_NEXT_LOOP || rule->loop_packet)

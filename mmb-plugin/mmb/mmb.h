@@ -45,9 +45,9 @@
 #define foreach_mmb_target \
   _(DROP)                  \
   _(STRIP)                 \
-  _(VALUE)                 \
   _(MODIFY)                \
-  _(ADD)
+  _(ADD)                   \
+  _(LB)       
 
 /* macro, CLI name, size, fixed len */
 #define foreach_mmb_field                         \
@@ -312,5 +312,6 @@ extern const char* conditions[];
 
 u16 get_field_protocol(u8 field);
 u8 is_fixed_length(u8 field);
+u32 bytes_to_u32(u8 *bytes);
 
 #endif /* __included_mmb_h__ */

@@ -32,6 +32,7 @@ static uword mmb_unformat_field(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_condition(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_value(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_ip4_address (unformat_input_t *input, va_list *args);
+static uword mmb_unformat_ifs(unformat_input_t *input, va_list *args);
 static u8* mmb_format_match(u8 *s, va_list *args);
 static u8* mmb_format_target(u8 *s, va_list *args);
 static u8* mmb_format_field(u8 *s, va_list *args);
@@ -316,6 +317,20 @@ uword mmb_unformat_value(unformat_input_t *input, va_list *args) {
   return 1;
 }
 
+uword mmb_unformat_ifs(unformat_input_t *input, va_list *args) {
+   u8 **bytes = va_arg(*args, u8**);
+   u32 if_sw_index = ~0;
+   mmb_main_t mm = mmb_main;
+
+   /* if names */
+   while (unformat(input, " %U", unformat_vnet_sw_interface, 
+               mm.vnet_main, &if_sw_index)) {
+     u64_tobytes(bytes, if_sw_index, 4);
+   }
+ 
+   return if_sw_index != ~0; // vec_len(*bytes) > 0;//
+}
+
 uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
    mmb_target_t *target = va_arg(*args, mmb_target_t*);
 
@@ -339,7 +354,10 @@ uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
      target->keyword=MMB_TARGET_ADD;
    else if (unformat(input, "drop"))
      target->keyword=MMB_TARGET_DROP; 
-   else 
+   else if (unformat(input, "lb%U", mmb_unformat_ifs, &target->value)) {
+     //target->field = MMB_FIELD_INTERFACE_OUT;
+     target->keyword=MMB_TARGET_LB; 
+   } else 
      return 0;
    
    resize_value(target->field, &target->value);
@@ -451,6 +469,9 @@ u8* mmb_format_keyword(u8 *s, va_list *args) {
     case MMB_TARGET_ADD:
        keyword_str =  "add";
        break;
+    case MMB_TARGET_LB:
+       keyword_str =  "lb";
+       break;
     default:
        break;
   }
@@ -472,6 +493,19 @@ static_always_inline u8 *mmb_format_if_sw_index(u8 *s, va_list *args) {
     return format(s, "all");
   return format(s, "%U", format_vnet_sw_if_index_name, 
                 mm.vnet_main, sw_if_index);
+}
+
+static_always_inline u8 *mmb_format_lb(u8 *s, va_list *args) {
+   u8 *bytes = va_arg(*args, u8*);
+   u32 sw_if_index = ~0;
+
+   s = format(s, "lb");
+   for (int i=0; i<vec_len(bytes); i+=4) {
+      sw_if_index = bytes_to_u32(bytes+i);
+      s = format(s, " %U", mmb_format_if_sw_index, sw_if_index);
+   }
+
+   return s;
 }
 
 static_always_inline mmb_target_t target_from_strip(mmb_rule_t *rule, 
@@ -717,12 +751,14 @@ u8* mmb_format_match(u8 *s, va_list *args) {
 u8* mmb_format_target(u8 *s, va_list *args) {
 
   mmb_target_t *target = va_arg(*args, mmb_target_t*);
+  if (target->keyword == MMB_TARGET_LB)
+     return format(s, "%U", mmb_format_lb, target->value);
+
   return format(s, "%s%U %U %U", (target->reverse) ? "! ":"",
                          mmb_format_keyword, &target->keyword,
                          mmb_format_field, &target->field, &target->opt_kind,
                          mmb_format_value, target->value, target->field
                          );
-   return s;
 }
 
 u8* mmb_format_rules(u8 *s, va_list *args) {

@@ -142,7 +142,7 @@ static_always_inline void update_flags(mmb_main_t *mm, mmb_rule_t *rules) {
    mm->opts_in_rules = 0;
 } 
 
-static_always_inline u32 bytes_to_u32(u8 *bytes) {
+inline u32 bytes_to_u32(u8 *bytes) {
   u32 value = 0;
   u32 index = 0;
   const u32 len = clib_min(3,vec_len(bytes)-1);
@@ -1319,7 +1319,7 @@ clib_error_t *parse_rule(unformat_input_t * input,
     rule->last_match = 1;
   if (!unformat(input, "%U", mmb_unformat_rule, rule))
     return clib_error_return(0, "Invalid rule");
-  
+
   clib_error_t *error;
   if ( (error = validate_rule(rule)) )
     return error;
@@ -1599,7 +1599,7 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
 
    /* delete interface fields */
    vec_foreach(deletion, deletions) {
-      vlib_cli_output(mmb_main.vlib_main, "deleting %u size:%u\n", *deletion, vec_len(rule->matches));
+     vlib_cli_output(mmb_main.vlib_main, "deleting %u size:%u\n", *deletion, vec_len(rule->matches));
 
      mmb_match_t *match = &rule->matches[*deletion];
      vec_free(match->value);
