@@ -244,15 +244,15 @@ u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
       u8 new_opt_len = new_data_length + 2;
 
       if (old_data_length == new_data_length)
-      {
+      {  
         offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 2);
-        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
+        offset += mmb_memcpy(&data[offset], opt->new_value, new_data_length);
       }
       else if (old_data_length > new_data_length)
       {
         offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 1);
         offset += mmb_memcpy(&data[offset], &new_opt_len, 1);
-        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
+        offset += mmb_memcpy(&data[offset], opt->new_value, new_data_length);
       }
       else
       {
@@ -278,13 +278,13 @@ u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
 
           offset += mmb_memcpy(&data[offset], &data[opt->offset], 1);
           offset += mmb_memcpy(&data[offset], &new_opt_len, 1);
-          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
+          offset += mmb_memcpy(&data[offset], opt->new_value, new_data_length);
         }
         else
         {
           offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 1);
           offset += mmb_memcpy(&data[offset], &new_opt_len, 1);
-          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
+          offset += mmb_memcpy(&data[offset], opt->new_value, new_data_length);
         }
       }
     }
