@@ -279,6 +279,7 @@ typedef struct {
   u8 opts_in_targets:1;
   u8 last_match:1;
   u8 loop_packet:1;
+  u8 lb:1;
 
 } mmb_rule_t;
 

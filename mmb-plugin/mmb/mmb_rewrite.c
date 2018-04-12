@@ -16,6 +16,8 @@
 #include <vnet/vnet.h>
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
+#include <vppinfra/random.h>
+#include <time.h>
 #include <vnet/classify/vnet_classify.h>
 #include <mmb/mmb.h>
 
@@ -436,6 +438,18 @@ static_always_inline void tcp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
 static_always_inline u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, 
                                      vlib_buffer_t *b, u8 *p, u32 next,
                                      u8 tcpo, mmb_tcp_options_t *tcp_options) {
+  ip4_header_t *iph = (ip4_header_t *)p;
+
+  /* lb */
+  if (rule->lb) {
+    static u32 seed = 0;
+    if (!seed) seed = time(NULL);
+    u8 *fibs = rule->targets[0].value;
+    u8 fib_count = vec_len(fibs);
+    u8 fib_index = random_u32(&seed) % fib_count;
+    vnet_buffer(b)->sw_if_index[VLIB_TX] = fibs[fib_index];
+    goto done;
+  }
 
   u32 skip_u64 = rule->rewrite_skip * 2;
   u32 match = rule->rewrite_match;
@@ -467,9 +481,17 @@ static_always_inline u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule,
       break;
   }
 
- ip4_header_t *iph = (ip4_header_t *)p;
+ /* tcp opts */
  if (tcpo)
    target_tcp_options(b, iph, rule, tcp_options);
+
+ /* if looping pkt, prepare it */
+ /*if (next == MMB_NEXT_FORWARD && rule->loop_packet) {
+   // remove eth header 
+   //vlib_buffer_advance(b, ethernet_buffer_header_size(b));
+   iph->ttl++;
+   next = MMB_NEXT_LOOP;
+ }*/
 
  /* update checksums */
  void *next_header = ip4_next_header(iph);
@@ -501,15 +523,9 @@ static_always_inline u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule,
       break;
   }
 
-  /* lb */
-  //vnet_buffer(b)->sw_if_index[VLIB_TX] = sw_if_index0;
-
+done:
   rule->match_count++;
-
-   if (next == MMB_NEXT_LOOP || rule->loop_packet)
-      return MMB_NEXT_LOOP;
-   else
-      return MMB_NEXT_FORWARD;
+  return next;
 }
 
 /************************
@@ -581,7 +597,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       /* get IP headers as raw data */
       p0 = vlib_buffer_get_current(b0);
-      p1 = vlib_buffer_get_current(b1);     
+      p1 = vlib_buffer_get_current(b1);  
 
       /* get matched rules & rewrite */
       mmb_rule_t *ri0, *ri1;
@@ -646,10 +662,10 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       n_left_to_next -= 1;
 
       /* get vlib buffer */
-      b0 = vlib_get_buffer (vm, bi0);
+      b0 = vlib_get_buffer(vm, bi0);
 
       /* get IP header as raw data */
-      p0 = vlib_buffer_get_current (b0);    
+      p0 = vlib_buffer_get_current(b0);
 
       /* get matched rule */
       mmb_rule_t *ri0;
@@ -721,17 +737,17 @@ VLIB_REGISTER_NODE(ip4_mmb_rewrite_node) =
 
   .n_next_nodes = MMB_N_NEXT,
   .next_nodes = {
-    [MMB_NEXT_FORWARD] = "ip4-lookup",
-    [MMB_NEXT_LOOP] = "ip4-input"
+    [MMB_NEXT_FORWARD] = "ip4-lookup",//"interface-output",
+    [MMB_NEXT_LOOP] = "ip4-input",
   }
 };
 
 VLIB_NODE_FUNCTION_MULTIARCH(ip4_mmb_rewrite_node, mmb_node_ip4_rewrite_fn);
 
 VNET_FEATURE_INIT (ip4_mmb_rewrite_feature, static) = {
-  .arc_name = "ip4-unicast",
+  .arc_name = "ip4-unicast",//"ip4-output",
   .node_name = "ip4-mmb-rewrite",
-  .runs_before = VNET_FEATURES("ip4-lookup"),
+  .runs_before = VNET_FEATURES("ip4-lookup"),//"interface-output"),
 };
 
 VLIB_REGISTER_NODE(ip6_mmb_rewrite_node) =
@@ -767,4 +783,3 @@ mmb_rewrite_init (vlib_main_t *vm)
 }
 
 VLIB_INIT_FUNCTION(mmb_rewrite_init);
-

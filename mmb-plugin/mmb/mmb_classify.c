@@ -42,10 +42,15 @@ format_mmb_classify_trace(u8 * s, va_list * args)
 
   u32 *index;
   vec_foreach(index, t->rule_indexes) {
-     s = format(s, "MMB_CLASSIFY: sw_if_index %d next %d rule %d offset %d\n  ",
-                 t->sw_if_index, t->next_index, *index, t->offset);
+     s = format(s, "match: sw_if_index %d rule %d next %d offset %d\n  ",
+                 t->sw_if_index, *index, t->next_index, t->offset);
   }
-  s = format(s, "\n%U", format_hex_bytes, t->packet_data, sizeof (t->packet_data));
+
+  if (vec_len(t->rule_indexes) == 0) 
+     s = format(s, "no match: sw_if_index %d next %d\n  ",
+                 t->sw_if_index, t->next_index);
+  else
+     s = format(s, "\n%U", format_hex_bytes, t->packet_data, sizeof (t->packet_data));
   return s;
 }
 
@@ -259,7 +264,7 @@ mmb_classify_inline (vlib_main_t * vm,
               t->sw_if_index = vnet_buffer(b0)->sw_if_index[VLIB_RX];
               t->next_index = next0;
               t->rule_indexes = (u32*)vnet_buffer(b0)->l2_classify.hash;
-              clib_memcpy (t->packet_data, vlib_buffer_get_current(b0),
+              clib_memcpy (t->packet_data, h0,//vlib_buffer_get_current(b0),
 		                     sizeof (t->packet_data));
            }
 
@@ -300,7 +305,7 @@ VLIB_REGISTER_NODE (ip4_mmb_classify_node) = {
   .n_next_nodes = MMB_CLASSIFY_NEXT_INDEX_N_NEXT,
   .next_nodes = {
     [MMB_CLASSIFY_NEXT_INDEX_MATCH] = "ip4-mmb-rewrite",
-    [MMB_CLASSIFY_NEXT_INDEX_MISS] = "ip4-lookup",
+    [MMB_CLASSIFY_NEXT_INDEX_MISS] = "ip4-lookup",//"interface-output",
     [MMB_CLASSIFY_NEXT_INDEX_DROP] = "error-drop",
   },
 };
@@ -309,7 +314,7 @@ VLIB_REGISTER_NODE (ip4_mmb_classify_node) = {
 
 VNET_FEATURE_INIT (ip4_mmb_classify_feature, static) =
 {
-  .arc_name = "ip4-unicast",
+  .arc_name = "ip4-unicast", //"ip4-output",
   .node_name = "ip4-mmb-classify",
   .runs_before = VNET_FEATURES ("ip4-mmb-rewrite"),
 };
@@ -333,7 +338,7 @@ VLIB_REGISTER_NODE (ip6_mmb_classify_node) = {
   .n_next_nodes = MMB_CLASSIFY_NEXT_INDEX_N_NEXT,
   .next_nodes = {
     [MMB_CLASSIFY_NEXT_INDEX_MATCH] = "ip6-mmb-rewrite",
-    [MMB_CLASSIFY_NEXT_INDEX_MISS] = "ip6-lookup",
+    [MMB_CLASSIFY_NEXT_INDEX_MISS] = "ip6-lookup",//"interface-output",
     [MMB_CLASSIFY_NEXT_INDEX_DROP] = "error-drop",
   },
 };
@@ -342,7 +347,7 @@ VLIB_REGISTER_NODE (ip6_mmb_classify_node) = {
 
 VNET_FEATURE_INIT (ip6_mmb_classify_feature, static) =
 {
-  .arc_name = "ip6-unicast",
+  .arc_name = "ip6-unicast", //"ip6-output",
   .node_name = "ip6-mmb-classify",
   .runs_before = VNET_FEATURES ("ip6-mmb-rewrite"),
 };
@@ -356,7 +361,7 @@ mmb_classify_init (vlib_main_t *vm)
   //mcm->vnet_main = vnet_get_main();
   mcm->vnet_classify_main = &vnet_classify_main;
 
-  mmb_main.feature_arc_index = vlib_node_add_next(vm, ip4_lookup_node.index, ip4_mmb_classify_node.index);
+  //mmb_main.feature_arc_index = vlib_node_add_next(vm, ip4_lookup_node.index, ip4_mmb_classify_node.index);
 
   return 0;
 }

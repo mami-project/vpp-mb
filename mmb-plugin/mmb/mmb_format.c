@@ -32,7 +32,7 @@ static uword mmb_unformat_field(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_condition(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_value(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_ip4_address (unformat_input_t *input, va_list *args);
-static uword mmb_unformat_ifs(unformat_input_t *input, va_list *args);
+static uword mmb_unformat_fibs(unformat_input_t *input, va_list *args);
 static u8* mmb_format_match(u8 *s, va_list *args);
 static u8* mmb_format_target(u8 *s, va_list *args);
 static u8* mmb_format_field(u8 *s, va_list *args);
@@ -317,18 +317,14 @@ uword mmb_unformat_value(unformat_input_t *input, va_list *args) {
   return 1;
 }
 
-uword mmb_unformat_ifs(unformat_input_t *input, va_list *args) {
+uword mmb_unformat_fibs(unformat_input_t *input, va_list *args) {
    u8 **bytes = va_arg(*args, u8**);
-   u32 if_sw_index = ~0;
-   mmb_main_t mm = mmb_main;
+   u32 fib_index;
 
-   /* if names */
-   while (unformat(input, " %U", unformat_vnet_sw_interface, 
-               mm.vnet_main, &if_sw_index)) {
-     u64_tobytes(bytes, if_sw_index, 4);
-   }
+   while (unformat(input, " %u", &fib_index)) 
+     vec_add1(*bytes,(u8)fib_index);
  
-   return if_sw_index != ~0; // vec_len(*bytes) > 0;//
+   return vec_len(*bytes) > 0;
 }
 
 uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
@@ -353,11 +349,10 @@ uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
                       &target->field, &target->opt_kind)) 
      target->keyword=MMB_TARGET_ADD;
    else if (unformat(input, "drop"))
-     target->keyword=MMB_TARGET_DROP; 
-   else if (unformat(input, "lb%U", mmb_unformat_ifs, &target->value)) {
-     //target->field = MMB_FIELD_INTERFACE_OUT;
+     target->keyword=MMB_TARGET_DROP;
+   else if (unformat(input, "lb%U", mmb_unformat_fibs, &target->value)) 
      target->keyword=MMB_TARGET_LB; 
-   } else 
+   else 
      return 0;
    
    resize_value(target->field, &target->value);
@@ -496,13 +491,11 @@ static_always_inline u8 *mmb_format_if_sw_index(u8 *s, va_list *args) {
 }
 
 static_always_inline u8 *mmb_format_lb(u8 *s, va_list *args) {
-   u8 *bytes = va_arg(*args, u8*);
-   u32 sw_if_index = ~0;
+   u8 *byte, *bytes = va_arg(*args, u8*);
 
    s = format(s, "lb");
-   for (int i=0; i<vec_len(bytes); i+=4) {
-      sw_if_index = bytes_to_u32(bytes+i);
-      s = format(s, " %U", mmb_format_if_sw_index, sw_if_index);
+   vec_foreach(byte, bytes) {
+     s = format(s, " %u", *byte);
    }
 
    return s;

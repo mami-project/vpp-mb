@@ -1719,6 +1719,10 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
           vec_add1(rule->opt_mods, *target);
           vec_insert_elt_first(rm_indexes, &index);
         }
+     } else if (keyword == MMB_TARGET_LB) {
+       rule->lb = 1;
+       if (vec_len(rule->targets) > 1)
+         return clib_error_return(0, "lb is a unique target");
      }
    } 
 
