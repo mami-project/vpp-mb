@@ -74,7 +74,7 @@ typedef struct {
 } mmb_tcp_options_t;
 
 static u8 mmb_parse_tcp_options(tcp_header_t *, mmb_tcp_options_t *);
-static u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *);
+static u8 mmb_rewrite_tcp_options(vlib_buffer_t *, mmb_tcp_options_t *);
 static void target_tcp_options(vlib_buffer_t *, ip4_header_t *, mmb_rule_t *, mmb_tcp_options_t *);
 
 /************************
@@ -223,7 +223,7 @@ u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
   return 1;
 }
 
-u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
+u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts)
 {
   u8 offset = 0; //writing cursor's position
   u8 shift = 0; //cumulative shift offset to the right (after a specific resize -see below-)
@@ -274,8 +274,9 @@ u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
           if (offset_after_modify > overlap_offset)
           {
             /* Shift of *needed* bytes to the right */
-            memmove(&data[offset_after_modify], &data[overlap_offset], /*TODO*/100);
             shift += (offset_after_modify - overlap_offset);
+            size_t len = b->current_length - (b->current_data + sizeof(ip4_header_t) + sizeof(tcp_header_t)) - shift;
+            memmove(&data[offset_after_modify], &data[overlap_offset], len);
           }
 
           offset += mmb_memmove(&data[offset], &data[opt->offset], 1);
@@ -376,7 +377,7 @@ void target_tcp_options(vlib_buffer_t *b, ip4_header_t *iph, mmb_rule_t *rule,
   old_opts_len = (tcp_doff(tcph) << 2) - sizeof(tcp_header_t);
   if (opts_modified)
   {
-    new_opts_len = mmb_rewrite_tcp_options(tcp_options);
+    new_opts_len = mmb_rewrite_tcp_options(b, tcp_options);
   }
   else
   {
