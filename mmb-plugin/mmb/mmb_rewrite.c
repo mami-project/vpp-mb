@@ -275,8 +275,8 @@ u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts)
           {
             /* Shift of *needed* bytes to the right */
             shift += (offset_after_modify - overlap_offset);
-            size_t len = b->current_length - (b->current_data + sizeof(ip4_header_t) + sizeof(tcp_header_t)) - shift;
-            memmove(&data[offset_after_modify], &data[overlap_offset], len);
+            //size_t len = b->current_length - (b->current_data + sizeof(ip4_header_t) + sizeof(tcp_header_t)) - shift;
+            memmove(&data[offset_after_modify], &data[overlap_offset], /*len*/100); //TODO crash when using len
           }
 
           offset += mmb_memmove(&data[offset], &data[opt->offset], 1);
