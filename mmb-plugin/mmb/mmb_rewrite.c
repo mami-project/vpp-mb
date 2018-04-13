@@ -608,7 +608,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       vec_foreach(rule_index0, rule_indexes0) { 
          ri0 = rules+*rule_index0;
-         if (ri0->opts_in_targets && !tcpo0) {
+         if (ri0->opts_in_targets) {// && !tcpo0) {
              ip4_header_t *ip0 = (ip4_header_t *)p0;
              tcpo0 = mmb_parse_tcp_options(ip4_next_header(ip0), &tcp_options0);
          } 
@@ -617,7 +617,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       vec_foreach(rule_index1, rule_indexes1) { 
          ri1 = rules+*rule_index1;
-         if (ri1->opts_in_targets && !tcpo1) {
+         if (ri1->opts_in_targets) { //  && !tcpo1) {
              ip4_header_t *ip1 = (ip4_header_t *)p1;
              tcpo1 = mmb_parse_tcp_options(ip4_next_header(ip1), &tcp_options1);
          } 
@@ -675,7 +675,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       vec_foreach(rule_index0, rule_indexes0) { 
          ri0 = rules+*rule_index0;
-         if (ri0->opts_in_targets && !tcpo0) {
+         if (ri0->opts_in_targets) { // && !tcpo0) {
             ip4_header_t *ip0 = (ip4_header_t *)p0;
             tcpo0 = mmb_parse_tcp_options(ip4_next_header(ip0), &tcp_options0);
          } 
