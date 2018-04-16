@@ -34,7 +34,7 @@ static u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *);
 static u8 mmb_padding_tcp_options(u8 *, u8);
 
 static u8 mmb_true_condition(u8, u8);
-static u8 mmb_memcpy(u8 *, u8 *, u8);
+static u8 mmb_memmove(u8 *, u8 *, u8);
 static u64 mmb_bytes_to_u64(u8 *);
 static u64 mmb_n_bytes_to_u64(u8 *, u8);
 static void mmb_parse_ip4_cidr_address(u8 *, u32 *, u32 *);
@@ -580,14 +580,14 @@ u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
 
       if (old_data_length == new_data_length)
       {
-        offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 2);
-        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
+        offset += mmb_memmove(&data[offset], &data[opt->offset+shift], 2);
+        offset += mmb_memmove(&data[offset], &opt->new_value[0], new_data_length);
       }
       else if (old_data_length > new_data_length)
       {
-        offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 1);
-        offset += mmb_memcpy(&data[offset], &new_opt_len, 1);
-        offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
+        offset += mmb_memmove(&data[offset], &data[opt->offset+shift], 1);
+        offset += mmb_memmove(&data[offset], &new_opt_len, 1);
+        offset += mmb_memmove(&data[offset], &opt->new_value[0], new_data_length);
       }
       else
       {
@@ -611,22 +611,22 @@ u8 mmb_rewrite_tcp_options(mmb_tcp_options_t *opts)
             shift += (offset_after_modify - overlap_offset);
           }
 
-          offset += mmb_memcpy(&data[offset], &data[opt->offset], 1);
-          offset += mmb_memcpy(&data[offset], &new_opt_len, 1);
-          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
+          offset += mmb_memmove(&data[offset], &data[opt->offset], 1);
+          offset += mmb_memmove(&data[offset], &new_opt_len, 1);
+          offset += mmb_memmove(&data[offset], &opt->new_value[0], new_data_length);
         }
         else
         {
-          offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], 1);
-          offset += mmb_memcpy(&data[offset], &new_opt_len, 1);
-          offset += mmb_memcpy(&data[offset], &opt->new_value[0], new_data_length);
+          offset += mmb_memmove(&data[offset], &data[opt->offset+shift], 1);
+          offset += mmb_memmove(&data[offset], &new_opt_len, 1);
+          offset += mmb_memmove(&data[offset], &opt->new_value[0], new_data_length);
         }
       }
     }
     else
     {
       /* NOT MODIFIED, rewrite */
-      offset += mmb_memcpy(&data[offset], &data[opt->offset+shift], opt->data_length+2);
+      offset += mmb_memmove(&data[offset], &data[opt->offset+shift], opt->data_length+2);
     }
   }
 
@@ -657,9 +657,9 @@ static_always_inline u8 mmb_true_condition(u8 condition, u8 reverse)
   return condition != reverse;
 }
 
-static_always_inline u8 mmb_memcpy(u8 *dst, u8 *from, u8 length)
+static_always_inline u8 mmb_memmove(u8 *dst, u8 *from, u8 length)
 {
-  clib_memcpy(dst, from, length);
+  memmove(dst, from, length);
   return length;
 }
 
