@@ -1,10 +1,12 @@
 #!/bin/bash
 
 sudo vppctl -s /run/vpp/cli-vpp1.sock mmb enable host-vpp1out 
-sudo vppctl -s /run/vpp/cli-vpp1.sock mmb enable host-vpp1vpp2
-sudo vppctl -s /run/vpp/cli-vpp2.sock mmb enable host-vpp2vpp1
+sudo vppctl -s /run/vpp/cli-vpp1.sock mmb enable memif0/0
+sudo vppctl -s /run/vpp/cli-vpp2.sock mmb enable memif0/0
 
 sudo vppctl -s /run/vpp/cli-vpp1.sock mmb add ip-dscp 1 mod ip-dscp 1234
+sudo vppctl -s /run/vpp/cli-vpp1.sock mmb add tcp-dport 80 mod tcp-dport 8000
+sudo vppctl -s /run/vpp/cli-vpp1.sock mmb add udp-dport 80 mod udp-dport 8000
 #sudo vppctl -s /run/vpp/cli-vpp1.sock mmb add ip-proto tcp mod ip-dscp 1234
 #sudo vppctl -s /run/vpp/cli-vpp1.sock mmb add ip-ecn mod ip-ecn 0
 #sudo vppctl -s /run/vpp/cli-vpp1.sock mmb add ip-proto 17 drop
