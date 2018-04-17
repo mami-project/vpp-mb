@@ -180,25 +180,25 @@ enum
 #define MMB_MAX_FIELD_LEN 64
 
 /* cli-name,protocol-name */
-#define foreach_mmb_transport_proto       \
-_(tcp,TCP)                                    \
-_(udp,UDP)                                    \
-_(icmp,ICMP)     
+#define foreach_mmb_transport_proto \
+_(tcp,TCP)                          \
+_(udp,UDP)                          \
+_(icmp,ICMP)
      
 /* cli-name,protocol-name */                          
-#define foreach_mmb_network_proto       \
-_(ip4,IP4)                                    \
-_(ip6,IP6)                                   
+#define foreach_mmb_network_proto \
+_(ip4,IP4)                        \
+_(ip6,IP6)
 
 /* mmb-const,cli-name,opt-kind */
-#define foreach_mmb_tcp_opts            \
-_(MMB_FIELD_TCP_OPT_MSS,MSS,2)            \
-_(MMB_FIELD_TCP_OPT_WSCALE,WScale,3)         \
-_(MMB_FIELD_TCP_OPT_SACKP,SACK-P,4)          \
+#define foreach_mmb_tcp_opts               \
+_(MMB_FIELD_TCP_OPT_MSS,MSS,2)             \
+_(MMB_FIELD_TCP_OPT_WSCALE,WScale,3)       \
+_(MMB_FIELD_TCP_OPT_SACKP,SACK-P,4)        \
 _(MMB_FIELD_TCP_OPT_SACK,SACK,5)           \
-_(MMB_FIELD_TCP_OPT_TIMESTAMP,Timestamp,8)      \
-_(MMB_FIELD_TCP_OPT_FAST_OPEN,FastOpen,34)      \
-_(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)                                    
+_(MMB_FIELD_TCP_OPT_TIMESTAMP,Timestamp,8) \
+_(MMB_FIELD_TCP_OPT_FAST_OPEN,FastOpen,34) \
+_(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)
 
 typedef struct {
    u8 l4;
