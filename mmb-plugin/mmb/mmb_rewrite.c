@@ -515,7 +515,7 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
     u8 fib_count = vec_len(fibs);
     u8 fib_index = random_u32(&seed) % fib_count;
     vnet_buffer(b)->sw_if_index[VLIB_TX] = fibs[fib_index];
-    goto done;
+    return next;
   }
 
   u32 skip_u64 = rule->rewrite_skip * 2;
@@ -602,8 +602,6 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
       break;
   }
 
-done:
-  rule->match_count++;
   return next;
 }
 

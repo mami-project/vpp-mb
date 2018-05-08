@@ -82,10 +82,12 @@ mmb_classify_inline (vlib_main_t * vm,
                      vlib_frame_t * frame,
                      mmb_classify_table_id_t tid)
 {
-  u32 n_left_from, * from, * to_next;
+  u32 n_left_from, *from, *to_next;
   mmb_classify_next_index_t next_index;
-  mmb_classify_main_t * mcm = &mmb_classify_main;
-  vnet_classify_main_t * vcm = mcm->vnet_classify_main;
+  mmb_classify_main_t *mcm = &mmb_classify_main;
+  vnet_classify_main_t *vcm = mcm->vnet_classify_main;
+  mmb_main_t *mm = &mmb_main;
+  mmb_rule_t *rules = mm->rules;
   f64 now = vlib_time_now (vm);
   u32 hits = 0;
   u32 drop = 0;
@@ -197,6 +199,7 @@ mmb_classify_inline (vlib_main_t * vm,
           u64 hash0;
           u8 * h0;
           u32 *matches;
+          mmb_rule_t *matched_rule;
 
           /* Stride 3 seems to work best */
           if (PREDICT_TRUE (n_left_from > 3)) {
@@ -231,11 +234,13 @@ mmb_classify_inline (vlib_main_t * vm,
 
           if (PREDICT_TRUE(table_index0 != ~0)) {
               hash0 = vnet_buffer(b0)->l2_classify.hash;
-              t0 = pool_elt_at_index (vcm->tables, table_index0);
-              e0 = vnet_classify_find_entry (t0, (u8 *) h0, hash0, now);
+              t0 = pool_elt_at_index(vcm->tables, table_index0);
+              e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
               if (e0) { // match
                   vec_add1(matches, e0->opaque_index);
                   next0 = e0->next_index;
+                  matched_rule = rules+e0->opaque_index;
+                  matched_rule->match_count++;
                   hits++;
               } 
               
@@ -253,6 +258,8 @@ mmb_classify_inline (vlib_main_t * vm,
                  if (e0) {
                     vec_add1(matches, e0->opaque_index);
                     next0 = e0->next_index;
+                    matched_rule = rules+e0->opaque_index;
+                    matched_rule->match_count++;
                     hits++;
                  }
               }
@@ -260,12 +267,12 @@ mmb_classify_inline (vlib_main_t * vm,
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
               mmb_classify_trace_t * t =
-                vlib_add_trace (vm, node, b0, sizeof (*t));
+                vlib_add_trace(vm, node, b0, sizeof (*t));
               t->sw_if_index = vnet_buffer(b0)->sw_if_index[VLIB_RX];
               t->next_index = next0;
               t->rule_indexes = (u32*)vnet_buffer(b0)->l2_classify.hash;
-              clib_memcpy (t->packet_data, h0,//vlib_buffer_get_current(b0),
-		                     sizeof (t->packet_data));
+              clib_memcpy(t->packet_data, h0,//vlib_buffer_get_current(b0),
+		                    sizeof (t->packet_data));
            }
 
           /* Verify speculative enqueue, maybe switch current next frame */
