@@ -244,7 +244,7 @@ mmb_classify_inline (vlib_main_t * vm,
                   hits++;
               } 
               
-              while (1) {
+              while (next0 != MMB_CLASSIFY_NEXT_INDEX_DROP) {
                  if (t0->next_table_index != ~0)
                    t0 = pool_elt_at_index (vcm->tables,
                                              t0->next_table_index);
