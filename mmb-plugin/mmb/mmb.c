@@ -851,6 +851,11 @@ static void mmb_ip4_match_protocol(mmb_rule_t *rule, u8 *mask, u8 *key) {
      ip_key->ip_version_and_header_length = 0x40;  
    }
 #endif
+
+   if (rule->l4 != IP_PROTOCOL_RESERVED) {
+      ip_mask->protocol = 0xff;
+      ip_key->protocol = rule->l4;
+   }
 }
 
 static void mmb_ip6_match_protocol(mmb_rule_t *rule, u8 *mask, u8 *key) {
@@ -867,6 +872,11 @@ static void mmb_ip6_match_protocol(mmb_rule_t *rule, u8 *mask, u8 *key) {
       ip_key->ip_version_traffic_class_and_flow_label = 0x60000000;
    }
 #endif
+
+   if (rule->l4 != IP_PROTOCOL_RESERVED) {
+      ip_mask->protocol = 0xff;
+      ip_key->protocol = rule->l4;
+   }
 }
 
 
