@@ -43,14 +43,14 @@ autoreply define mmb_table_flush
   u32 context;
 };
 
-/*autoreply define mmb_remove_rule
+autoreply define mmb_remove_rule
 {
   u32 client_index;
   u32 context;
   u32 rule_id;
 };
 
-typeonly manual_endian define mmb_type_match
+/*typeonly manual_endian define mmb_type_match
 {
   u8 field;
   u8 opt_kind;

@@ -64,7 +64,8 @@ typedef struct {
 mmb_test_main_t mmb_test_main;
 
 #define foreach_standard_reply_retval_handler  \
-_(mmb_table_flush_reply)
+_(mmb_table_flush_reply)                       \
+_(mmb_remove_rule_reply)
 
 #define _(n)                                            \
     static void vl_api_##n##_t_handler                  \
@@ -87,37 +88,59 @@ foreach_standard_reply_retval_handler;
  * we just generated
  */
 #define foreach_vpe_api_reply_msg                \
-_(MMB_TABLE_FLUSH_REPLY, mmb_table_flush_reply)
+_(MMB_TABLE_FLUSH_REPLY, mmb_table_flush_reply)  \
+_(MMB_REMOVE_RULE_REPLY, mmb_remove_rule_reply)
 
 
-static int api_mmb_table_flush (vat_main_t * vam)
+static int api_mmb_table_flush(vat_main_t *vam)
 {
-    unformat_input_t * i = vam->input;
-    vl_api_mmb_table_flush_t * mp;
-    int ret=0;
+  unformat_input_t *i = vam->input;
+  vl_api_mmb_table_flush_t *mp;
+  int ret = 0;
 
-    if (!unformat_is_eof(i)) {
-      errmsg("unexpected additional parameter\n");
-      return -99;
-    }
+  /* Construct the API message */
+  M(MMB_TABLE_FLUSH, mp);
+
+  /* send it... */
+  S(mp);
+
+  /* Wait for a reply... */
+  W(ret);
+  return ret;
+}
+
+static int api_mmb_remove_rule(vat_main_t *vam)
+{
+  unformat_input_t *i = vam->input;
+  vl_api_mmb_remove_rule_t *mp;
+  u32 rule_index;
+  int ret = 0;
+
+  if (!unformat(i, "%u", &rule_index))
+  {
+    errmsg ("rule number must be an integer greater than 0\n");
+    return -1;
+  }
     
-    /* Construct the API message */
-    M(MMB_TABLE_FLUSH, mp);
+  /* Construct the API message */
+  M(MMB_REMOVE_RULE, mp);
+  mp->rule_id = ntohl(rule_index);
 
-    /* send it... */
-    S(mp);
+  /* send it... */
+  S(mp);
 
-    /* Wait for a reply... */
-    W (ret);
-    return ret;
+  /* Wait for a reply... */
+  W(ret);
+  return ret;
 }
 
 /* 
  * List of messages that the api test plugin sends,
  * and that the data plane plugin processes
  */
-#define foreach_vpe_api_msg            \
-_(mmb_table_flush, "")
+#define foreach_vpe_api_msg         \
+_(mmb_table_flush, "")              \
+_(mmb_remove_rule, "<rule_index>")
 
 static void mmb_api_hookup (vat_main_t *vam)
 {
