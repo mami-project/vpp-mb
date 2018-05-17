@@ -61,9 +61,6 @@
 
 #include <ctype.h>
 
-/* List of message types that this plugin understands */
-#define foreach_mmb_plugin_api_msg
-
 /* internal macros */
 #define MMB_DEFAULT_ETHERNET_TYPE ETHERNET_TYPE_IP4
 #define MMB_MATCH_IP_VERSION
@@ -106,6 +103,7 @@ const char * conditions[] = {
 #undef _
 };
 
+static void flush_table();
 static void free_rule(mmb_rule_t *rule);
 static void init_rule(mmb_rule_t *rule);
 static clib_error_t* parse_rule(unformat_input_t * input, 
@@ -299,21 +297,15 @@ list_rules_command_fn(vlib_main_t * vm,
   return 0;
 }
 
-static clib_error_t*
-flush_rules_command_fn(vlib_main_t * vm,
-                        unformat_input_t * input,
-                        vlib_cli_command_t * cmd) {
-  unformat_input_tolower(input);
-  if (!unformat_is_eof(input))
-    return clib_error_return(0, "Syntax error: unexpected additional element");
-
+static void flush_table()
+{
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
   uword rule_index;
   u32 first_table_index = ~0;
 
   if (vec_len(mm->tables) == 0)
-     return 0;
+     return;
 
   /* detach first table */
   first_table_index = mm->tables[0].index;
@@ -339,7 +331,17 @@ flush_rules_command_fn(vlib_main_t * vm,
       mmb_enable_disable_all(0);
 
   reset_flags(mm);
+}
 
+static clib_error_t*
+flush_rules_command_fn(vlib_main_t * vm,
+                        unformat_input_t * input,
+                        vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
+  if (!unformat_is_eof(input))
+    return clib_error_return(0, "Syntax error: unexpected additional element");
+
+  flush_table();
   return 0;
 }
 
@@ -1856,6 +1858,23 @@ VLIB_CLI_COMMAND(sr_content_command_flush_rule, static) = {
     .short_help = "Remove all rules",
     .function = flush_rules_command_fn,
 };
+
+static void
+vl_api_mmb_table_flush_t_handler(vl_api_mmb_table_flush_t *mp)
+{
+  mmb_main_t *mm = &mmb_main;
+  vl_api_mmb_table_flush_reply_t *rmp;
+  int rv = 0;
+
+  flush_table();
+
+  REPLY_MACRO(VL_API_MMB_TABLE_FLUSH_REPLY);
+}
+
+/* List of message types that this plugin understands */
+#define foreach_mmb_plugin_api_msg     \
+  _(MMB_TABLE_FLUSH, mmb_table_flush)  /*\
+  _(MMB_REMOVE_RULE, mmb_remove_rule)*/
 
 /**
  * @brief Set up the API message handling tables.
