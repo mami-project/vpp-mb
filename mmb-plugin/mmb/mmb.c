@@ -103,7 +103,7 @@ const char * conditions[] = {
 #undef _
 };
 
-static int remove_rule_index(u32);
+static int remove_rule(u32);
 static void flush_table();
 static void free_rule(mmb_rule_t *rule);
 static void init_rule(mmb_rule_t *rule);
@@ -1367,14 +1367,14 @@ add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input,
 }
 
 static int
-remove_rule_index(u32 rule_index)
+remove_rule(u32 rule_num)
 {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rule, *rules = mm->rules;
   mmb_table_t *table, *tables = mm->tables;
   u32 table_index;
 
-  if (rule_index <= 0 || rule_index > vec_len(rules)) 
+  if (rule_num <= 0 || rule_num > vec_len(rules)) 
     return -1;
 
   /* single rule, flush */
@@ -1384,13 +1384,13 @@ remove_rule_index(u32 rule_index)
     return 0;
   }
 
-  rule = &rules[--rule_index];
+  rule = &rules[--rule_num];
    
   table_index = find_table_internal_index(rule->classify_table_index);
   table = &tables[table_index];
 
   vl_print(mm->vlib_main, "rule at index:%u table internal index:%u classify index:%u", 
-               rule_index,table_index, rule->classify_table_index);
+               rule_num,table_index, rule->classify_table_index);
 
   /* del session */
   vl_print(mm->vlib_main, "deleting session from table %u", rule->classify_table_index);
@@ -1411,7 +1411,7 @@ remove_rule_index(u32 rule_index)
   }
 
   free_rule(rule);
-  vec_delete(rules, 1, rule_index);
+  vec_delete(rules, 1, rule_num);
   update_flags(mm, rules);
 
   if (mm->enabled && vec_len(rules) == 0) 
@@ -1425,16 +1425,16 @@ del_rule_command_fn(vlib_main_t *vm,
                     unformat_input_t *input,
                     vlib_cli_command_t *cmd)
 {
-  u32 rule_index;
+  u32 rule_num;
   int ret;
 
-  if (!unformat(input, "%u", &rule_index)) 
+  if (!unformat(input, "%u", &rule_num)) 
     return clib_error_return(0, 
        "Syntax error: rule number must be an integer greater than 0");
 
-  ret = remove_rule_index(rule_index);
+  ret = remove_rule(rule_num);
   if (ret == -1)
-    return clib_error_return(0, "No rule at this index");
+    return clib_error_return(0, "No rule found");
 
   return 0;
 }
@@ -1872,12 +1872,11 @@ VLIB_CLI_COMMAND(sr_content_command_flush_rule, static) = {
 static void
 vl_api_mmb_table_flush_t_handler(vl_api_mmb_table_flush_t *mp)
 {
-  mmb_main_t *mm = &mmb_main;
   vl_api_mmb_table_flush_reply_t *rmp;
-  int rv;
+  mmb_main_t *mm = &mmb_main;
+  int rv = 0;
 
   flush_table();
-  rv = 0;
 
   REPLY_MACRO(VL_API_MMB_TABLE_FLUSH_REPLY);
 }
@@ -1885,18 +1884,53 @@ vl_api_mmb_table_flush_t_handler(vl_api_mmb_table_flush_t *mp)
 static void
 vl_api_mmb_remove_rule_t_handler(vl_api_mmb_remove_rule_t *mp)
 {
+  vl_api_mmb_remove_rule_reply_t *rmp;
   mmb_main_t *mm = &mmb_main;
-  vl_api_mmb_remove_rule_reply_t *rpm;
 
-  int rv = remove_rule_index(ntohl(mp->rule_id));
+  //TODO since it is handling endianess automatically, do I need to use clib_net_to_host here ?
+  int rv = remove_rule(clib_net_to_host_u32(mp->rule_num));
 
   REPLY_MACRO(VL_API_MMB_REMOVE_RULE_REPLY);
+}
+
+static void
+send_mmb_table_details(u32 rule_num, mmb_rule_t *rule, unix_shared_memory_queue_t *q, u32 context)
+{
+  vl_api_mmb_table_details_t *rmp;
+  mmb_main_t *mm = &mmb_main;
+
+  rmp = vl_msg_api_alloc(sizeof(*rmp));
+  memset (rmp, 0, sizeof(*rmp));
+  rmp->_vl_msg_id = ntohs(VL_API_MMB_TABLE_DETAILS + mm->msg_id_base);
+
+  rmp->context = context;//already in "net" endian (see _dump function below)
+  //TODO since it is handling endianess automatically, do I need to use clib_host_to_net here ?
+  rmp->rule_num = clib_host_to_net_u32(rule_num);
+
+  vl_msg_api_send_shmem(q, (u8*)&rmp);
+}
+
+static void
+vl_api_mmb_table_dump_t_handler(vl_api_mmb_table_dump_t *mp)
+{
+  unix_shared_memory_queue_t *q;
+  mmb_main_t *mm = &mmb_main;
+  mmb_rule_t *rule;
+  u32 i=1;
+
+  q = vl_api_client_index_to_input_queue (mp->client_index);
+  if (q == 0)
+    return;
+
+  vec_foreach(rule, mm->rules)
+    send_mmb_table_details(i++, rule, q, mp->context);
 }
 
 /* List of message types that this plugin understands */
 #define foreach_mmb_plugin_api_msg     \
   _(MMB_TABLE_FLUSH, mmb_table_flush)  \
-  _(MMB_REMOVE_RULE, mmb_remove_rule)
+  _(MMB_REMOVE_RULE, mmb_remove_rule)  \
+  _(MMB_TABLE_DUMP, mmb_table_dump)
 
 /**
  * @brief Set up the API message handling tables.

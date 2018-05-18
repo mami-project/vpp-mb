@@ -94,7 +94,6 @@ _(MMB_REMOVE_RULE_REPLY, mmb_remove_rule_reply)
 
 static int api_mmb_table_flush(vat_main_t *vam)
 {
-  unformat_input_t *i = vam->input;
   vl_api_mmb_table_flush_t *mp;
   int ret = 0;
 
@@ -113,10 +112,10 @@ static int api_mmb_remove_rule(vat_main_t *vam)
 {
   unformat_input_t *i = vam->input;
   vl_api_mmb_remove_rule_t *mp;
-  u32 rule_index;
+  u32 rule_num;
   int ret = 0;
 
-  if (!unformat(i, "%u", &rule_index))
+  if (!unformat(i, "%u", &rule_num))
   {
     errmsg ("rule number must be an integer greater than 0\n");
     return -1;
@@ -124,7 +123,7 @@ static int api_mmb_remove_rule(vat_main_t *vam)
     
   /* Construct the API message */
   M(MMB_REMOVE_RULE, mp);
-  mp->rule_id = ntohl(rule_index);
+  mp->rule_num = ntohl(rule_num);
 
   /* send it... */
   S(mp);

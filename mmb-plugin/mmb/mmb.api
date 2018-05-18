@@ -19,7 +19,6 @@
 /* TODO
  - comment with "\brief" notation
  - mmb_api.c or api.c (put everything for the API there, instead of mmb.c) -> share some functions between CLI and API (a shared .h)
- - manual_endian, manual_print, etc ???
  - events (async) useful here ?
 */
 
@@ -47,7 +46,7 @@ autoreply define mmb_remove_rule
 {
   u32 client_index;
   u32 context;
-  u32 rule_id;
+  u32 rule_num;
 };
 
 /*typeonly manual_endian define mmb_type_match
@@ -72,13 +71,14 @@ typeonly manual_endian define mmb_type_target
 
 typeonly manual_endian define mmb_type_rule
 {
+  u32 rule_index;
   u8 match_count;
   vl_api_mmb_type_match_t match[match_count];
   u8 target_count;
   vl_api_mmb_type_target_t target[target_count];
 };
 
-autoreply define mmb_insert_rule
+autoreply manual_endian define mmb_insert_rule
 {
   u32 client_index;
   u32 context;
@@ -86,20 +86,20 @@ autoreply define mmb_insert_rule
   vl_api_mmb_type_rule_t rule;
 };
 
-autoreply define mmb_add_rule
+autoreply manual_endian define mmb_add_rule
 {
   u32 client_index;
   u32 context;
   vl_api_mmb_type_rule_t rule;
 };
 
-autoreply define mmb_add_rules
+autoreply manual_endian define mmb_add_rules
 {
   u32 client_index;
   u32 context;
   u8 rule_count;
   vl_api_mmb_type_rule_t rule[rule_count];
-};
+};*/
 
 define mmb_table_dump
 {
@@ -107,10 +107,10 @@ define mmb_table_dump
   u32 context;
 };
 
-manual_endian define mmb_table_details
+/*manual_endian*/ define mmb_table_details
 {
   u32 context;
-  u8 rule_count;
-  vl_api_mmb_type_rule_t rule[rule_count];
-};*/
+  u32 rule_num;
+  //vl_api_mmb_type_rule_t rule;
+};
 
