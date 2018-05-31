@@ -9,7 +9,8 @@ SCRIPT
 Vagrant.configure(2) do |config|
 
   config.vm.box = "uliege/mmb"
-  config.vm.box_url = "http://queen.run.montefiore.ulg.ac.be/~iurman/mmb.box"
+  config.vm.box_url = ["http://summerschool.mami-project.eu/mmb.box", 
+                       "http://queen.run.montefiore.ulg.ac.be/~iurman/mmb.box"]
 
   config.vm.hostname = "mmb-tutorial"
   config.vm.define "mmb-tutorial"
