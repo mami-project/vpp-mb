@@ -56,7 +56,7 @@ def send_probe(dst,timeout=3,inter=0,verbose=0,tos=0x4,
 _q=queue.Queue()
 def _start_sniffer(src,dst,iface="vpp1host",timeout=3):
     p=sniff(filter="(icmp or udp or tcp) and dst {}".format(src),
-            count=1,iface="vpp1host",timeout=timeout)
+            count=1,iface="enp4s0",timeout=timeout)
     _q.put(p)
 
 def start_sniffer(src,dst):
@@ -91,7 +91,8 @@ def traceroute(dest,src="10.100.100.1",max_ttl=32,perhop_maxretry=3,total_maxret
             
     """
 
-    retry_count=0
+    perhop_retry_count=0
+    consecutive_retry_count=0
     i=1
     while i < max_ttl:
         # Send the packet and get a reply "host "+dest
@@ -103,12 +104,14 @@ def traceroute(dest,src="10.100.100.1",max_ttl=32,perhop_maxretry=3,total_maxret
         if reply is None or not reply:
             # No reply =( (timeouted)
             print("%d: *" % i)
-            retry_count+=1
+            perhop_retry_count+=1
+            consecutive_retry_count+=1
             
-            if retry_count==perhop_maxretry:
-                #Trying next hop
-                i+=1
-            elif retry_count >= total_maxretry:
+            if perhop_retry_count==perhop_maxretry:
+               #Trying next hop
+               i+=1
+               perhop_retry_count=0
+            elif consecutive_retry_count >= total_maxretry:
                 #Too many retries, aborting ....
                 print("Timeout")
                 return 0
@@ -122,7 +125,8 @@ def traceroute(dest,src="10.100.100.1",max_ttl=32,perhop_maxretry=3,total_maxret
             # We received an answer
             print("%d: " % i , reply.src)
             i+=1
-            retry_count=0
+            perhop_retry_count=0
+            consecutive_retry_count=0
             #ls(reply)
         
     print("Max TTL reached, aborting ....")
