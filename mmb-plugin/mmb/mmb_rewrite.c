@@ -683,7 +683,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;   
 
       vec_foreach(rule_index0, rule_indexes0) { 
-         ri0 = rules+*rule_index0;
+         ri0 = rules+*rule_index0; /** XXX preload?&loop on targets **/
          if (ri0->opts_in_targets) {// && !tcpo0) {
              if (is_ip6)
                tcpo0 = mmb_parse_tcp_options(ip6_next_header((ip6_header_t*)p0), &tcp_options0);

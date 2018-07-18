@@ -88,6 +88,7 @@ mmb_classify_inline (vlib_main_t * vm,
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
+  u32 *lookup_pool = mm->lookup_pool, *rule_index; 
   f64 now = vlib_time_now (vm);
   u32 hits = 0;
   u32 drop = 0;
@@ -113,9 +114,9 @@ mmb_classify_inline (vlib_main_t * vm,
         p2 = vlib_get_buffer (vm, from[2]);
 
         vlib_prefetch_buffer_header (p1, STORE);
-        CLIB_PREFETCH (p1->data, CLIB_CACHE_LINE_BYTES, STORE);
+        CLIB_PREFETCH(p1->data, CLIB_CACHE_LINE_BYTES, STORE);
         vlib_prefetch_buffer_header (p2, STORE);
-        CLIB_PREFETCH (p2->data, CLIB_CACHE_LINE_BYTES, STORE);
+        CLIB_PREFETCH(p2->data, CLIB_CACHE_LINE_BYTES, STORE);
       }
 
       bi0 = from[0];
@@ -202,7 +203,7 @@ mmb_classify_inline (vlib_main_t * vm,
           mmb_rule_t *matched_rule;
 
           /* Stride 3 seems to work best */
-          if (PREDICT_TRUE (n_left_from > 3)) {
+          if (PREDICT_TRUE(n_left_from > 3)) {
               vlib_buffer_t * p1 = vlib_get_buffer(vm, from[3]);
               vnet_classify_table_t * tp1;
               u32 table_index1;
@@ -237,9 +238,10 @@ mmb_classify_inline (vlib_main_t * vm,
               t0 = pool_elt_at_index(vcm->tables, table_index0);
               e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
               if (e0) { // match
-                  vec_add1(matches, e0->opaque_index);
+                  rule_index = pool_elt_at_index(lookup_pool, e0->opaque_index);
+                  vec_add1(matches, *rule_index);
                   next0 = e0->next_index;
-                  matched_rule = rules+e0->opaque_index;
+                  matched_rule = rules+*rule_index;
                   matched_rule->match_count++;
                   hits++;
               } 
@@ -256,9 +258,10 @@ mmb_classify_inline (vlib_main_t * vm,
                  hash0 = vnet_classify_hash_packet(t0, (u8 *) h0);
                  e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
                  if (e0) {
-                    vec_add1(matches, e0->opaque_index);
+                    rule_index = pool_elt_at_index(lookup_pool, e0->opaque_index);
+                    vec_add1(matches, *rule_index);
                     next0 = e0->next_index;
-                    matched_rule = rules+e0->opaque_index;
+                    matched_rule = rules+*rule_index;
                     matched_rule->match_count++;
                     hits++;
                  }

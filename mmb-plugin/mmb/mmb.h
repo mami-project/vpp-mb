@@ -234,20 +234,26 @@ typedef struct {
 #define MMB_TABLE_SIZE_DEC_THRESHOLD 4
 
 typedef struct {
+   u8 *key;
+   u32* rules_indices; /** list of rules that use this session, updated on del/insert **/
 
-  u32 index; /* index in classify */
-  u32 next_index;
-  u32 previous_index;
-  u32 entry_count; 
-  u32 size;   /*! table capacity */
-
-  u8 *mask;
-  u32 skip;
-  u32 match;
-  
-} mmb_table_t;
+} mmb_session_t;
 
 typedef struct {
+
+  u32 index; /* index in classifier */
+  u32 next_index; /*! double-linked list for easy classifier update */
+  u32 previous_index;
+  u32 entry_count; /*! table occupation */
+  u32 size;   /*! table capacity */
+
+  u8 *mask; 
+  u32 skip;
+  u32 match;
+
+} mmb_table_t;
+
+typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 */
   u16 l3;
   u8 l4;
   u32 in;
@@ -258,16 +264,18 @@ typedef struct {
   uword                  *opt_strips;
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
-
   uword match_count;
 
   u8 *classify_mask;
   u32 classify_skip; 
   u32 classify_match;
   u8 *classify_key;
-  u32 classify_table_index;
+  u32 classify_table_index; /*! index of table in classifier */
+  /*! index of mmb session (not vnet classifier) for faster deletion */
+  u32 classify_mmb_session_index; 
+  u32 lookup_index; /*! index for session to list of rules mapping */
 
-  u8 *rewrite_mask; /* XXX: in dedicated struct for efficient access in node */
+  u8 *rewrite_mask; 
   u32 rewrite_skip;
   u32 rewrite_match;
   u8 *rewrite_key;
@@ -289,6 +297,7 @@ typedef struct {
 
    mmb_rule_t *rules;  /*! Rules vector, per if, per dir */
    mmb_table_t *tables; /*! Tables vector */   
+   u32 *lookup_pool; /*! rule lookup pool */
 
    u8 feature_arc_index;
    u32 *sw_if_indexes;

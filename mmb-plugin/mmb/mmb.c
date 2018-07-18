@@ -120,9 +120,18 @@ static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node,
                                u32 rule_index, int is_add);
 static int mmb_classify_del_table(u32 *table_index, int del_chain);
 static void attach_table_intfc(u32 table_index, int is_add);
+static void update_lookup_pool(u32 rule_index);
 
-static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule)
-{
+/**
+ * re-chain tables in mmb_main and in classify
+ * @param to_table: 1 to rechain table->previous_index and table->next_index
+ *                    to table->index
+ *                  0 to rechain table->previous_index to table->next_index             
+ * 
+ **/
+static void rechain_table(mmb_table_t *table, int to_table);
+
+static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule) {
   return rule->opts_in_matches || rule->opts_in_targets;
 }
 
@@ -320,6 +329,10 @@ static void flush_table()
     free_rule(rule);
   }
 
+  /* flush lookup table */
+  u32 *pool_elem;
+  pool_flush(pool_elem, mm->lookup_pool, ({}));
+
   /* delete tables */
   mmb_classify_del_table(&first_table_index, 1);
   vec_delete(mm->tables, vec_len(mm->tables), 0);
@@ -328,8 +341,8 @@ static void flush_table()
   if (vec_len(rules))
     vec_delete(rules, vec_len(rules), 0);
 
-   if (mm->enabled) 
-      mmb_enable_disable_all(0);
+  if (mm->enabled) 
+     mmb_enable_disable_all(0);
 
   reset_flags(mm);
 }
@@ -1053,8 +1066,8 @@ static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node,
   mmb_main_t *mm = &mmb_main;
   vnet_classify_main_t *cm = mm->classify_main;
 
-  void *oldheap = clib_mem_set_heap (cm->vlib_main->heap_base);
-  int ret = vnet_classify_add_del_session (mm->classify_main, 
+  void *oldheap = clib_mem_set_heap(cm->vlib_main->heap_base);
+  int ret = vnet_classify_add_del_session(mm->classify_main, 
                                 table_index, key, 
                                 next_node, 
                                 rule_index, 
@@ -1062,7 +1075,7 @@ static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node,
                                 0 /* action*/, 
                                 0 /* metadata */,
                                 is_add);
-  clib_mem_set_heap (oldheap);
+  clib_mem_set_heap(oldheap);
   return ret;
 }
 
@@ -1158,14 +1171,7 @@ static_always_inline void add_table(u32 index, u8* mask, u32 skip,
   vec_add1(mm->tables, table);
 }
 
-/**
- * re-chain tables in mmb_main and in classify
- * @param to_table: 1 to rechain table->previous_index and table->next_index
- *                    to table->index
- *                  0 to rechain table->previous_index to table->next_index             
- * 
- **/
-static void rechain_table(mmb_table_t *table, int to_table) {
+void rechain_table(mmb_table_t *table, int to_table) {
 
   mmb_main_t *mm = &mmb_main;
   mmb_table_t *tables = mm->tables;
@@ -1208,7 +1214,6 @@ static void rechain_table(mmb_table_t *table, int to_table) {
 
 static void realloc_table(mmb_table_t *table, int is_enlarge) {
   /* Increase table size by a factor MMB_TABLE_SIZE_RATIO */
-  /* XXX: shrink */
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rule, *rules = mm->rules;
   u32 old_index = table->index;
@@ -1230,7 +1235,7 @@ static void realloc_table(mmb_table_t *table, int is_enlarge) {
     rule = &rules[index];
     if (rule->classify_table_index == old_index) {
       mmb_add_del_session(table->index, rule->classify_key, 
-                          next_if_match(rule), index, 1); 
+                          next_if_match(rule), rule->lookup_index, 1); 
       vl_print(mm->vlib_main, "added session %u to table %u", 
                index, table->index);
     }
@@ -1249,6 +1254,27 @@ static void realloc_table(mmb_table_t *table, int is_enlarge) {
     }
   }  
   mmb_classify_del_table(&old_index, 0);
+}
+
+static_always_inline u32 mmb_lookup_pool_add(u32 rule_index) {
+
+   mmb_main_t *mm = &mmb_main;
+   u32 *rule_index_addr = 0, pool_index;
+
+   pool_get(mm->lookup_pool, rule_index_addr);
+   *rule_index_addr = rule_index;
+   pool_index = rule_index_addr - mm->lookup_pool;
+
+   vl_print(mm->vlib_main, "lookup_index:%u rule_index:%u \n", 
+        pool_index, rule_index);
+
+   return pool_index;
+}
+
+static_always_inline int mmb_lookup_pool_del(u32 pool_index) {
+   mmb_main_t *mm = &mmb_main;
+   pool_put_index(mm->lookup_pool, pool_index);
+   return pool_is_free_index(mm->lookup_pool, pool_index);
 }
 
 static u8 add_to_classifier(mmb_rule_t *rule) {
@@ -1271,54 +1297,59 @@ static u8 add_to_classifier(mmb_rule_t *rule) {
          rule->classify_skip, rule->classify_match,
 			&rule->classify_table_index, ~0, MMB_TABLE_SIZE_INIT);
 
+      rule->lookup_index = mmb_lookup_pool_add(rule_index);
       ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                                next_node, rule_index, 1);
+                                next_node, rule->lookup_index, 1);
 
       add_table(rule->classify_table_index, rule->classify_mask, 
                 rule->classify_skip, rule->classify_match, ~0,
                 1, MMB_TABLE_SIZE_INIT);
       attach_table_intfc(rule->classify_table_index, 1);
-  } else {
-
-    u32 mmb_table = find_table(rule);
-
-    if (mmb_table == ~0) {
-      /* Table does not exist, create it, add rule, and chain it to last table */
-      mmb_classify_add_table(rule->classify_mask, 
-         rule->classify_skip, rule->classify_match,
-			&rule->classify_table_index, ~0, MMB_TABLE_SIZE_INIT);
-      
-      ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                                next_node, rule_index, 1);
-
-      mmb_table_t *last_table = &mm->tables[table_count-1];
-      u32 last_table_index = last_table->index;	
-      mmb_classify_update_table (&last_table_index, rule->classify_table_index);
-      last_table->next_index = rule->classify_table_index;
-
-      add_table(rule->classify_table_index, rule->classify_mask, 
-                rule->classify_skip, rule->classify_match, last_table_index,
-                1, MMB_TABLE_SIZE_INIT);
-
-      vl_print(mm->vlib_main, "table:%u created and chained after table:%u", 
-               rule->classify_table_index, last_table_index);
-    } else { /* Found table */
-
-      mmb_table_t *table = &mm->tables[mmb_table];
-      if (table->entry_count == table->size)  /* Realloc table */
-         realloc_table(table, 1);   
-
-      /* Table exists, add session */
-      rule->classify_table_index = table->index;
-      ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                                next_node, rule_index, 1);
-      vl_print(mm->vlib_main, "session added to table:%u rv:%d", 
-               rule->classify_table_index, ret);
-      if (ret) /* entry already in table (or some other error) */
-        return 0;
-      table->entry_count++;
-    }
+      return 1;
   }
+
+  u32 mmb_table = find_table(rule);
+
+  if (mmb_table == ~0) {
+    /* Table does not exist, create it, add rule, and chain it to last table */
+    mmb_classify_add_table(rule->classify_mask, 
+         rule->classify_skip, rule->classify_match,
+    		&rule->classify_table_index, ~0, MMB_TABLE_SIZE_INIT);
+
+    rule->lookup_index = mmb_lookup_pool_add(rule_index);
+    ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                              next_node, rule->lookup_index, 1);
+
+    mmb_table_t *last_table = &mm->tables[table_count-1];
+    u32 last_table_index = last_table->index;	
+    mmb_classify_update_table (&last_table_index, rule->classify_table_index);
+    last_table->next_index = rule->classify_table_index;
+
+    add_table(rule->classify_table_index, rule->classify_mask, 
+              rule->classify_skip, rule->classify_match, last_table_index,
+              1, MMB_TABLE_SIZE_INIT);
+
+    vl_print(mm->vlib_main, "table:%u created and chained after table:%u", 
+             rule->classify_table_index, last_table_index);
+    return 1;
+  } 
+
+   /* Found table */
+   mmb_table_t *table = &mm->tables[mmb_table];
+   if (table->entry_count == table->size)  /* Realloc table */
+       realloc_table(table, 1);   
+
+   /* Table exists, add session */
+   rule->classify_table_index = table->index;
+   /** XXX replace next_node by new index in pool, check if session.exist  */
+   rule->lookup_index = mmb_lookup_pool_add(rule_index);
+   ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                              next_node, rule->lookup_index, 1);
+   vl_print(mm->vlib_main, "session added to table:%u rv:%d", 
+             rule->classify_table_index, ret);
+   if (ret)
+      return 0;
+   table->entry_count++;
 
   return 1;
 }
@@ -1366,9 +1397,22 @@ add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input,
   return 0;
 }
 
-static int
-remove_rule(u32 rule_num)
-{
+void update_lookup_pool(u32 rule_index) {
+   /** update pool when rule_index is deleted **/
+   mmb_main_t *mm = &mmb_main;
+   u32 *pool_elem;   
+
+   pool_foreach(pool_elem, mm->lookup_pool, ({
+      if (pool_is_free(mm->lookup_pool, pool_elem)) {
+         continue;
+      }
+      /* actual update */
+      if (*pool_elem > rule_index) 
+         (*pool_elem)--;
+   }));
+}
+
+static int remove_rule(u32 rule_num) {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rule, *rules = mm->rules;
   mmb_table_t *table, *tables = mm->tables;
@@ -1385,31 +1429,35 @@ remove_rule(u32 rule_num)
   }
 
   rule = &rules[--rule_num];
-   
+
   table_index = find_table_internal_index(rule->classify_table_index);
   table = &tables[table_index];
 
-  vl_print(mm->vlib_main, "rule at index:%u table internal index:%u classify index:%u", 
-               rule_num,table_index, rule->classify_table_index);
+  vl_print(mm->vlib_main, "rule at index:%u table internal index:%u classify_index:%u "
+                           "lookup_index:%u",
+           rule_num,table_index, rule->classify_table_index, rule->lookup_index);
 
-  /* del session */
-  vl_print(mm->vlib_main, "deleting session from table %u", rule->classify_table_index);
-  mmb_add_del_session(rule->classify_table_index, rule->classify_key, 0, 0, 0);
-  table->entry_count--;
+  if (mmb_lookup_pool_del(rule->lookup_index)) { 
 
-  if (table->entry_count == 0)
-  {
-    vl_print(mm->vlib_main, "table:%u is empty, deleting", rule->classify_table_index);
-    rechain_table(table, 0);
-    mmb_classify_del_table(&rule->classify_table_index, 0);
-    vec_delete(mm->tables, 1, table_index);
+     vl_print(mm->vlib_main, "deleting session from table %u", rule->classify_table_index);
+     mmb_add_del_session(rule->classify_table_index, rule->classify_key, 0, 0, 0);
+     table->entry_count--;
+
+     if (table->entry_count == 0)
+     {
+       vl_print(mm->vlib_main, "table:%u is empty, deleting", rule->classify_table_index);
+       rechain_table(table, 0);
+       mmb_classify_del_table(&rule->classify_table_index, 0);
+       vec_delete(mm->tables, 1, table_index);
+     }
+     else if (table->entry_count <= table->size / MMB_TABLE_SIZE_DEC_THRESHOLD)
+     {
+       vl_print(mm->vlib_main, "table:%u is too large, shrinking", rule->classify_table_index);
+       realloc_table(table, 0); 
+     }
   }
-  else if (table->entry_count <= table->size / MMB_TABLE_SIZE_DEC_THRESHOLD)
-  {
-    vl_print(mm->vlib_main, "table:%u is too large, shrinking", rule->classify_table_index);
-    realloc_table(table, 0); 
-  }
 
+  update_lookup_pool(rule_num);
   free_rule(rule);
   vec_delete(rules, 1, rule_num);
   update_flags(mm, rules);
@@ -1423,8 +1471,7 @@ remove_rule(u32 rule_num)
 static clib_error_t*
 del_rule_command_fn(vlib_main_t *vm,
                     unformat_input_t *input,
-                    vlib_cli_command_t *cmd)
-{
+                    vlib_cli_command_t *cmd) {
   u32 rule_num;
   int ret;
 
@@ -1845,11 +1892,11 @@ VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
 /**
  * @brief CLI command to insert a rule.
  */
-VLIB_CLI_COMMAND(sr_content_command_insert_rule, static) = {
+/*VLIB_CLI_COMMAND(sr_content_command_insert_rule, static) = {
     .path = "mmb insert",
     .short_help = "Insert a rule: mmb insert [last] <index> <rule>",
     .function = insert_rule_command_fn,
-};
+};*/
 
 /**
  * @brief CLI command to remove a rule.
