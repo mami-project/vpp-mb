@@ -1099,10 +1099,8 @@ static_always_inline mmb_session_t *find_session(mmb_table_t *table,
    /* return session for this rule if it exists in this table  */
    mmb_session_t *sessions = table->sessions;
    mmb_session_t *session;
-   u32 index; /* XXX: foreach no index */
 
-   vec_foreach_index(index, sessions) {
-      session = &sessions[index];
+   vec_foreach(session, sessions) {
       if (mask_equal(session->key, rule->classify_key))
          return session;
    }
@@ -1142,7 +1140,7 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule,
       if (mmb_lookup_pool_del(rule_index, rule->lookup_index)) {
          vec_free(session->key);
          vec_delete(table->sessions, 1, table->sessions-session);
-              
+         /*  
          mmb_main_t *mm = &mmb_main;
          vl_print(mm->vlib_main, "LOOKUP TABLE\n");
          mmb_lookup_entry_t *entry;
@@ -1153,7 +1151,7 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule,
             vec_foreach(this_rule_index, entry->rule_indexes) {
                vl_print(mm->vlib_main, "  rule index:%u\n",*this_rule_index);
             };
-         }));
+         }));*/
 
          return 1;
       } else 
@@ -1249,7 +1247,7 @@ static_always_inline mmb_table_t *add_table(u32 index, u8* mask, u32 skip,
 
   memset(&table, 0, sizeof(mmb_table_t));
   table.index = index;
-  table.mask = vec_dup(mask); /* XXX: copy */
+  table.mask = vec_dup(mask); 
   table.skip = skip;
   table.match = match;
   table.previous_index = previous_index;
