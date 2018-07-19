@@ -1461,13 +1461,13 @@ void update_lookup_pool(u32 rule_index) {
    }));
 }
 
-static int remove_rule(u32 rule_num) {
+static int remove_rule(u32 rule_index) {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rule, *rules = mm->rules;
   mmb_table_t *table, *tables = mm->tables;
   u32 table_index;
 
-  if (rule_num <= 0 || rule_num > vec_len(rules)) 
+  if (rule_index <= 0 || rule_index > vec_len(rules)) 
     return -1;
 
   /* single rule, flush */
@@ -1477,16 +1477,16 @@ static int remove_rule(u32 rule_num) {
     return 0;
   }
 
-  rule = &rules[--rule_num];
+  rule = &rules[--rule_index];
 
   table_index = find_table_internal_index(rule->classify_table_index);
   table = &tables[table_index];
 
   vl_print(mm->vlib_main, "rule at index:%u table internal index:%u classify_index:%u "
                            "lookup_index:%u",
-           rule_num,table_index, rule->classify_table_index, rule->lookup_index);
+           rule_index,table_index, rule->classify_table_index, rule->lookup_index);
 
-  if (add_del_session(table, rule, rule_num, 0)) { 
+  if (add_del_session(table, rule, rule_index, 0)) { 
      /* last rule of session, delete session */
 
      vl_print(mm->vlib_main, "deleting session from table %u", rule->classify_table_index);
@@ -1502,13 +1502,13 @@ static int remove_rule(u32 rule_num) {
      } else if (table->entry_count <= table->size / MMB_TABLE_SIZE_DEC_THRESHOLD) {
        vl_print(mm->vlib_main, "table:%u is too large, shrinking", 
                 rule->classify_table_index);
-       realloc_table(table, rule_num); 
+       realloc_table(table, rule_index); 
        rule->classify_table_index = table->index;
      }
   }
 
   free_rule(rule);
-  vec_delete(rules, 1, rule_num);
+  vec_delete(rules, 1, rule_index);
   update_flags(mm, rules);
 
   if (mm->enabled && vec_len(rules) == 0) 
@@ -1521,14 +1521,14 @@ static clib_error_t*
 del_rule_command_fn(vlib_main_t *vm,
                     unformat_input_t *input,
                     vlib_cli_command_t *cmd) {
-  u32 rule_num;
+  u32 rule_index;
   int ret;
 
-  if (!unformat(input, "%u", &rule_num)) 
+  if (!unformat(input, "%u", &rule_index)) 
     return clib_error_return(0, 
        "Syntax error: rule number must be an integer greater than 0");
 
-  ret = remove_rule(rule_num);
+  ret = remove_rule(rule_index);
   if (ret == -1)
     return clib_error_return(0, "No rule found");
 
