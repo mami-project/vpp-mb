@@ -186,6 +186,8 @@ static_always_inline u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index);
 static_always_inline int mmb_lookup_pool_del(u32 rule_index, u32 pool_index);
 
 /**
+ * add_to_classifier
+ *
  * if table does not exists, create it and add session
  * if table exists, check size 
  *                  if size too small, enlarge
@@ -1133,12 +1135,10 @@ static_always_inline mmb_session_t *find_session(mmb_table_t *table,
  *  add/del session from mmb_table_t, update lookup_pool 
  *
  *  @return 1 if a session was created/deleted, 
- *           0 if session already existed/still exist
+ *          0 if session already existed/still exist
  */
-static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, 
+static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, mmb_session_t *session,
                             u32 rule_index, int is_add) {
-
-  mmb_session_t *session = find_session(table, rule);
 
   if (is_add) {
 
@@ -1438,7 +1438,7 @@ int add_to_classifier(mmb_rule_t *rule) {
                 rule->classify_skip, rule->classify_match, ~0,
                 1, MMB_TABLE_SIZE_INIT);
 
-      add_del_session(table, rule, rule_index, 1);
+      add_del_session(table, rule, NULL, rule_index, 1);
       ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
                           next_node, rule->lookup_index, 1);
       attach_table_if(rule->classify_table_index, 1);
@@ -1465,7 +1465,7 @@ int add_to_classifier(mmb_rule_t *rule) {
                       rule->classify_skip, rule->classify_match, last_table_index,
                       1, MMB_TABLE_SIZE_INIT);
 
-    add_del_session(table, rule, rule_index, 1);
+    add_del_session(table, rule, NULL, rule_index, 1);
     ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
                         next_node, rule->lookup_index, 1);
 
@@ -1480,8 +1480,19 @@ int add_to_classifier(mmb_rule_t *rule) {
        realloc_table(table, ~0);   
    rule->classify_table_index = table->index;
 
-   /* Table exists, add session */
-   if (add_del_session(table, rule, rule_index, 1)) {
+   /* check if no existing rule makes new rule invalid */ 
+   mmb_session_t *session = find_session(table, rule);
+   if (session != NULL) {
+      mmb_lookup_entry_t *lookup_entry = pool_elt_at_index(mm->lookup_pool, 
+                                             session->pool_index);
+      /* checking one is enough */
+      mmb_rule_t *sample_rule = &mm->rules[lookup_entry->rule_indexes[0]] ;
+      if (next_if_match(sample_rule) != next_if_match(rule)) 
+         return 0;
+   }
+
+   /* add session */
+   if (add_del_session(table, rule, session, rule_index, 1)) {
 
       ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
                                  next_node, rule->lookup_index, 1);
@@ -1507,7 +1518,7 @@ clib_error_t *parse_rule(unformat_input_t * input,
     return error;
 
   if (!add_to_classifier(rule))
-    return clib_error_return(0, "Could not add rule to classifier");
+    return clib_error_return(0, "Invalid rule: Could not add to classifier");
 
   return 0;
 }
@@ -1569,7 +1580,6 @@ static int remove_rule(u32 rule_index) {
   }
 
   rule = &rules[--rule_index];
-
   table_index = find_table_internal_index(rule->classify_table_index);
   table = &tables[table_index];
 
@@ -1577,7 +1587,8 @@ static int remove_rule(u32 rule_index) {
                            "lookup_index:%u",
            rule_index,table_index, rule->classify_table_index, rule->lookup_index);
 
-  if (add_del_session(table, rule, rule_index, 0)) { 
+  mmb_session_t *session = find_session(table, rule);
+  if (add_del_session(table, rule, session, rule_index, 0)) { 
      /* last rule of session, delete session */
 
      vl_print(mm->vlib_main, "deleting session from table %u", rule->classify_table_index);
