@@ -102,26 +102,87 @@ const char * conditions[] = {
 #undef _
 };
 
-static int remove_rule(u32);
-static void flush_table();
+/** 
+ * remove rule from mmb
+ * @param rule_index: actual index + 1
+ */
+static int remove_rule(u32 rule_index);
+
+/** 
+ * flush
+ * remove and free rules, tables, sessions, lookup table, 
+ * reset flags & detach tables
+ */
+static void flush();
+
 static void free_rule(mmb_rule_t *rule);
 static void init_rule(mmb_rule_t *rule);
 static clib_error_t* parse_rule(unformat_input_t * input, 
-                                                 mmb_rule_t *rule);
+                                mmb_rule_t *rule);
+
+/** 
+ * validate_rule
+ * make sure that arguments are authorized
+ */
 static clib_error_t* validate_rule();
 static clib_error_t* validate_matches(mmb_rule_t *rule);
 static clib_error_t* validate_targets(mmb_rule_t *rule);
+
+/** 
+ * mmb_enable_disable_fn
+ *
+ * enable mmb on given if
+ */
 static clib_error_t* mmb_enable_disable_fn(vlib_main_t * vm,
                                            unformat_input_t * input,
                                            vlib_cli_command_t * cmd,
                                            u32 *sw_if_index);
+
+/** 
+ * mmb_add_del_session
+ *
+ * add/del session to/from classifier table
+ */
 static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node, 
                                u32 rule_index, int is_add);
-static int mmb_classify_del_table(u32 *table_index, int del_chain);
-static void attach_table_intfc(u32 table_index, int is_add);
 
+/**
+ * mmb_classify_del_table
+ *
+ * delete table from classifier
+ * @param del_chain: delete linked tables aswell
+ */
+static int mmb_classify_del_table(u32 *table_index, int del_chain);
+
+/**
+ * attach_table_if
+ *
+ * attach/detach table to/from enabled interfaces
+ */
+static void attach_table_if(u32 table_index, int is_add);
+
+/**
+ * update_lookup_pool
+ * 
+ * update rule_indexes in lookup_pool
+ * @param rule_index the deleted rules
+ */
 static void update_lookup_pool(u32 rule_index);
+
+/**
+ * mmb_lookup_pool_add
+ *
+ * add rule_index at pool_index
+ * @param pool_index: ~0 if no entry, or index of entry 
+ */
 static_always_inline u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index);
+
+/** 
+ * mmb_lookup_pool_del
+ *
+ * remove rule_index from pool_index
+ * @return 1 if entry was also removed, 0 if it was not
+ */
 static_always_inline int mmb_lookup_pool_del(u32 rule_index, u32 pool_index);
 
 /**
@@ -140,6 +201,13 @@ static int add_to_classifier(mmb_rule_t *rule);
  * 
  **/
 static void rechain_table(mmb_table_t *table, int to_table);
+
+/**
+ * bytes_to_u64
+ *
+ * converts byte vector to a u64
+ */
+static_always_inline u64 bytes_to_u64(u8 *bytes);
 
 static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule) {
   return rule->opts_in_matches || rule->opts_in_targets;
@@ -187,7 +255,7 @@ static_always_inline u8 mask_equal(u8 *a, u8 *b) {
    return 1;
 }
 
-static_always_inline u64 bytes_to_u64(u8 *bytes) {
+u64 bytes_to_u64(u8 *bytes) {
   u64 value = 0;
   u32 index = 0;
   const u32 len = clib_min(7,vec_len(bytes)-1);
@@ -331,7 +399,7 @@ list_rules_command_fn(vlib_main_t * vm,
   return 0;
 }
 
-static void flush_table() {
+static void flush() {
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules, *rule;
   u32 first_table_index = ~0;
@@ -341,7 +409,7 @@ static void flush_table() {
 
   /* detach first table */
   first_table_index = mm->tables[0].index;
-  attach_table_intfc(first_table_index, 0);
+  attach_table_if(first_table_index, 0);
 
   /* delete sessions */
   vec_foreach(rule, rules) {
@@ -383,7 +451,7 @@ static clib_error_t*
 flush_rules_command_fn(vlib_main_t * vm,
                         unformat_input_t * input,
                         vlib_cli_command_t * cmd) {
-  flush_table();
+  flush();
   return 0;
 }
 
@@ -1114,17 +1182,13 @@ static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node,
   return ret;
 }
 
-/**
- * Attach first table to interfaces.
- *
- */
-static void attach_table_intfc(u32 table_index, int is_add) {
+void attach_table_if(u32 table_index, int is_add) {
 
   mmb_main_t *mm = &mmb_main;
   u32 sw_if_index;
   int i;
 
-  for (i=0;i<vec_len(mm->sw_if_indexes);i++) {
+  for (i=0; i<vec_len(mm->sw_if_indexes); i++) {
      sw_if_index = mm->sw_if_indexes[i];
      vnet_set_mmb_classify_intfc(mm->vlib_main, sw_if_index,
                                  table_index, ~0, is_add);
@@ -1223,7 +1287,7 @@ void rechain_table(mmb_table_t *table, int to_table) {
       previous_table->next_index = after_previous;
 
   } else { /* if first table, update classifier */
-     attach_table_intfc(after_previous, 1);
+     attach_table_if(after_previous, 1);
   }
 
   /* update next table field prev_index */
@@ -1350,7 +1414,7 @@ int add_to_classifier(mmb_rule_t *rule) {
       add_del_session(table, rule, rule_index, 1);
       ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
                           next_node, rule->lookup_index, 1);
-      attach_table_intfc(rule->classify_table_index, 1);
+      attach_table_if(rule->classify_table_index, 1);
 
       vl_print(mm->vlib_main, "table:%u created", rule->classify_table_index);
       return !ret;
@@ -1471,9 +1535,8 @@ static int remove_rule(u32 rule_index) {
     return -1;
 
   /* single rule, flush */
-  if (vec_len(rules) == 1)
-  {
-    flush_table();
+  if (vec_len(rules) == 1) {
+    flush();
     return 0;
   }
 
@@ -1963,7 +2026,7 @@ vl_api_mmb_table_flush_t_handler(vl_api_mmb_table_flush_t *mp)
   mmb_main_t *mm = &mmb_main;
   int rv = 0;
 
-  flush_table();
+  flush();
 
   REPLY_MACRO(VL_API_MMB_TABLE_FLUSH_REPLY);
 }

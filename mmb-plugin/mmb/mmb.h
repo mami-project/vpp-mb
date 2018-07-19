@@ -321,16 +321,31 @@ typedef struct {
 
 mmb_main_t mmb_main;
 
-//extern vlib_node_registration_t mmb_node;
-
 extern const u8 fields_len;
 extern const char* fields[];
 extern const u8 lens[];
 extern const u8 conditions_len;
 extern const char* conditions[];
 
+/**
+ * get_field_protocol
+ * 
+ * @return protocol related to given field
+ */
 u16 get_field_protocol(u8 field);
+
+/**
+ * is_fixed_length
+ *
+ * @return 1 if field has fixed len in mmb, else 0
+ */
 u8 is_fixed_length(u8 field);
+
+/**
+ * bytes_to_u32
+ * 
+ * converts byte vector to a u32
+ */
 u32 bytes_to_u32(u8 *bytes);
 
 #endif /* __included_mmb_h__ */
