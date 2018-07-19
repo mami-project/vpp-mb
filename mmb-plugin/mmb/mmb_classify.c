@@ -11,6 +11,9 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ *
+ * Author: Korian Edeline
  */
 
 #include <stdint.h>
@@ -237,7 +240,7 @@ mmb_classify_inline (vlib_main_t * vm,
               hash0 = vnet_buffer(b0)->l2_classify.hash;
               t0 = pool_elt_at_index(vcm->tables, table_index0);
               e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
-              if (e0) { // match
+              if (e0) { /* match */
                   rule_index = pool_elt_at_index(lookup_pool, e0->opaque_index);
                   vec_add1(matches, *rule_index);
                   next0 = e0->next_index;
@@ -249,7 +252,7 @@ mmb_classify_inline (vlib_main_t * vm,
               while (next0 != MMB_CLASSIFY_NEXT_INDEX_DROP) {
                  if (t0->next_table_index != ~0)
                    t0 = pool_elt_at_index (vcm->tables,
-                                             t0->next_table_index);
+                                           t0->next_table_index);
                  else { 
                    vnet_buffer(b0)->l2_classify.hash = (u64)matches;
                    break;
@@ -267,6 +270,7 @@ mmb_classify_inline (vlib_main_t * vm,
                  }
               }
           }
+
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
               mmb_classify_trace_t * t =

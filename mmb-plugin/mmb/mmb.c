@@ -11,11 +11,10 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
-/**
+ *
  * @file
  * @brief MMB Plugin, plugin API / trace / CLI handling.
- * @author 
+ * @author Korian Edeline
  */
 
 #include <vnet/vnet.h>

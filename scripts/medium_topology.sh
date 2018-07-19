@@ -122,3 +122,6 @@ sudo vppctl -s /run/vpp/cli-vpp6.sock create host-interface name vpp6
 sudo vppctl -s /run/vpp/cli-vpp6.sock set interface state host-vpp6 up
 sudo vppctl -s /run/vpp/cli-vpp6.sock set interface ip address host-vpp6 10.0.0.11/24
 
+sudo vppctl -s /run/vpp/cli-vpp6.sock mmb enable memif0/0
+sudo vppctl -s /run/vpp/cli-vpp6.sock mmb enable host-vpp6
+
