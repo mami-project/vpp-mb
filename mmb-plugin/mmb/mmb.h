@@ -238,9 +238,14 @@ typedef struct {
 
 typedef struct {
    u8 *key;
-   u32* rules_indices; /** list of rules that use this session, updated on del/insert **/
+   u32 pool_index;
 
 } mmb_session_t;
+
+typedef struct {
+   u32 *rule_indexes; /*! vec of rule_index */
+
+} mmb_lookup_entry_t;
 
 typedef struct {
 
@@ -253,6 +258,8 @@ typedef struct {
   u8 *mask; 
   u32 skip;
   u32 match;
+
+  mmb_session_t *sessions;
 
 } mmb_table_t;
 
@@ -275,7 +282,7 @@ typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 *
   u8 *classify_key;
   u32 classify_table_index; /*! index of table in classifier */
   /*! index of mmb session (not vnet classifier) for faster deletion */
-  u32 classify_mmb_session_index; 
+  //u32 classify_mmb_session_index; 
   u32 lookup_index; /*! index for session to list of rules mapping */
 
   u8 *rewrite_mask; 
@@ -300,7 +307,7 @@ typedef struct {
 
    mmb_rule_t *rules;  /*! Rules vector, per if, per dir */
    mmb_table_t *tables; /*! Tables vector */   
-   u32 *lookup_pool; /*! rule lookup pool */
+   mmb_lookup_entry_t *lookup_pool; /*! rule lookup pool */
 
    u8 feature_arc_index;
    u32 *sw_if_indexes;

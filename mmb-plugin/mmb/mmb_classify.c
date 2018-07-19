@@ -91,7 +91,8 @@ mmb_classify_inline (vlib_main_t * vm,
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
-  u32 *lookup_pool = mm->lookup_pool, *rule_index; 
+  mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
+  u32 *rule_index; 
   f64 now = vlib_time_now (vm);
   u32 hits = 0;
   u32 drop = 0;
@@ -241,11 +242,13 @@ mmb_classify_inline (vlib_main_t * vm,
               t0 = pool_elt_at_index(vcm->tables, table_index0);
               e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
               if (e0) { /* match */
-                  rule_index = pool_elt_at_index(lookup_pool, e0->opaque_index);
-                  vec_add1(matches, *rule_index);
-                  next0 = e0->next_index;
-                  matched_rule = rules+*rule_index;
-                  matched_rule->match_count++;
+                  lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
+                  vec_foreach(rule_index, lookup_entry->rule_indexes) {
+                     vec_add1(matches, *rule_index);
+                     next0 = e0->next_index;
+                     matched_rule = rules+*rule_index;
+                     matched_rule->match_count++;
+                  }
                   hits++;
               } 
               
@@ -261,11 +264,13 @@ mmb_classify_inline (vlib_main_t * vm,
                  hash0 = vnet_classify_hash_packet(t0, (u8 *) h0);
                  e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
                  if (e0) {
-                    rule_index = pool_elt_at_index(lookup_pool, e0->opaque_index);
-                    vec_add1(matches, *rule_index);
-                    next0 = e0->next_index;
-                    matched_rule = rules+*rule_index;
-                    matched_rule->match_count++;
+                  lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
+                  vec_foreach(rule_index, lookup_entry->rule_indexes) {
+                       vec_add1(matches, *rule_index);
+                       next0 = e0->next_index;
+                       matched_rule = rules+*rule_index;
+                       matched_rule->match_count++;
+                    }
                     hits++;
                  }
               }

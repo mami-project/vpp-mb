@@ -119,7 +119,18 @@ static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node,
                                u32 rule_index, int is_add);
 static int mmb_classify_del_table(u32 *table_index, int del_chain);
 static void attach_table_intfc(u32 table_index, int is_add);
+
 static void update_lookup_pool(u32 rule_index);
+static_always_inline u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index);
+static_always_inline int mmb_lookup_pool_del(u32 rule_index, u32 pool_index);
+
+/**
+ * if table does not exists, create it and add session
+ * if table exists, check size 
+ *                  if size too small, enlarge
+ *                  if size ok, add session, 
+ */ 
+static int add_to_classifier(mmb_rule_t *rule);
 
 /**
  * re-chain tables in mmb_main and in classify
@@ -160,6 +171,20 @@ inline u32 bytes_to_u32(u8 *bytes) {
   }
 
   return value;
+}
+
+/*
+ * return 1 if masks are equals
+ */
+static_always_inline u8 mask_equal(u8 *a, u8 *b) {
+   if (vec_len(a) != vec_len(b))
+      return 0;
+   uword index;
+   vec_foreach_index(index, a) {
+      if (a[index] != b[index])
+         return 0;
+   }
+   return 1;
 }
 
 static_always_inline u64 bytes_to_u64(u8 *bytes) {
@@ -306,11 +331,9 @@ list_rules_command_fn(vlib_main_t * vm,
   return 0;
 }
 
-static void flush_table()
-{
+static void flush_table() {
   mmb_main_t *mm = &mmb_main;
-  mmb_rule_t *rules = mm->rules;
-  uword rule_index;
+  mmb_rule_t *rules = mm->rules, *rule;
   u32 first_table_index = ~0;
 
   if (vec_len(mm->tables) == 0)
@@ -321,19 +344,29 @@ static void flush_table()
   attach_table_intfc(first_table_index, 0);
 
   /* delete sessions */
-  vec_foreach_index(rule_index, rules) {
-    mmb_rule_t *rule = &rules[rule_index];
+  vec_foreach(rule, rules) {
     mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
                         0, 0, 0); 
     free_rule(rule);
   }
 
   /* flush lookup table */
-  u32 *pool_elem;
-  pool_flush(pool_elem, mm->lookup_pool, ({}));
+  mmb_lookup_entry_t *lookup_entry;
+  pool_flush(lookup_entry, mm->lookup_pool, ({
+      vec_free(lookup_entry->rule_indexes);
+  }));
 
   /* delete tables */
+  mmb_table_t *table;
+  mmb_session_t *session;
   mmb_classify_del_table(&first_table_index, 1);
+  vec_foreach(table, mm->tables) {
+    vec_foreach(session, table->sessions) {
+       vec_free(session->key);
+    }
+    vec_free(table->sessions);
+    vec_free(table->mask);
+  }
   vec_delete(mm->tables, vec_len(mm->tables), 0);
 
   /* delete rules */
@@ -1060,6 +1093,77 @@ mmb_classify_update_table (u32 *table_index, u32 next_table_index)
   return ret;
 }
 
+
+static_always_inline mmb_session_t *find_session(mmb_table_t *table, 
+                                                 mmb_rule_t *rule) {
+   /* return session for this rule if it exists in this table  */
+   mmb_session_t *sessions = table->sessions;
+   mmb_session_t *session;
+   u32 index; /* XXX: foreach no index */
+
+   vec_foreach_index(index, sessions) {
+      session = &sessions[index];
+      if (mask_equal(session->key, rule->classify_key))
+         return session;
+   }
+
+   return NULL;
+}
+
+static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, 
+                            u32 rule_index, int is_add) {
+  /** add/del session from mmb_table_t, update lookup_pool 
+      return 1 if a session was created/deleted, 
+             0 if session already existed/still exist**/
+
+  mmb_session_t *session = find_session(table, rule);
+
+  if (is_add) {
+
+     if (session == NULL) {
+
+        mmb_session_t new_session;
+        new_session.pool_index = mmb_lookup_pool_add(rule_index, ~0);
+        new_session.key = vec_dup(rule->classify_key);
+
+        vec_add1(table->sessions, new_session);
+        rule->lookup_index = new_session.pool_index;
+        return 1;
+     } else {
+
+        rule->lookup_index = session->pool_index;
+        mmb_lookup_pool_add(rule_index, session->pool_index);
+        return 0;
+     }
+   
+  } else { /* del */
+    if (session != NULL) {
+      
+      if (mmb_lookup_pool_del(rule_index, rule->lookup_index)) {
+         vec_free(session->key);
+         vec_delete(table->sessions, 1, table->sessions-session);
+              
+         mmb_main_t *mm = &mmb_main;
+         vl_print(mm->vlib_main, "LOOKUP TABLE\n");
+         mmb_lookup_entry_t *entry;
+         u32 pool_index, *this_rule_index;
+         pool_foreach_index(pool_index, mm->lookup_pool, ({
+            entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+            vl_print(mm->vlib_main, "lookup index:%u\n",pool_index);
+            vec_foreach(this_rule_index, entry->rule_indexes) {
+               vl_print(mm->vlib_main, "  rule index:%u\n",*this_rule_index);
+            };
+         }));
+
+         return 1;
+      } else 
+         return 0;
+
+    } else 
+      return 1;     
+  }
+}
+
 static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node, 
                                u32 rule_index, int is_add) {
   mmb_main_t *mm = &mmb_main;
@@ -1076,20 +1180,6 @@ static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node,
                                 is_add);
   clib_mem_set_heap(oldheap);
   return ret;
-}
-
-/*
- * return 1 if masks are equals
- */
-static_always_inline u8 mask_equal(u8 *a, u8 *b) {
-   if (vec_len(a) != vec_len(b))
-      return 0;
-   uword index;
-   vec_foreach_index(index, a) {
-      if (a[index] != b[index])
-         return 0;
-   }
-   return 1;
 }
 
 /**
@@ -1150,7 +1240,7 @@ static_always_inline u32 find_table(mmb_rule_t *rule) {
    return ~0;
 }
 
-static_always_inline void add_table(u32 index, u8* mask, u32 skip, 
+static_always_inline mmb_table_t *add_table(u32 index, u8* mask, u32 skip, 
                                     u32 match, u32 previous_index,
                                     u32 entry_count, u32 size) {
 
@@ -1159,7 +1249,7 @@ static_always_inline void add_table(u32 index, u8* mask, u32 skip,
 
   memset(&table, 0, sizeof(mmb_table_t));
   table.index = index;
-  table.mask = mask;
+  table.mask = vec_dup(mask); /* XXX: copy */
   table.skip = skip;
   table.match = match;
   table.previous_index = previous_index;
@@ -1168,6 +1258,7 @@ static_always_inline void add_table(u32 index, u8* mask, u32 skip,
   table.size = size;
 
   vec_add1(mm->tables, table);
+  return &mm->tables[vec_len(mm->tables)-1];
 }
 
 void rechain_table(mmb_table_t *table, int to_table) {
@@ -1211,8 +1302,10 @@ void rechain_table(mmb_table_t *table, int to_table) {
    }
 }
 
-static void realloc_table(mmb_table_t *table, int is_enlarge) {
-  /* Increase table size by a factor MMB_TABLE_SIZE_RATIO */
+static void realloc_table(mmb_table_t *table, u32 deleted_index) {
+  /* Increase/decrease table size by a factor MMB_TABLE_SIZE_RATIO
+     if deleted_index != ~0, do not add rules[deleted_index] to table
+   */
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rule, *rules = mm->rules;
   u32 old_index = table->index;
@@ -1220,23 +1313,27 @@ static void realloc_table(mmb_table_t *table, int is_enlarge) {
 
   /* create resized table */
   table->index = ~0;
-  if (is_enlarge)
+  if (deleted_index == ~0)
     table->size *= MMB_TABLE_SIZE_INC_RATIO;
   else 
     table->size /= MMB_TABLE_SIZE_DEC_RATIO;
   mmb_classify_add_table(table->mask, table->skip, table->match,
 			                &table->index, table->next_index, table->size);
-  vl_print(mm->vlib_main, "new table of size %u created at index %u to replace index %u", 
-               table->size, table->index, old_index);
+  vl_print(mm->vlib_main, "new table of size %u created at index %u "
+                          "to replace index %u", table->size, table->index, 
+           old_index);
 
   /* add sessions from old table */
   vec_foreach_index(index, rules) {
+    if (index == deleted_index) /* skip index */
+       continue;
+
     rule = &rules[index];
     if (rule->classify_table_index == old_index) {
       mmb_add_del_session(table->index, rule->classify_key, 
                           next_if_match(rule), rule->lookup_index, 1); 
-      vl_print(mm->vlib_main, "added session %u to table %u", 
-               index, table->index);
+      vl_print(mm->vlib_main, "added rule %u to table %u", 
+               index+1, table->index);
     }
   }  
 
@@ -1244,6 +1341,9 @@ static void realloc_table(mmb_table_t *table, int is_enlarge) {
 
   /* delete old sessions and table */
   vec_foreach(rule, rules) {
+    if (index == deleted_index) /* skip index */
+       continue;
+
     if (rule->classify_table_index == old_index) {
       vl_print(mm->vlib_main, "deleting session from table %u", 
                old_index);
@@ -1255,39 +1355,55 @@ static void realloc_table(mmb_table_t *table, int is_enlarge) {
   mmb_classify_del_table(&old_index, 0);
 }
 
-static_always_inline u32 mmb_lookup_pool_add(u32 rule_index) {
+u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index) {
 
    mmb_main_t *mm = &mmb_main;
-   u32 *rule_index_addr = 0, pool_index;
+   mmb_lookup_entry_t *lookup_entry;
 
-   pool_get(mm->lookup_pool, rule_index_addr);
-   *rule_index_addr = rule_index;
-   pool_index = rule_index_addr - mm->lookup_pool;
+   if (pool_index == ~0) { /* new lookup element */
+      pool_get(mm->lookup_pool, lookup_entry);
+      vec_add1(lookup_entry->rule_indexes, rule_index);
+      pool_index = lookup_entry - mm->lookup_pool;
 
-   vl_print(mm->vlib_main, "lookup_index:%u rule_index:%u \n", 
-        pool_index, rule_index);
+      vl_print(mm->vlib_main, "new entry lookup_index:%u rule_index:%u \n", 
+               pool_index, rule_index);
+
+   } else {
+      lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+      vec_add1(lookup_entry->rule_indexes, rule_index);
+
+      vl_print(mm->vlib_main, "appended lookup_index:%u rule_index:%u \n", 
+               pool_index, rule_index);
+   }
 
    return pool_index;
 }
 
-static_always_inline int mmb_lookup_pool_del(u32 pool_index) {
+int mmb_lookup_pool_del(u32 rule_index, u32 pool_index) {
+
    mmb_main_t *mm = &mmb_main;
-   pool_put_index(mm->lookup_pool, pool_index);
+   mmb_lookup_entry_t *lookup_entry;
+   
+   lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+   if (vec_len(lookup_entry->rule_indexes) == 1) {
+      vec_free(lookup_entry->rule_indexes);
+      pool_put_index(mm->lookup_pool, pool_index);
+   } else {
+      vec_delete(lookup_entry->rule_indexes, 1, rule_index);
+   }
+
+   update_lookup_pool(rule_index);
+
    return pool_is_free_index(mm->lookup_pool, pool_index);
 }
 
-static u8 add_to_classifier(mmb_rule_t *rule) {
-  /**
-    * if table does not exists, create it and add session
-    * if table exists, check size 
-    *                  if size too small, enlarge
-    *                  if size ok, add session, 
-    */ 
+int add_to_classifier(mmb_rule_t *rule) {
 
   mmb_main_t *mm = &mmb_main;
+  mmb_table_t *table;
   u32 rule_index = vec_len(mm->rules);
   u32 table_count = vec_len(mm->tables);
-  int ret, next_node = next_if_match(rule);
+  int ret=0, next_node = next_if_match(rule);
   mmb_mask_and_key(rule);
 
   if (table_count == 0) {
@@ -1295,16 +1411,17 @@ static u8 add_to_classifier(mmb_rule_t *rule) {
       mmb_classify_add_table(rule->classify_mask, 
          rule->classify_skip, rule->classify_match,
 			&rule->classify_table_index, ~0, MMB_TABLE_SIZE_INIT);
-
-      rule->lookup_index = mmb_lookup_pool_add(rule_index);
-      ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                                next_node, rule->lookup_index, 1);
-
-      add_table(rule->classify_table_index, rule->classify_mask, 
+      table = add_table(rule->classify_table_index, rule->classify_mask, 
                 rule->classify_skip, rule->classify_match, ~0,
                 1, MMB_TABLE_SIZE_INIT);
+
+      add_del_session(table, rule, rule_index, 1);
+      ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                          next_node, rule->lookup_index, 1);
       attach_table_intfc(rule->classify_table_index, 1);
-      return 1;
+
+      vl_print(mm->vlib_main, "table:%u created", rule->classify_table_index);
+      return !ret;
   }
 
   u32 mmb_table = find_table(rule);
@@ -1315,46 +1432,49 @@ static u8 add_to_classifier(mmb_rule_t *rule) {
          rule->classify_skip, rule->classify_match,
     		&rule->classify_table_index, ~0, MMB_TABLE_SIZE_INIT);
 
-    rule->lookup_index = mmb_lookup_pool_add(rule_index);
-    ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                              next_node, rule->lookup_index, 1);
-
     mmb_table_t *last_table = &mm->tables[table_count-1];
     u32 last_table_index = last_table->index;	
-    mmb_classify_update_table (&last_table_index, rule->classify_table_index);
+    mmb_classify_update_table(&last_table_index, rule->classify_table_index);
     last_table->next_index = rule->classify_table_index;
 
-    add_table(rule->classify_table_index, rule->classify_mask, 
-              rule->classify_skip, rule->classify_match, last_table_index,
-              1, MMB_TABLE_SIZE_INIT);
+    table = add_table(rule->classify_table_index, rule->classify_mask, 
+                      rule->classify_skip, rule->classify_match, last_table_index,
+                      1, MMB_TABLE_SIZE_INIT);
+
+    add_del_session(table, rule, rule_index, 1);
+    ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                        next_node, rule->lookup_index, 1);
 
     vl_print(mm->vlib_main, "table:%u created and chained after table:%u", 
              rule->classify_table_index, last_table_index);
-    return 1;
+    return !ret;
   } 
 
    /* Found table */
-   mmb_table_t *table = &mm->tables[mmb_table];
+   table = &mm->tables[mmb_table];
    if (table->entry_count == table->size)  /* Realloc table */
-       realloc_table(table, 1);   
+       realloc_table(table, ~0);   
+   rule->classify_table_index = table->index;
 
    /* Table exists, add session */
-   rule->classify_table_index = table->index;
-   /** XXX replace next_node by new index in pool, check if session.exist  */
-   rule->lookup_index = mmb_lookup_pool_add(rule_index);
-   ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                              next_node, rule->lookup_index, 1);
-   vl_print(mm->vlib_main, "session added to table:%u rv:%d", 
-             rule->classify_table_index, ret);
-   if (ret)
-      return 0;
-   table->entry_count++;
+   if (add_del_session(table, rule, rule_index, 1)) {
 
-  return 1;
+      ret = mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
+                                 next_node, rule->lookup_index, 1);
+      vl_print(mm->vlib_main, "session added to table:%u", 
+                rule->classify_table_index);
+      table->entry_count++;
+   } else { /** Session exists, do not add */
+      vl_print(mm->vlib_main, "found existing session in table:%u "
+                              "with lookup_index:%u", 
+               rule->classify_table_index, rule->lookup_index);
+   }
+
+  return !ret;
 }
 
 clib_error_t *parse_rule(unformat_input_t * input, 
-                                      mmb_rule_t *rule) {
+                         mmb_rule_t *rule) {
   if (unformat(input, "last")) 
     rule->last_match = 1;
   if (!unformat(input, "%U", mmb_unformat_rule, rule))
@@ -1399,15 +1519,15 @@ add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input,
 void update_lookup_pool(u32 rule_index) {
    /** update pool when rule_index is deleted **/
    mmb_main_t *mm = &mmb_main;
-   u32 *pool_elem;   
+   u32 *current_rule_index;   
+   mmb_lookup_entry_t *lookup_entry;
 
-   pool_foreach(pool_elem, mm->lookup_pool, ({
-      if (pool_is_free(mm->lookup_pool, pool_elem)) {
-         continue;
+   pool_foreach(lookup_entry, mm->lookup_pool, ({
+      vec_foreach(current_rule_index, lookup_entry->rule_indexes) {
+
+         if (*current_rule_index > rule_index) 
+            (*current_rule_index)--;
       }
-      /* actual update */
-      if (*pool_elem > rule_index) 
-         (*pool_elem)--;
    }));
 }
 
@@ -1436,27 +1556,27 @@ static int remove_rule(u32 rule_num) {
                            "lookup_index:%u",
            rule_num,table_index, rule->classify_table_index, rule->lookup_index);
 
-  if (mmb_lookup_pool_del(rule->lookup_index)) { 
+  if (add_del_session(table, rule, rule_num, 0)) { 
+     /* last rule of session, delete session */
 
      vl_print(mm->vlib_main, "deleting session from table %u", rule->classify_table_index);
      mmb_add_del_session(rule->classify_table_index, rule->classify_key, 0, 0, 0);
      table->entry_count--;
 
-     if (table->entry_count == 0)
-     {
+     if (table->entry_count == 0) {
        vl_print(mm->vlib_main, "table:%u is empty, deleting", rule->classify_table_index);
        rechain_table(table, 0);
        mmb_classify_del_table(&rule->classify_table_index, 0);
+       vec_free(mm->tables[table_index].mask);
        vec_delete(mm->tables, 1, table_index);
-     }
-     else if (table->entry_count <= table->size / MMB_TABLE_SIZE_DEC_THRESHOLD)
-     {
-       vl_print(mm->vlib_main, "table:%u is too large, shrinking", rule->classify_table_index);
-       realloc_table(table, 0); 
+     } else if (table->entry_count <= table->size / MMB_TABLE_SIZE_DEC_THRESHOLD) {
+       vl_print(mm->vlib_main, "table:%u is too large, shrinking", 
+                rule->classify_table_index);
+       realloc_table(table, rule_num); 
+       rule->classify_table_index = table->index;
      }
   }
 
-  update_lookup_pool(rule_num);
   free_rule(rule);
   vec_delete(rules, 1, rule_num);
   update_flags(mm, rules);
@@ -1525,13 +1645,13 @@ u16 get_field_protocol(u8 field) {
      return ETHERNET_TYPE_IP4;
   if (MMB_FIELD_IP6_VER <= field && field <= MMB_FIELD_IP6_PAYLOAD)
      return ETHERNET_TYPE_IP6;
-   else if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD)
+  if (MMB_FIELD_ICMP_TYPE <= field && field <= MMB_FIELD_ICMP_PAYLOAD)
      return IP_PROTOCOL_ICMP;
-   else if (MMB_FIELD_UDP_SPORT <= field && field <= MMB_FIELD_UDP_PAYLOAD)
+  if (MMB_FIELD_UDP_SPORT <= field && field <= MMB_FIELD_UDP_PAYLOAD)
      return IP_PROTOCOL_UDP;
-   else if (MMB_FIELD_TCP_SPORT <= field && field <= MMB_FIELD_TCP_OPT)
+  if (MMB_FIELD_TCP_SPORT <= field && field <= MMB_FIELD_TCP_OPT)
      return IP_PROTOCOL_TCP;
-   return IP_PROTOCOL_RESERVED;
+  return IP_PROTOCOL_RESERVED;
 }
 
 u8 is_fixed_length(u8 field) {
