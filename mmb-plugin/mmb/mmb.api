@@ -78,14 +78,6 @@ typeonly manual_endian define mmb_type_rule
   vl_api_mmb_type_target_t target[target_count];
 };
 
-autoreply manual_endian define mmb_insert_rule
-{
-  u32 client_index;
-  u32 context;
-  u32 index;
-  vl_api_mmb_type_rule_t rule;
-};
-
 autoreply manual_endian define mmb_add_rule
 {
   u32 client_index;

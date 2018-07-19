@@ -382,63 +382,9 @@ static void flush_table() {
 static clib_error_t*
 flush_rules_command_fn(vlib_main_t * vm,
                         unformat_input_t * input,
-                        vlib_cli_command_t * cmd)
-{
+                        vlib_cli_command_t * cmd) {
   flush_table();
   return 0;
-}
-
-static clib_error_t*
-insert_rule_command_fn(vlib_main_t * vm,
-                     unformat_input_t * input,
-                     vlib_cli_command_t * cmd) {
-   unformat_input_tolower(input);
-   u32 rule_index;
-   mmb_main_t *mm = &mmb_main;
-   mmb_rule_t *rules = mm->rules;
-
-   if (unformat(input, "%u", &rule_index)) {
-      /* oow index */
-      if (rule_index <= 0)
-         rule_index = 0;
-      else if (rule_index > vec_len(rules))
-         rule_index = vec_len(rules);
-      else 
-         rule_index--;
-      
-      mmb_rule_t rule;
-      clib_error_t *error;
-      init_rule(&rule);
-
-      if ( (error = parse_rule(input, &rule)) )
-         return error;
-      /* XXX: rebuild classifier: if previous or next table has same mask, 
-         than this rule,
-         add new session to it, 
-         else:
-             - if previous and next table have different mask or no previous or no next
-               new table, new session, rechain tables
-
-             - if previous and next have same mask, but different than this rule,
-               PICK ONE: - error message, cannot insert in the middle of a table
-                         - split table
-         
-        */
-      vec_insert_elt(mm->rules,&rule,rule_index);
-      
-      /* flags */
-      if (rule_has_tcp_options(&rule))
-         mm->opts_in_rules = 1;
-
-      if (!mm->enabled) 
-         mmb_enable_disable_all(1);
-
-      vlib_cli_output(vm, "Inserted rule at index %u: %U", 
-               rule_index+1, mmb_format_rule, &rule);
-      return 0;
-   } 
-   return clib_error_return(0, 
-    "Syntax error: rule number must be an integer greater than 0");
 }
 
 static int vnet_set_mmb_classify_intfc(vlib_main_t *vm, u32 sw_if_index,
@@ -1991,15 +1937,6 @@ VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
                   "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
     .function = add_rule_command_fn,
 };
-
-/**
- * @brief CLI command to insert a rule.
- */
-/*VLIB_CLI_COMMAND(sr_content_command_insert_rule, static) = {
-    .path = "mmb insert",
-    .short_help = "Insert a rule: mmb insert [last] <index> <rule>",
-    .function = insert_rule_command_fn,
-};*/
 
 /**
  * @brief CLI command to remove a rule.
