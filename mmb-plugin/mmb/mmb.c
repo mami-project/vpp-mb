@@ -1140,18 +1140,6 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule,
       if (mmb_lookup_pool_del(rule_index, rule->lookup_index)) {
          vec_free(session->key);
          vec_delete(table->sessions, 1, table->sessions-session);
-         /*  
-         mmb_main_t *mm = &mmb_main;
-         vl_print(mm->vlib_main, "LOOKUP TABLE\n");
-         mmb_lookup_entry_t *entry;
-         u32 pool_index, *this_rule_index;
-         pool_foreach_index(pool_index, mm->lookup_pool, ({
-            entry = pool_elt_at_index(mm->lookup_pool, pool_index);
-            vl_print(mm->vlib_main, "lookup index:%u\n",pool_index);
-            vec_foreach(this_rule_index, entry->rule_indexes) {
-               vl_print(mm->vlib_main, "  rule index:%u\n",*this_rule_index);
-            };
-         }));*/
 
          return 1;
       } else 
@@ -1473,8 +1461,6 @@ int add_to_classifier(mmb_rule_t *rule) {
 
 clib_error_t *parse_rule(unformat_input_t * input, 
                          mmb_rule_t *rule) {
-  if (unformat(input, "last")) 
-    rule->last_match = 1;
   if (!unformat(input, "%U", mmb_unformat_rule, rule))
     return clib_error_return(0, "Invalid rule");
 

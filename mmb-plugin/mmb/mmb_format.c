@@ -561,10 +561,7 @@ u8* mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
   s = format(s, "l3:%U l4:%U in:%U out:%U ", format_ethernet_type, rule->l3, 
              mmb_format_ip_protocol, rule->l4, mmb_format_if_sw_index, rule->in, 
-             mmb_format_if_sw_index, rule->out);
-
-  if (rule->last_match)
-    s = format(s, "L ");  
+             mmb_format_if_sw_index, rule->out);  
 
   uword index=0;
   vec_foreach_index(index, rule->matches) {
@@ -638,10 +635,7 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
       if (index) 
          s = format(s, "%56s", "AND ");
 
-      if (index==0 && rule->last_match)
-         s = format(s, "L %-38U", mmb_format_match, &rule->matches[index]);
-      else
-         s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
+      s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
 
     } else  
       s = format(s, "%96s", blanks);

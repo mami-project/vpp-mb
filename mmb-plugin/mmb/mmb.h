@@ -281,8 +281,6 @@ typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 *
   u32 classify_match;
   u8 *classify_key;
   u32 classify_table_index; /*! index of table in classifier */
-  /*! index of mmb session (not vnet classifier) for faster deletion */
-  //u32 classify_mmb_session_index; 
   u32 lookup_index; /*! index for session to list of rules mapping */
 
   u8 *rewrite_mask; 
@@ -295,9 +293,10 @@ typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 *
   u8 has_adds:1;
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
-  u8 last_match:1;
   u8 loop_packet:1;
   u8 lb:1;
+
+  u8 unused:1;
 
 } mmb_rule_t;
 
