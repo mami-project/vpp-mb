@@ -310,6 +310,7 @@ typedef struct {
 
    u8 feature_arc_index;
    u32 *sw_if_indexes;
+
    /* convenience */
    vlib_main_t * vlib_main;
    vnet_main_t *vnet_main;

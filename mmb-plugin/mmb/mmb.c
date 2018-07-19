@@ -194,7 +194,10 @@ static_always_inline int mmb_lookup_pool_del(u32 rule_index, u32 pool_index);
 static int add_to_classifier(mmb_rule_t *rule);
 
 /**
+ * rechain_table
+ *
  * re-chain tables in mmb_main and in classify
+ *
  * @param to_table: 1 to rechain table->previous_index and table->next_index
  *                    to table->index
  *                  0 to rechain table->previous_index to table->next_index             
@@ -551,9 +554,10 @@ static void ip6_header_host_to_net(u8 *header) {
 }
 
 /**
+ * mmb_match_payload
+ *
  * header_size: size of header whose payload is written
  * offset: header offset
- *
  */
 static_always_inline void mmb_match_payload(u8 *mask, u8 *key, u8 *value,
                                             int offset, int header_size) {
@@ -804,7 +808,7 @@ static_always_inline void mmb_ip6_mask_and_key_inline(u8 *mask, u8 *key,
   ip6_header_t *ip_mask = (ip6_header_t *) mask;
   ip6_header_t *ip_key = (ip6_header_t *) key;
 
-   switch (field) {
+  switch (field) {
       case MMB_FIELD_IP6_VER:
          ip_mask->ip_version_traffic_class_and_flow_label |= 0xf0000000;
          ip_key->ip_version_traffic_class_and_flow_label |= (*value << 28);
@@ -850,11 +854,11 @@ static_always_inline void mmb_ip6_mask_and_key_inline(u8 *mask, u8 *key,
          break;
       default:
          break;
-    }
+   }
 }
 
-static void mmb_l4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, int offset,
-                               int is_match) {
+static void mmb_l4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key, 
+                                int offset, int is_match) {
   mmb_match_t *match;
   mmb_target_t *target;
 
@@ -938,7 +942,6 @@ static void mmb_ip6_match_protocol(mmb_rule_t *rule, u8 *mask, u8 *key) {
    }
 }
 
-
 static void mmb_l3_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
                                int is_match) {
   mmb_match_t *match;
@@ -992,10 +995,12 @@ static void mmb_l3_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
 }
 
 /**
+ * mmb_mask_and_key
+ *
  * Compute mask, key, skip and match from a rule.
  * 
  */
-static void mmb_mask_and_key_aux(mmb_rule_t *rule, int is_match) {
+static void mmb_mask_and_key(mmb_rule_t *rule, int is_match) {
   u32 skip = 0;
   u32 match = 0;
   u8 *mask = 0;
@@ -1047,18 +1052,18 @@ static void mmb_mask_and_key_aux(mmb_rule_t *rule, int is_match) {
   }
 }
 
-static_always_inline void mmb_mask_and_key(mmb_rule_t *rule) {
-   mmb_mask_and_key_aux(rule, 1);
+static_always_inline void mmb_compute_mask(mmb_rule_t *rule) {
+   mmb_mask_and_key(rule, 1);
    if (!is_drop(rule)) { /* XXX tcp opts */
-      mmb_mask_and_key_aux(rule, 0);
+      mmb_mask_and_key(rule, 0);
    }
 }
 
 static int
 mmb_classify_add_table(u8 *mask, u32 skip, u32 match,
 			              u32 *table_index, u32 next_table_index,
-			               int max_entries)
-{
+			               int max_entries) {
+
   mmb_main_t *mm = &mmb_main;
   vnet_classify_main_t *cm = mm->classify_main;
   u32 nbuckets = max_entries;
@@ -1078,8 +1083,8 @@ mmb_classify_add_table(u8 *mask, u32 skip, u32 match,
 }
 
 static int
-mmb_classify_del_table(u32 *table_index, int del_chain)
-{
+mmb_classify_del_table(u32 *table_index, int del_chain) {
+
   mmb_main_t *mm = &mmb_main;
   vnet_classify_main_t *cm = mm->classify_main;
 
@@ -1094,8 +1099,8 @@ mmb_classify_del_table(u32 *table_index, int del_chain)
 }
 
 static int
-mmb_classify_update_table (u32 *table_index, u32 next_table_index)
-{
+mmb_classify_update_table (u32 *table_index, u32 next_table_index) {
+
   mmb_main_t *mm = &mmb_main;
   vnet_classify_main_t *cm = mm->classify_main;
 
@@ -1107,9 +1112,9 @@ mmb_classify_update_table (u32 *table_index, u32 next_table_index)
   return ret;
 }
 
-
 static_always_inline mmb_session_t *find_session(mmb_table_t *table, 
                                                  mmb_rule_t *rule) {
+
    /* return session for this rule if it exists in this table  */
    mmb_session_t *sessions = table->sessions;
    mmb_session_t *session;
@@ -1122,11 +1127,16 @@ static_always_inline mmb_session_t *find_session(mmb_table_t *table,
    return NULL;
 }
 
+/**
+ * add_del_session
+ *
+ *  add/del session from mmb_table_t, update lookup_pool 
+ *
+ *  @return 1 if a session was created/deleted, 
+ *           0 if session already existed/still exist
+ */
 static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, 
                             u32 rule_index, int is_add) {
-  /** add/del session from mmb_table_t, update lookup_pool 
-      return 1 if a session was created/deleted, 
-             0 if session already existed/still exist**/
 
   mmb_session_t *session = find_session(table, rule);
 
@@ -1166,6 +1176,7 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule,
 
 static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node, 
                                u32 rule_index, int is_add) {
+
   mmb_main_t *mm = &mmb_main;
   vnet_classify_main_t *cm = mm->classify_main;
 
@@ -1198,8 +1209,11 @@ void attach_table_if(u32 table_index, int is_add) {
 }
 
 /**
- * Return internal index of table with given classify index
+ * find_table_internal_index
  *
+ * search table by index
+ * @return internal index of table with given classify index
+ *         ~0 if not found
  */
 static_always_inline u32 find_table_internal_index(int index) {
    mmb_main_t *mm = &mmb_main;
@@ -1218,8 +1232,14 @@ static_always_inline u32 find_table_internal_index(int index) {
    return ~0;
 }
 
+/**
+ * find_table_internal_index
+ *
+ * search table by mask
+ * @return internal index of table with given mask
+ *         ~0 if not found
+ */
 static_always_inline u32 find_table(mmb_rule_t *rule) {
-   /* return table index that contains this rule session, or ~0 if not found  */
    mmb_main_t *mm = &mmb_main;
    mmb_table_t *tables = mm->tables;
    mmb_table_t *table;
@@ -1298,10 +1318,18 @@ void rechain_table(mmb_table_t *table, int to_table) {
    }
 }
 
+/**
+ * realloc_table
+ *
+ * Increase/decrease table size by a factor 
+ * MMB_TABLE_SIZE_INC_RATIO/MMB_TABLE_SIZE_DEC_RATIO.
+ *
+ * @param deleted_index if != ~0, do not add rules[deleted_index] to table
+ *
+ * @note table index will change
+ */
 static void realloc_table(mmb_table_t *table, u32 deleted_index) {
-  /* Increase/decrease table size by a factor MMB_TABLE_SIZE_RATIO
-     if deleted_index != ~0, do not add rules[deleted_index] to table
-   */
+
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rule, *rules = mm->rules;
   u32 old_index = table->index;
@@ -1337,8 +1365,6 @@ static void realloc_table(mmb_table_t *table, u32 deleted_index) {
 
   /* delete old sessions and table */
   vec_foreach(rule, rules) {
-    if (index == deleted_index) /* skip index */
-       continue;
 
     if (rule->classify_table_index == old_index) {
       vl_print(mm->vlib_main, "deleting session from table %u", 
@@ -1400,10 +1426,11 @@ int add_to_classifier(mmb_rule_t *rule) {
   u32 rule_index = vec_len(mm->rules);
   u32 table_count = vec_len(mm->tables);
   int ret=0, next_node = next_if_match(rule);
-  mmb_mask_and_key(rule);
+  mmb_compute_mask(rule);
 
   if (table_count == 0) {
       /* First rule, add table, session and chain table to if */
+
       mmb_classify_add_table(rule->classify_mask, 
          rule->classify_skip, rule->classify_match,
 			&rule->classify_table_index, ~0, MMB_TABLE_SIZE_INIT);
@@ -1424,6 +1451,7 @@ int add_to_classifier(mmb_rule_t *rule) {
 
   if (mmb_table == ~0) {
     /* Table does not exist, create it, add rule, and chain it to last table */
+
     mmb_classify_add_table(rule->classify_mask, 
          rule->classify_skip, rule->classify_match,
     		&rule->classify_table_index, ~0, MMB_TABLE_SIZE_INIT);
@@ -1556,13 +1584,15 @@ static int remove_rule(u32 rule_index) {
      mmb_add_del_session(rule->classify_table_index, rule->classify_key, 0, 0, 0);
      table->entry_count--;
 
-     if (table->entry_count == 0) {
+     if (table->entry_count == 0) { /* Empty table, delete it */
+
        vl_print(mm->vlib_main, "table:%u is empty, deleting", rule->classify_table_index);
        rechain_table(table, 0);
        mmb_classify_del_table(&rule->classify_table_index, 0);
        vec_free(mm->tables[table_index].mask);
        vec_delete(mm->tables, 1, table_index);
      } else if (table->entry_count <= table->size / MMB_TABLE_SIZE_DEC_THRESHOLD) {
+
        vl_print(mm->vlib_main, "table:%u is too large, shrinking", 
                 rule->classify_table_index);
        realloc_table(table, rule_index); 
@@ -1690,7 +1720,8 @@ static_always_inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
 
 static_always_inline clib_error_t*
 validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
-   mmb_main_t mm = mmb_main;
+
+   mmb_main_t *mm = &mmb_main;
 
    if (vec_len(match->value) == 0)
       return clib_error_return(0, "missing interface name/index"); 
@@ -1698,7 +1729,7 @@ validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
       return clib_error_return(0, "invalid interface definition");
 
    u32 sw_if_index = bytes_to_u32(match->value); 
-   if (vnet_get_sw_interface_safe (mm.vnet_main, sw_if_index) == NULL)
+   if (vnet_get_sw_interface_safe (mm->vnet_main, sw_if_index) == NULL)
       return clib_error_return(0, "invalid interface index:%u", sw_if_index);
 
    if (field == MMB_FIELD_INTERFACE_IN && rule->in == ~0) 
@@ -1804,6 +1835,7 @@ static_always_inline mmb_transport_option_t to_transport_option(mmb_target_t *ta
 }
 
 clib_error_t *validate_targets(mmb_rule_t *rule) {
+
    clib_error_t *error;
    uword index = 0;
    uword *rm_indexes = 0, *rm_index;
