@@ -23,6 +23,7 @@
 #include <time.h>
 #include <vnet/classify/vnet_classify.h>
 #include <mmb/mmb.h>
+#include <mmb/mmb_opts.h>
 
 #define foreach_mmb_next_node \
   _(FORWARD, "Forward")     \
@@ -68,21 +69,6 @@ typedef struct {
   };
 } mmb_trace_t;
 
-typedef struct {
-  u8 is_stripped:1; // flag to tell if this option has been stripped
-  u8 offset;        // real offset in the pkt data
-  u8 data_length;   // length of data
-  u8 *new_value;    // new value if modified
-} mmb_tcp_option_t;
-
-typedef struct {
-  uword *found;             // bitmap 255 bits (options 0-254)
-  u8 *idx;                  // parsed vector's position of an option
-  mmb_tcp_option_t *parsed; // parsed options vector (in parsing order)
-  u8 *data;                 // pointer to the pkt data
-} mmb_tcp_options_t;
-
-static u8 mmb_parse_tcp_options(tcp_header_t *, mmb_tcp_options_t *);
 static u8 mmb_rewrite_tcp_options(vlib_buffer_t *, mmb_tcp_options_t *);
 static void target_tcp_options(vlib_buffer_t *, u8 *, mmb_rule_t *, mmb_tcp_options_t *, u8);
 
@@ -185,76 +171,6 @@ static_always_inline u16 get_ip_protocol(u8 *p, u8 is_ip6)
  *      TCP options
  ***********************/
 
-static_always_inline void init_tcp_options(mmb_tcp_options_t *options)
-{
-  memset(options, 0, sizeof(mmb_tcp_options_t));
-  vec_validate(options->idx, 254);
-  clib_bitmap_alloc(options->found, 255);
-}
-
-static_always_inline void free_tcp_options(mmb_tcp_options_t *options)
-{
-  vec_free(options->idx);
-  vec_free(options->parsed);
-  clib_bitmap_free(options->found);
-}
-
-static_always_inline u8 tcp_option_exists(mmb_tcp_options_t *options, u8 kind)
-{
-  return clib_bitmap_get_no_check(options->found, kind);
-}
-
-u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options)
-{
-  u8 offset, opt_len, kind;
-  u8 opts_len = (tcp_doff(tcph) << 2) - sizeof(tcp_header_t);
-
-  const u8 *data = (const u8 *)(tcph + 1);
-  options->data = (u8 *)(tcph + 1);
-
-  clib_bitmap_zero(options->found);
-
-  if (vec_len(options->parsed) > 0)
-    vec_delete(options->parsed, vec_len(options->parsed), 0);
-
-  for(offset = 0; opts_len > 0; opts_len -= opt_len, data += opt_len, offset += opt_len)
-  {
-    kind = data[0];
-
-    if (kind == TCP_OPTION_EOL)
-    {
-      break;
-    }
-    else if (kind == TCP_OPTION_NOOP)
-    {
-      opt_len = 1;
-      continue;
-    }
-    else
-    {
-      /* Broken options */
-      if (opts_len < 2)
-        return 0;
-
-      opt_len = data[1];
-      if (opt_len < 2 || opt_len > opts_len)
-        return 0;
-    }
-
-    mmb_tcp_option_t option;
-    option.is_stripped = 0;
-    option.offset = offset;
-    option.data_length = opt_len-2;
-    option.new_value = 0;
-
-    clib_bitmap_set_no_check(options->found, kind, 1);
-    vec_add1(options->parsed, option);
-    options->idx[kind] = (u8) vec_len(options->parsed)-1;
-  }
-
-  return 1;
-}
-
 u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts)
 {
   u8 offset = 0; //writing cursor's position
@@ -331,21 +247,6 @@ u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts)
   }
 
   return offset;
-}
-
-static_always_inline u8 mmb_padding_tcp_options(u8 *data, u8 offset) {
-
-  // Terminate TCP options
-  if (offset % 4)
-    data[offset++] = TCP_OPTION_EOL;
-
-  // Padding to reach a u32 boundary
-  while(offset % 4)
-    data[offset++] = TCP_OPTION_NOOP;
-
-  return offset;
-  //TODO is this the right way vpp uses ? 
-  //From my understanding, NOOPs should fill extra bits to align options on boundaries (not necessarily at the end)...
 }
 
 /**********************************************

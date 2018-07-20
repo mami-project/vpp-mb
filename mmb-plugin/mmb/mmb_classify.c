@@ -26,6 +26,7 @@
 
 #include <mmb/mmb_classify.h>
 #include <mmb/mmb.h>
+#include <mmb/mmb_opts.h>
 
 typedef struct {
   u32 sw_if_index;
