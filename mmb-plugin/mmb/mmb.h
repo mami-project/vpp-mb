@@ -352,6 +352,35 @@ u8 is_fixed_length(u8 field);
  * 
  * converts byte vector to a u32
  */
-u32 bytes_to_u32(u8 *bytes);
+inline u32 bytes_to_u32(u8 *bytes) {
+  u32 value = 0;
+  u32 index = 0;
+  const u32 len = clib_min(3,vec_len(bytes)-1);
+
+  vec_foreach_index(index, bytes) {
+    value += ((u32) bytes[index]) << (len-index)*8;
+    if (index == len) 
+      break;
+  }
+
+  return value;
+}
+/**
+ * bytes_to_u64
+ *
+ * converts byte vector to a u64
+ */
+inline u64 bytes_to_u64(u8 *bytes) {
+  u64 value = 0;
+  u32 index = 0;
+  const u32 len = clib_min(7,vec_len(bytes)-1);
+
+  vec_foreach_index(index, bytes) {
+    value += ((u64) bytes[index]) << ((len-index)*8);
+    if (index==len) break;
+  }
+
+  return value;
+}
 
 #endif /* __included_mmb_h__ */

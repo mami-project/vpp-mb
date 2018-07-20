@@ -76,7 +76,114 @@ static char * mmb_classify_error_strings[] = {
 #undef _
 };
 
-static inline int mmb_match_opt(mmb_match_t *match, u8 *p0) {
+static_always_inline int mmb_true_condition(u8 condition, u8 reverse) {
+  return condition != reverse;
+}
+
+static u8 mmb_value_starts_with(u8 *pkt_data, u8 pkt_data_length, u8 *value) {
+  /* Packet data can't start with value if the latter is bigger */
+  if (vec_len(value) > pkt_data_length)
+    return 0;
+
+  /* Compare each value byte to packet data ones */
+  u32 i;
+  vec_foreach_index(i, value)
+  {
+    /* Mismatch -> can't start with */
+    if (pkt_data[i] != value[i])
+      return 0;
+  }
+
+  /* Packet data starts with value */
+  return 1;
+}
+
+static u8 mmb_value_compare(u64 a, u64 b, u8 condition, u8 reverse) {
+  u8 res;
+
+  switch(condition) {
+    case MMB_COND_EQ:
+      res = (a == b);
+      break;
+
+    case MMB_COND_NEQ:
+      res = (a != b);
+      break;
+
+    case MMB_COND_LEQ:
+      res = (a <= b);
+      break;
+
+    case MMB_COND_GEQ:
+      res = (a >= b);
+      break;
+
+    case MMB_COND_LT:
+      res = (a < b);
+      break;
+
+    case MMB_COND_GT:
+      res = (a > b);
+      break;
+
+    default:
+      return 0;
+  }
+
+  if (reverse)
+    return !res;
+
+  return res;
+}
+
+static_always_inline u64 n_bytes_to_u64(u8 *data, u8 length) {
+  u64 value = 0;
+  u32 len = length-1;
+
+  u32 i;
+  for(i = 0; i < length; i++) {
+    value += ((u64) *data++) << ((len - i) * 8);
+  }
+
+  return value;
+}
+
+static inline int mmb_match_opt(mmb_match_t *match, mmb_tcp_options_t *options) {
+   
+  //TODO replace opt_kind=0 by opt_kind=ALL (to distinguish option 0 and this case) 
+  if (match->opt_kind == 0 || match->opt_kind == MMB_FIELD_TCP_OPT_ALL) {
+    /* do we have any TCP option in this packet */
+    if (!mmb_true_condition(vec_len(options->parsed) > 0, 
+                            match->reverse))
+      return 0;
+  } else if (match->condition == 0) {
+    /* only search for the existence of an option */
+    if (!mmb_true_condition(tcp_option_exists(options, match->opt_kind),
+                            match->reverse))
+      return 0;
+  } else {
+    /* search for an option and its value */
+    if (!tcp_option_exists(options, match->opt_kind))
+      return 0;
+
+    u8 opt_idx = options->idx[match->opt_kind];
+    u8 opt_offset = options->parsed[opt_idx].offset;
+    u8 opt_length = options->parsed[opt_idx].data_length;
+    u8 *opt_data_ptr = &options->data[opt_offset+2];
+
+    if (vec_len(match->value) > 8) {
+      /* values > u64 */
+      if (!mmb_true_condition(mmb_value_starts_with(opt_data_ptr, opt_length, match->value),
+                              match->reverse))
+        return 0;
+    }
+    else if (!mmb_value_compare(n_bytes_to_u64(opt_data_ptr, opt_length), 
+                                bytes_to_u64(match->value), 
+                                match->condition, match->reverse))
+      return 0;
+  }
+
+
    return 1;
 }
 
@@ -97,7 +204,7 @@ static inline int mmb_match_opts(mmb_rule_t *rule, u8 *p0,
 
    /* match */
    vec_foreach(match, opt_matches) {
-      if (!mmb_match_opt(match, p0))
+      if (!mmb_match_opt(match, tcpo0))
          return 0;
    }
 

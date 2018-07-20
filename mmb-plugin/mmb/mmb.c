@@ -207,13 +207,6 @@ static int add_to_classifier(mmb_rule_t *rule);
  **/
 static void rechain_table(mmb_table_t *table, int to_table);
 
-/**
- * bytes_to_u64
- *
- * converts byte vector to a u64
- */
-static_always_inline u64 bytes_to_u64(u8 *bytes);
-
 static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule) {
   return rule->opts_in_matches || rule->opts_in_targets;
 }
@@ -233,19 +226,6 @@ static_always_inline void update_flags(mmb_main_t *mm, mmb_rule_t *rules) {
    mm->opts_in_rules = 0;
 } 
 
-inline u32 bytes_to_u32(u8 *bytes) {
-  u32 value = 0;
-  u32 index = 0;
-  const u32 len = clib_min(3,vec_len(bytes)-1);
-
-  vec_foreach_index(index, bytes) {
-    value += ((u32) bytes[index]) << (len-index)*8;
-    if (index==len) break;
-  }
-
-  return value;
-}
-
 /*
  * return 1 if masks are equals
  */
@@ -258,19 +238,6 @@ static_always_inline u8 mask_equal(u8 *a, u8 *b) {
          return 0;
    }
    return 1;
-}
-
-u64 bytes_to_u64(u8 *bytes) {
-  u64 value = 0;
-  u32 index = 0;
-  const u32 len = clib_min(7,vec_len(bytes)-1);
-
-  vec_foreach_index(index, bytes) {
-    value += ((u64) bytes[index]) << ((len-index)*8);
-    if (index==len) break;
-  }
-
-  return value;
 }
 
 static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
