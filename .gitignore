@@ -61,6 +61,23 @@ scripts/dev.sh
 scripts/merge_branches.sh
 scripts/pull_all.sh
 scripts/mypings.sh
+scripts/flush.sh
+scripts/performance_test.sh
+scripts/pings.sh
+scripts/simple_tracebox.py
+scripts/debug/
+scripts/performance/
+scripts/topology/
+mmb-plugin/mmb/NOTES.txt.c
 lib/*
+docs/user-guide.tex
+docs/*aux
+docs/*log
+docs/*toc
+
+
+
+
+
 
 

@@ -16,31 +16,93 @@
 
 /* Define a simple binary API to control the feature */
 
-autoreply define mmb_dumbrewrite_enable_disable {
-    /* Client identifier, set from api_main.my_client_index */
-    u32 client_index;
+/* TODO
+ - comment with "\brief" notation
+ - mmb_api.c or api.c (put everything for the API there, instead of mmb.c) -> share some functions between CLI and API (a shared .h)
+ - events (async) useful here ?
+*/
 
-    /* Arbitrary context, so client can match reply to request */
-    u32 context;
-
-    /* Enable / disable the feature */
-    u8 enable_disable;
-
-    /* Interface handle */
-    u32 sw_if_index;
+/*autoreply define mmb_enable_interface
+{
+  u32 client_index;
+  u32 context;
+  u32 sw_if_index;
 };
 
-autoreply define mmb_valuebased_enable_disable {
-    /* Client identifier, set from api_main.my_client_index */
-    u32 client_index;
+autoreply define mmb_disable_interface
+{
+  u32 client_index;
+  u32 context;
+  u32 sw_if_index;
+};*/
 
-    /* Arbitrary context, so client can match reply to request */
-    u32 context;
+autoreply define mmb_table_flush
+{
+  u32 client_index;
+  u32 context;
+};
 
-    /* Enable / disable the feature */
-    u8 enable_disable;
+autoreply define mmb_remove_rule
+{
+  u32 client_index;
+  u32 context;
+  u32 rule_num;
+};
 
-    /* Interface handle */
-    u32 sw_if_index;
+/*typeonly manual_endian define mmb_type_match
+{
+  u8 field;
+  u8 opt_kind;
+  u8 condition;
+  u8 value_length;
+  u8 value[value_length];
+  u8 reverse;
+};
+
+typeonly manual_endian define mmb_type_target
+{
+  u8 keyword;
+  u8 field;
+  u8 opt_kind;
+  u8 value_length;
+  u8 value[value_length];
+  u8 reverse;
+};
+
+typeonly manual_endian define mmb_type_rule
+{
+  u32 rule_index;
+  u8 match_count;
+  vl_api_mmb_type_match_t match[match_count];
+  u8 target_count;
+  vl_api_mmb_type_target_t target[target_count];
+};
+
+autoreply manual_endian define mmb_add_rule
+{
+  u32 client_index;
+  u32 context;
+  vl_api_mmb_type_rule_t rule;
+};
+
+autoreply manual_endian define mmb_add_rules
+{
+  u32 client_index;
+  u32 context;
+  u8 rule_count;
+  vl_api_mmb_type_rule_t rule[rule_count];
+};*/
+
+define mmb_table_dump
+{
+  u32 client_index;
+  u32 context;
+};
+
+/*manual_endian*/ define mmb_table_details
+{
+  u32 context;
+  u32 rule_num;
+  //vl_api_mmb_type_rule_t rule;
 };
 

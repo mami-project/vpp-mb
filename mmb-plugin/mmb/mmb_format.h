@@ -11,6 +11,9 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ *
+ * Author: Korian Edeline
  */
 #ifndef __included_mmb_format_h__
 #define __included_mmb_format_h__
@@ -24,8 +27,9 @@ void unformat_input_tolower(unformat_input_t *input);
 uword mmb_unformat_match(unformat_input_t * input, va_list *args);
 uword mmb_unformat_target(unformat_input_t * input, va_list *args);
 
-u8 *mmb_format_rule(u8 *s, va_list *args); 
-u8 *mmb_format_rules(u8 *s, va_list *args);
+u8* mmb_format_rule(u8 *s, va_list *args); 
+u8* mmb_format_rules(u8 *s, va_list *args);
+uword mmb_unformat_rule(unformat_input_t *input, va_list *args);
 
 #endif /* included_mmb_format_h */
 
