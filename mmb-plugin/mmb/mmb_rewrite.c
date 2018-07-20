@@ -109,30 +109,25 @@ static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
 
 static_always_inline void 
 mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * node,
-                    u8 *p, u32 next, u32 sw_if_index, u8 is_ip6)
-{
+                    u8 *p, u32 next, u32 sw_if_index, u8 is_ip6) {
+
   mmb_trace_t *t = vlib_add_trace (vm, node, b, sizeof (*t));
 
   t->next = next;
   t->sw_if_index = sw_if_index;
   t->rule_indexes = (u32*)vnet_buffer(b)->l2_classify.hash;
 
-  if (is_ip6)
-  {
+  if (is_ip6) {
     ip6_header_t *iph = (ip6_header_t*)p;
     t->proto = iph->protocol;
     clib_memcpy(&t->src_address.ip6, &iph->src_address, sizeof(ip6_address_t));
     clib_memcpy(&t->dst_address.ip6, &iph->dst_address, sizeof(ip6_address_t));
     t->ip6h = iph;
-  }
-  else
-  {
+  } else {
     ip4_header_t *iph = (ip4_header_t*)p;
     t->proto = iph->protocol;
     t->src_address.ip4.as_u32 = iph->src_address.as_u32;
     t->dst_address.ip4.as_u32 = iph->dst_address.as_u32;
-    //ip46_address_set_ip4(&t->src_address, &iph->src_address);
-    //ip46_address_set_ip4(&t->dst_address, &iph->dst_address);
     t->ip4h = iph;
   }
 }
@@ -338,8 +333,8 @@ u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts)
   return offset;
 }
 
-static_always_inline u8 mmb_padding_tcp_options(u8 *data, u8 offset)
-{
+static_always_inline u8 mmb_padding_tcp_options(u8 *data, u8 offset) {
+
   // Terminate TCP options
   if (offset % 4)
     data[offset++] = TCP_OPTION_EOL;
@@ -368,10 +363,9 @@ static_always_inline u8 mmb_target_add_option(u8 *data, mmb_transport_option_t *
   return opt_len;
 }
 
-static_always_inline u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options, u8 kind, u8 *new_value)
-{
-  if (tcp_option_exists(tcp_options, kind))
-  {
+static_always_inline u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options, 
+                                                 u8 kind, u8 *new_value) {
+  if (tcp_option_exists(tcp_options, kind)) {
     tcp_options->parsed[tcp_options->idx[kind]].new_value = new_value;
     return 1;
   }
@@ -379,32 +373,28 @@ static_always_inline u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options,
   return 0;
 }
 
-static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, u8 kind)
-{
+static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, u8 kind) {
   u8 idx = tcp_options->idx[kind];
   tcp_options->parsed[idx].is_stripped = 1;
 }
 
 void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule, 
-                        mmb_tcp_options_t *tcp_options, u8 is_ip6)
-{
+                        mmb_tcp_options_t *tcp_options, u8 is_ip6) {
+
   u32 i;
   u8 old_opts_len = 0, new_opts_len = 0, opts_modified = 0;
 
   /* STRIP tcp options, if any */
-  if (rule->has_strips)
-  {
+  if (rule->has_strips) {
     uword *found_to_strip = clib_bitmap_dup_and(tcp_options->found, rule->opt_strips);
-    if (!clib_bitmap_is_zero(found_to_strip))
-    {
+    if (!clib_bitmap_is_zero(found_to_strip)) {
       clib_bitmap_foreach(i, found_to_strip, mmb_target_strip_option(tcp_options, i));
       opts_modified = 1;
     }
   }
 
   /* MODIFY tcp options, if any */
-  vec_foreach_index(i, rule->opt_mods)
-  {
+  vec_foreach_index(i, rule->opt_mods) {
     mmb_target_t *opt_modified = rule->opt_mods+i;
     opts_modified |= mmb_target_modify_option(tcp_options, opt_modified->opt_kind, opt_modified->value);
   }
@@ -418,16 +408,15 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
     new_opts_len = old_opts_len;
 
   /* ADD tcp options, if any */
-  vec_foreach_index(i, rule->opt_adds)
-  {
+  vec_foreach_index(i, rule->opt_adds) {
     mmb_transport_option_t *opt_added = rule->opt_adds+i;
     new_opts_len += mmb_target_add_option(&tcp_options->data[new_opts_len], opt_added);
     opts_modified = 1;
   }
 
   /* Pad tcp options, if needed */
-  if (opts_modified)
-  {
+  if (opts_modified) {
+
     new_opts_len = mmb_padding_tcp_options((u8 *)(tcph + 1), new_opts_len);
 
     /* can't overflow 40 bytes otherwise data_offset becomes crap */
@@ -438,14 +427,11 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
     tcph->data_offset_and_reserved = (tcph->data_offset_and_reserved & 0xf) 
                                   | (((new_opts_len + sizeof(tcp_header_t)) >> 2) << 4);
     
-    if (is_ip6)
-    {
+    if (is_ip6) {
       ip6_header_t *iph = (ip6_header_t*)p;
       u16 new_ip_len = clib_net_to_host_u16(iph->payload_length)+new_opts_len-old_opts_len;
       iph->payload_length = clib_host_to_net_u16(new_ip_len);
-    }
-    else
-    {
+    } else {
       ip4_header_t *iph = (ip4_header_t*)p;
       u16 new_ip_len = clib_net_to_host_u16(iph->length)+new_opts_len-old_opts_len;
       iph->length = clib_host_to_net_u16(new_ip_len);
@@ -459,17 +445,14 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
 }
 
 static_always_inline void icmp_checksum(vlib_main_t *vm, vlib_buffer_t *b, 
-                                        u8 *p, icmp46_header_t *icmph, u8 is_ip6)
-{
+                                        u8 *p, icmp46_header_t *icmph, u8 is_ip6) {
+
   icmph->checksum = 0;
 
-  if (is_ip6)
-  {
+  if (is_ip6) {
     int bogus_lengthp;
     icmph->checksum = ip6_tcp_udp_icmp_compute_checksum(vm, b, (ip6_header_t*)p, &bogus_lengthp);
-  }
-  else
-  {
+  } else {
     ip4_header_t *iph = (ip4_header_t*)p;
     ip_csum_t csum = ip_incremental_checksum(0, icmph, clib_net_to_host_u16(iph->length) - sizeof(*iph));
     icmph->checksum = ~ip_csum_fold(csum);
@@ -493,8 +476,7 @@ static_always_inline void udp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
 }
 
 static_always_inline void tcp_checksum(vlib_main_t *vm, vlib_buffer_t *b, 
-                                       u8 *p, tcp_header_t *tcph, u8 is_ip6)
-{
+                                       u8 *p, tcp_header_t *tcph, u8 is_ip6) {
   int bogus_lengthp;
   tcph->checksum = 0;
 
@@ -507,11 +489,10 @@ static_always_inline void tcp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
 
 static_always_inline 
 u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p, 
-                u32 next, u8 tcpo, mmb_tcp_options_t *tcp_options, u8 is_ip6)
-{
+                u32 next, u8 tcpo, mmb_tcp_options_t *tcp_options, u8 is_ip6) {
+
   /* lb */
-  if (rule->lb)
-  {
+  if (rule->lb) {
     static u32 seed = 0;
     if (!seed) seed = time(NULL);
     u8 *fibs = rule->targets[0].value;
@@ -527,8 +508,7 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
   u64 *mask = (u64 *)rule->rewrite_mask;
   u64 *data64 = (u64 *)p;  
 
-  switch (match)
-  {
+  switch (match) {
     case 5:
       data64[8 + skip_u64] = (data64[8 + skip_u64] & mask[8]) | key[8];
       data64[9 + skip_u64] = (data64[9 + skip_u64] & mask[9]) | key[9];
@@ -555,18 +535,6 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
   /* tcp opts */
   if (tcpo)
     target_tcp_options(b, p, rule, tcp_options, is_ip6);
-
-  /* if looping pkt, prepare it */
-  /*if (next == MMB_NEXT_FORWARD && rule->loop_packet)
-  {
-    // remove eth header 
-    //vlib_buffer_advance(b, ethernet_buffer_header_size(b));
-    if (is_ip6)
-      ((ip6_header_t*)p)->hop_limit++;
-    else
-      ((ip4_header_t*)p)->ttl++;
-    next = MMB_NEXT_LOOP;
-  }*/
  
   /* ip4 checksum */
   if (!is_ip6)
