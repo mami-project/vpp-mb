@@ -999,13 +999,12 @@ static void mmb_l3_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
  * mmb_mask_and_key
  *
  * Compute mask, key, skip and match from a rule.
- * 
+ * @param is_match
  */
 static void mmb_mask_and_key(mmb_rule_t *rule, int is_match) {
-  u32 skip = 0;
-  u32 match = 0;
-  u8 *mask = 0;
-  u8 *key = 0;
+
+  u32 skip = 0, match = 0;
+  u8 *mask = 0, *key = 0;
   int i;
 
   vec_validate_aligned(mask, MMB_CLASSIFY_MAX_MASK_LEN-1, sizeof(u32x4));
@@ -1523,6 +1522,9 @@ clib_error_t *parse_rule(unformat_input_t * input,
 
   if (!add_to_classifier(rule))
     return clib_error_return(0, "Invalid rule: Could not add to classifier");
+  mmb_main_t *mm = &mmb_main;
+  vl_print(mm->vlib_main, "opts_in_matches:%u matches_count:%d", 
+          rule->opts_in_matches, vec_len(rule->matches));
 
   return 0;
 }
@@ -1758,32 +1760,38 @@ validate_if(mmb_rule_t *rule, mmb_match_t *match, u8 field) {
 }
 
 clib_error_t* validate_matches(mmb_rule_t *rule) {
-   clib_error_t *error;
+
+   clib_error_t *error = NULL;
    uword index = 0;
    uword *deletions = 0, *deletion;
 
    vec_foreach_index(index, rule->matches) {
+
      mmb_match_t *match = &rule->matches[index];
      u8 field = match->field, reverse = match->reverse;
      u8 condition = match->condition;
 
      if ( (error = update_l3(field, &rule->l3))
            || (error = update_l4(field, &rule->l4)) )
-       return error;
+       goto end;
 
      switch (field) {
        case MMB_FIELD_ALL:
          /* other fields must be empty, and no other matches */
          if (condition || vec_len(match->value) > 0 || reverse
-             || vec_len(rule->matches) > 1)
-           return clib_error_return(0, "'all' in a <match> must be used alone");
+             || vec_len(rule->matches) > 1) {
+           error = clib_error_return(0, "'all' in a <match> must be used alone");
+           goto end;
+         }
          break;
 
        case MMB_FIELD_IP4_NON_ECT:case MMB_FIELD_IP4_ECT0:
        case MMB_FIELD_IP4_ECT1:case MMB_FIELD_IP4_CE:
-         if (vec_len(match->value) > 0)
-           return clib_error_return(0, "%s does not take a condition nor a value", 
+         if (vec_len(match->value) > 0) {
+           error = clib_error_return(0, "%s does not take a condition nor a value", 
                                     fields[field_toindex(field)]);
+           goto end;
+         }
          translate_match_ip4_ecn(match);
          break;
 
@@ -1802,17 +1810,20 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
            translate_match_bit_flags(match);
          break;
 #define _(a,b,c) case a: {match->field=MMB_FIELD_TCP_OPT; match->opt_kind=c;\
-                          rule->opts_in_matches=1; break;}
+                          rule->opts_in_matches=1; vec_add1(rule->opt_matches, *match);\
+                          vec_insert_elt_first(deletions, &index); break;}
    foreach_mmb_tcp_opts
 #undef _
        case MMB_FIELD_TCP_OPT:
          rule->opts_in_matches=1;
+         vec_add1(rule->opt_matches, *match);
+         vec_insert_elt_first(deletions, &index);
          break;
        case MMB_FIELD_INTERFACE_IN:  
        case MMB_FIELD_INTERFACE_OUT:
-          if ( (error = validate_if(rule, match, field)) )
-            return error;
-           vlib_cli_output(mmb_main.vlib_main, "%u\n", index);
+          if ( (error = validate_if(rule, match, field)) ) 
+            goto end;
+          vlib_cli_output(mmb_main.vlib_main, "if:%u\n", index);
           vec_insert_elt_first(deletions, &index);
           break;        
        default:
@@ -1830,14 +1841,16 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
 
      mmb_match_t *match = &rule->matches[*deletion];
      vec_free(match->value);
-     if (vec_len(rule->matches) == 1) {
+     if (vec_len(rule->matches) == 1 && vec_len(rule->opt_matches) == 0) {
        match->field = MMB_FIELD_ALL;
        match->condition = 0;
      } else  /* del */  
        vec_delete(rule->matches, 1, *deletion);
    }
 
-   return NULL;
+end:
+   vec_free(deletions);
+   return error;
 }
 
 static_always_inline mmb_transport_option_t to_transport_option(mmb_target_t *target) {
@@ -1851,9 +1864,9 @@ static_always_inline mmb_transport_option_t to_transport_option(mmb_target_t *ta
 
 clib_error_t *validate_targets(mmb_rule_t *rule) {
 
-   clib_error_t *error;
+   clib_error_t *error = NULL;
    uword index = 0;
-   uword *rm_indexes = 0, *rm_index;
+   uword *deletions = 0, *deletion;
 
    vec_foreach_index(index, rule->targets) {
      mmb_target_t *target = &rule->targets[index];
@@ -1862,7 +1875,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
 
      if ( (error = update_l3(field, &rule->l3))
            || (error = update_l4(field, &rule->l4)) )
-       return error;
+       goto end;
 
      switch (field) {
        case MMB_FIELD_IP4_SADDR:case MMB_FIELD_IP4_DADDR:
@@ -1870,21 +1883,28 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
            rule->loop_packet = 1;
            break;
        case MMB_FIELD_ALL:
-         if (keyword != MMB_TARGET_STRIP || vec_len(value))
-           return clib_error_return(0, "'all' in a <target> can only be used"
+         if (keyword != MMB_TARGET_STRIP || vec_len(value)) {
+           error = clib_error_return(0, "'all' in a <target> can only be used"
                                      " with the 'strip' keyword and no value");
-         if (reverse)
-           return clib_error_return(0, "<target> has no effect");
+            goto end;
+         }
+         if (reverse) {
+           error = clib_error_return(0, "<target> has no effect");
+           goto end;
+         }
          
          break;
        case MMB_FIELD_INTERFACE_IN:
        case MMB_FIELD_INTERFACE_OUT:
-          return clib_error_return(0, "invalid field in target");
+          error = clib_error_return(0, "invalid field in target");
+          goto end;
        case MMB_FIELD_IP4_NON_ECT:case MMB_FIELD_IP4_ECT0:
        case MMB_FIELD_IP4_ECT1:case MMB_FIELD_IP4_CE:
-         if (vec_len(value) > 0)
-           return clib_error_return(0, "%s does not take a condition nor a value", 
+         if (vec_len(value) > 0) {
+           error = clib_error_return(0, "%s does not take a condition nor a value", 
                                     fields[field_toindex(field)]);
+           goto end;
+         }
          translate_target_ip4_ecn(target);
          break;
 
@@ -1904,8 +1924,10 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
 
        /* Ensure that field of strip target is a tcp opt. */
        if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
-             && field <= MMB_FIELD_ALL))
-         return clib_error_return(0, "strip <field> must be a tcp option or 'all'");
+             && field <= MMB_FIELD_ALL)) {
+         error = clib_error_return(0, "strip <field> must be a tcp option or 'all'");
+         goto end;
+       }
 
        /* build option strip list  */
        if (!rule->has_strips)  {
@@ -1916,50 +1938,60 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
             /* flip bitmap to 1s XXX: typo in func name !!*/
             clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
          }
-       } else if (rule->whitelist != reverse)
-         return clib_error_return(0, "inconsistent use of ! in strip");
+       } else if (rule->whitelist != reverse) {
+         error = clib_error_return(0, "inconsistent use of ! in strip");
+         goto end;
+       }
 
        if (field == MMB_FIELD_ALL) /* strip all */
          target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
 
        clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
-       vec_insert_elt_first(rm_indexes, &index);
+       vec_insert_elt_first(deletions, &index);
      } else if (keyword == MMB_TARGET_ADD) { 
 
         /* Ensure that field of strip target is a tcp opt. */
        if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
-             && field < MMB_FIELD_ALL))
-         return clib_error_return(0, "add <field> must be a tcp option");
+             && field < MMB_FIELD_ALL)) {
+         error = clib_error_return(0, "add <field> must be a tcp option");
+         goto end;
+       }
 
        /* empty value should be fixed len and len = 0 */
        if (vec_len(value) == 0 
-             && !(is_fixed_length(field) && lens[field_toindex(field)]==0) )
-         return clib_error_return(0, "add <field> missing value");
+             && !(is_fixed_length(field) && lens[field_toindex(field)]==0) ) {
+         error = clib_error_return(0, "add <field> missing value");
+         goto end;
+       }
 
        /* add transport opt to add-list and register for deletion */
        mmb_transport_option_t opt = to_transport_option(target);
        vec_add1(rule->opt_adds, opt);
        rule->has_adds = 1;
-       vec_insert_elt_first(rm_indexes, &index);
+       vec_insert_elt_first(deletions, &index);
      } else if (keyword == MMB_TARGET_MODIFY) { 
         if  (MMB_FIELD_TCP_OPT_MSS <= field 
              && field < MMB_FIELD_ALL) {
           vec_add1(rule->opt_mods, *target);
-          vec_insert_elt_first(rm_indexes, &index);
+          vec_insert_elt_first(deletions, &index);
         }
      } else if (keyword == MMB_TARGET_LB) {
        rule->lb = 1;
-       if (vec_len(rule->targets) > 1)
-         return clib_error_return(0, "lb is a unique target");
+       if (vec_len(rule->targets) > 1) {
+         error = clib_error_return(0, "lb is a unique target");
+         goto end;
+       }
      }
    } 
 
-   /* delete strips and adds from targets */ 
-   vec_foreach(rm_index, rm_indexes) {
-     vec_delete(rule->targets, 1, *rm_index);
+   /* delete opts from targets */ 
+   vec_foreach(deletion, deletions) {
+     vec_delete(rule->targets, 1, *deletion);
    }
-   
-   return NULL;
+
+end:
+   vec_free(deletions);
+   return error;
 }
 
 clib_error_t *validate_rule(mmb_rule_t *rule) {

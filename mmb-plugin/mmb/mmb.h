@@ -264,17 +264,19 @@ typedef struct {
 } mmb_table_t;
 
 typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 */
-  u16 l3;
-  u8 l4;
-  u32 in;
-  u32 out;
+  u16 l3; /*! l3 protocol */
+  u8 l4; /*! l4 protocol */
+  u32 in; /*! input if */
+  u32 out; /*! output if */
 
   mmb_match_t *matches; /*! Matches vector */
+  mmb_match_t *opt_matches; /*! Options (tcp, ip6) */
+  uword match_count; /*! count of matched packets */
+
   mmb_target_t *targets; /*! Targets vector */
   uword                  *opt_strips;
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
-  uword match_count;
 
   u8 *classify_mask;
   u32 classify_skip; 
@@ -318,6 +320,8 @@ typedef struct {
 
    u8 opts_in_rules:1;
    u8 enabled:1;
+
+   u8 unused:6;
 } mmb_main_t;
 
 mmb_main_t mmb_main;

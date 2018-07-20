@@ -564,10 +564,13 @@ u8* mmb_format_rule(u8 *s, va_list *args) {
              mmb_format_if_sw_index, rule->out);  
 
   uword index=0;
-  vec_foreach_index(index, rule->matches) {
-    s = format(s, "%U%s", mmb_format_match, &rule->matches[index],
-                        (index != vec_len(rule->matches)-1) ? " AND ":" ");
+  mmb_match_t *matches = vec_dup(rule->matches);
+  vec_append(matches, rule->opt_matches);
+  vec_foreach_index(index, matches) {
+    s = format(s, "%U%s", mmb_format_match, &matches[index],
+                        (index != vec_len(matches)-1) ? " AND ":" ");
   }
+  vec_free(matches);
 
   vec_foreach_index(index, rule->targets) {
     s = format(s, "%U%s", mmb_format_target, &rule->targets[index],
@@ -619,8 +622,13 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   uword (*next_func) (uword *ai, uword i) = rule->whitelist 
                                               ? &clib_bitmap_next_clear_corrected
                                               : &clib_bitmap_next_set;
+
+  /* merge all matches */
+  mmb_match_t *matches = vec_dup(rule->matches);
+  vec_append(matches, rule->opt_matches);
+
   /* count lines to print */
-  uword match_count = vec_len(rule->matches);
+  uword match_count = vec_len(matches);
   uword strip_count = rule->whitelist 
                        ? bitmap_size(rule->opt_strips)
                            -clib_bitmap_count_set_bits(rule->opt_strips)
@@ -630,12 +638,12 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   uword count = clib_max(match_count,target_count);
                    
   for (index=0; index<count; index++) {
-    if (index < vec_len(rule->matches)) {
+    if (index < match_count) {
       /* tabulate empty line */
       if (index) 
          s = format(s, "%56s", "AND ");
 
-      s = format(s, "%-40U", mmb_format_match, &rule->matches[index]);
+      s = format(s, "%-40U", mmb_format_match, &matches[index]);
 
     } else  
       s = format(s, "%96s", blanks);
@@ -659,6 +667,7 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
     s = format(s, "\n");
   }
 
+  vec_free(matches);
   return s;
 }
 
