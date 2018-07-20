@@ -70,5 +70,14 @@ scripts/performance/
 scripts/topology/
 mmb-plugin/mmb/NOTES.txt.c
 lib/*
+docs/user-guide.tex
+docs/*aux
+docs/*log
+docs/*toc
+
+
+
+
+
 
 
