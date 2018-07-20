@@ -70,7 +70,8 @@ typedef struct {
 } mmb_trace_t;
 
 static u8 mmb_rewrite_tcp_options(vlib_buffer_t *, mmb_tcp_options_t *);
-static void target_tcp_options(vlib_buffer_t *, u8 *, mmb_rule_t *, mmb_tcp_options_t *, u8);
+static void target_tcp_options(vlib_buffer_t *, u8 *, mmb_rule_t *, 
+                               mmb_tcp_options_t *, u8);
 
 /************************
  *   MMB Node format
@@ -555,7 +556,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;   
 
       vec_foreach(rule_index0, rule_indexes0) { 
-         ri0 = rules+*rule_index0; /** XXX preload?&loop on targets **/
+         ri0 = rules+*rule_index0; /** XXX preload? **/
          if (ri0->opts_in_targets) {// && !tcpo0) {
              if (is_ip6)
                tcpo0 = mmb_parse_tcp_options(ip6_next_header((ip6_header_t*)p0), &tcp_options0);

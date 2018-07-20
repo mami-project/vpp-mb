@@ -26,9 +26,9 @@
 #define MMB_CLASSIFY_MAX_MASK_LEN (5*sizeof(u32x4))
 
 typedef enum {
-  MMB_CLASSIFY_TABLE_IP4,
-  MMB_CLASSIFY_TABLE_IP6,
-  MMB_CLASSIFY_N_TABLES,
+  MMB_CLASSIFY_TABLE_IP4=0,
+  MMB_CLASSIFY_TABLE_IP6=1,
+  MMB_CLASSIFY_N_TABLES=2,
 } mmb_classify_table_id_t;
 
 typedef enum {
