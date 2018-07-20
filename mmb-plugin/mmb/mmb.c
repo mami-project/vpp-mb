@@ -274,7 +274,8 @@ u64 bytes_to_u64(u8 *bytes) {
 }
 
 static_always_inline void mmb_enable_disable(u32 sw_if_index, int enable_disable) {
-   mmb_classify_main_t *mcm = &mmb_classify_main;
+   mmb_main_t *mm = &mmb_main;
+   mmb_classify_main_t *mcm = mm->mmb_classify_main;
    vnet_feature_enable_disable("ip4-unicast", "ip4-mmb-rewrite", 
                                sw_if_index, enable_disable, 0, 0);
    vnet_feature_enable_disable("ip6-unicast", "ip6-mmb-rewrite", 
@@ -463,43 +464,41 @@ flush_rules_command_fn(vlib_main_t * vm,
 static int vnet_set_mmb_classify_intfc(vlib_main_t *vm, u32 sw_if_index,
                                   u32 ip4_table_index, u32 ip6_table_index,
                                   u32 is_add) {
-
-  mmb_classify_main_t *mcm = &mmb_classify_main;
+  mmb_main_t *mm = &mmb_main;
+  mmb_classify_main_t *mcm = mm->mmb_classify_main;
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
   u32 pct[MMB_CLASSIFY_N_TABLES] = {ip4_table_index, ip6_table_index};
   u32 ti;
 
   /* Assume that we've validated sw_if_index in the API layer */
 
-  for (ti = 0; ti < MMB_CLASSIFY_N_TABLES; ti++)
-    {
-      if (pct[ti] == ~0)
+  for (ti = 0; ti < MMB_CLASSIFY_N_TABLES; ti++) {
+     if (pct[ti] == ~0)
         continue;
 
-      if (pool_is_free_index (vcm->tables, pct[ti]))
+     if (pool_is_free_index (vcm->tables, pct[ti]))
         return VNET_API_ERROR_NO_SUCH_TABLE;
 
-      vec_validate_init_empty
+     vec_validate_init_empty
         (mcm->classify_table_index_by_sw_if_index[ti], sw_if_index, ~0);
 
-      /* Reject any DEL operation with wrong sw_if_index */
-      if (!is_add &&
-          (pct[ti] != mcm->classify_table_index_by_sw_if_index[ti][sw_if_index]))
-        {
-          clib_warning ("Non-existent intf_idx=%d with table_index=%d for delete",
+     /* Reject any DEL operation with wrong sw_if_index */
+     if (!is_add &&
+         (pct[ti] != mcm->classify_table_index_by_sw_if_index[ti][sw_if_index])) {
+         clib_warning ("Non-existent intf_idx=%d with table_index=%d for delete",
                         sw_if_index, pct[ti]);
-          return VNET_API_ERROR_NO_SUCH_TABLE;
-        }
-      /* Return ok on ADD operaton if feature is already enabled */
-      if (is_add &&
+         return VNET_API_ERROR_NO_SUCH_TABLE;
+     }
+     /* Return ok on ADD operaton if feature is already enabled */
+     if (is_add &&
           mcm->classify_table_index_by_sw_if_index[ti][sw_if_index] == pct[ti])
-          return 0;
+        return 0;
 
-      if (is_add)
+     if (is_add)
         mcm->classify_table_index_by_sw_if_index[ti][sw_if_index] = pct[ti];
-      else
+     else
         mcm->classify_table_index_by_sw_if_index[ti][sw_if_index] = ~0;
-    }
+  }
 
   return 0;
 }
@@ -1067,15 +1066,17 @@ mmb_classify_add_table(u8 *mask, u32 skip, u32 match,
 			               int max_entries) {
 
   mmb_main_t *mm = &mmb_main;
-  vnet_classify_main_t *cm = mm->classify_main;
+  mmb_classify_main_t *mcm = mm->mmb_classify_main;
+  vnet_classify_main_t *vcm = mcm->vnet_classify_main;
+
   u32 nbuckets = max_entries;
   u32 memory_size = nbuckets++ << 14; /* ??? */
   u32 miss_next_index = IP_LOOKUP_NEXT_REWRITE;
   u32 current_data_flag = 0;
   int current_data_offset = 0;
 
-  void *oldheap = clib_mem_set_heap (cm->vlib_main->heap_base);
-  int ret = vnet_classify_add_del_table (cm, mask, nbuckets,
+  void *oldheap = clib_mem_set_heap (vcm->vlib_main->heap_base);
+  int ret = vnet_classify_add_del_table (vcm, mask, nbuckets,
 				      memory_size, skip, match,
 				      next_table_index, miss_next_index,
 				      table_index, current_data_flag,
@@ -1088,10 +1089,11 @@ static int
 mmb_classify_del_table(u32 *table_index, int del_chain) {
 
   mmb_main_t *mm = &mmb_main;
-  vnet_classify_main_t *cm = mm->classify_main;
+  mmb_classify_main_t *mcm = mm->mmb_classify_main;
+  vnet_classify_main_t *vcm = mcm->vnet_classify_main;
 
-  void *oldheap = clib_mem_set_heap (cm->vlib_main->heap_base);
-  int ret = vnet_classify_add_del_table (cm, 0, 0,
+  void *oldheap = clib_mem_set_heap (vcm->vlib_main->heap_base);
+  int ret = vnet_classify_add_del_table (vcm, 0, 0,
 				      0, 0, 0,
 				      0, 0,
 				      table_index, 0,
@@ -1104,10 +1106,11 @@ static int
 mmb_classify_update_table (u32 *table_index, u32 next_table_index) {
 
   mmb_main_t *mm = &mmb_main;
-  vnet_classify_main_t *cm = mm->classify_main;
+  mmb_classify_main_t *mcm = mm->mmb_classify_main;
+  vnet_classify_main_t *vcm = mcm->vnet_classify_main;
 
-  void *oldheap = clib_mem_set_heap (cm->vlib_main->heap_base);
-  int ret = vnet_classify_add_del_table (cm, NULL, 0, 0, 0, 0, 
+  void *oldheap = clib_mem_set_heap (vcm->vlib_main->heap_base);
+  int ret = vnet_classify_add_del_table (vcm, NULL, 0, 0, 0, 0, 
                                          next_table_index, 0,
 				                             table_index, 0, 0, 1, 1);
   clib_mem_set_heap (oldheap);
@@ -1178,17 +1181,18 @@ static int mmb_add_del_session(u32 table_index, u8 *key, u32 next_node,
                                u32 rule_index, int is_add) {
 
   mmb_main_t *mm = &mmb_main;
-  vnet_classify_main_t *cm = mm->classify_main;
+  mmb_classify_main_t *mcm = mm->mmb_classify_main;
+  vnet_classify_main_t *vcm = mcm->vnet_classify_main;
 
-  void *oldheap = clib_mem_set_heap(cm->vlib_main->heap_base);
-  int ret = vnet_classify_add_del_session(mm->classify_main, 
-                                table_index, key, 
-                                next_node, 
-                                rule_index, 
-                                0 /* advance */, 
-                                0 /* action*/, 
-                                0 /* metadata */,
-                                is_add);
+  void *oldheap = clib_mem_set_heap(vcm->vlib_main->heap_base);
+  int ret = vnet_classify_add_del_session(vcm, 
+                                          table_index, key, 
+                                          next_node, 
+                                          rule_index, 
+                                          0 /* advance */, 
+                                          0 /* action*/, 
+                                          0 /* metadata */,
+                                          is_add);
   clib_mem_set_heap(oldheap);
   return ret;
 }
@@ -2168,7 +2172,8 @@ static clib_error_t * mmb_init(vlib_main_t * vm) {
   memset(mm, 0, sizeof(mmb_main_t));
   mm->vnet_main = vnet_get_main();
   mm->vlib_main = vm;
-  mm->classify_main = &vnet_classify_main;
+  mm->mmb_classify_main = &mmb_classify_main;
+  mm->mmb_classify_main->vnet_classify_main = &vnet_classify_main;
 
   name = format (0, "mmb_%08x%c", api_version, 0);
 

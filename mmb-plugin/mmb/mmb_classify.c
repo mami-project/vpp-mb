@@ -87,9 +87,10 @@ mmb_classify_inline (vlib_main_t * vm,
 {
   u32 n_left_from, *from, *to_next;
   mmb_classify_next_index_t next_index;
-  mmb_classify_main_t *mcm = &mmb_classify_main;
-  vnet_classify_main_t *vcm = mcm->vnet_classify_main;
   mmb_main_t *mm = &mmb_main;
+  mmb_classify_main_t *mcm = mm->mmb_classify_main;
+  vnet_classify_main_t *vcm = mcm->vnet_classify_main;
+
   mmb_rule_t *rules = mm->rules;
   mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
   u32 *rule_index; 
@@ -324,7 +325,7 @@ VLIB_REGISTER_NODE (ip4_mmb_classify_node) = {
   .n_next_nodes = MMB_CLASSIFY_NEXT_INDEX_N_NEXT,
   .next_nodes = {
     [MMB_CLASSIFY_NEXT_INDEX_MATCH] = "ip4-mmb-rewrite",
-    [MMB_CLASSIFY_NEXT_INDEX_MISS] = "ip4-lookup",//"interface-output",
+    [MMB_CLASSIFY_NEXT_INDEX_MISS] = "ip4-lookup",
     [MMB_CLASSIFY_NEXT_INDEX_DROP] = "error-drop",
   },
 };
@@ -333,7 +334,7 @@ VLIB_REGISTER_NODE (ip4_mmb_classify_node) = {
 
 VNET_FEATURE_INIT (ip4_mmb_classify_feature, static) =
 {
-  .arc_name = "ip4-unicast", //"ip4-output",
+  .arc_name = "ip4-unicast",
   .node_name = "ip4-mmb-classify",
   .runs_before = VNET_FEATURES ("ip4-mmb-rewrite"),
 };
@@ -357,7 +358,7 @@ VLIB_REGISTER_NODE (ip6_mmb_classify_node) = {
   .n_next_nodes = MMB_CLASSIFY_NEXT_INDEX_N_NEXT,
   .next_nodes = {
     [MMB_CLASSIFY_NEXT_INDEX_MATCH] = "ip6-mmb-rewrite",
-    [MMB_CLASSIFY_NEXT_INDEX_MISS] = "ip6-lookup",//"interface-output",
+    [MMB_CLASSIFY_NEXT_INDEX_MISS] = "ip6-lookup",
     [MMB_CLASSIFY_NEXT_INDEX_DROP] = "error-drop",
   },
 };
@@ -366,19 +367,13 @@ VLIB_REGISTER_NODE (ip6_mmb_classify_node) = {
 
 VNET_FEATURE_INIT (ip6_mmb_classify_feature, static) =
 {
-  .arc_name = "ip6-unicast", //"ip6-output",
+  .arc_name = "ip6-unicast",
   .node_name = "ip6-mmb-classify",
   .runs_before = VNET_FEATURES ("ip6-mmb-rewrite"),
 };
 
 static clib_error_t *
-mmb_classify_init (vlib_main_t *vm)
-{
-  mmb_classify_main_t * mcm = &mmb_classify_main;
-  /* remove and use mmb_main */
-  //mcm->vlib_main = vm;
-  //mcm->vnet_main = vnet_get_main();
-  mcm->vnet_classify_main = &vnet_classify_main;
+mmb_classify_init (vlib_main_t *vm) {
 
   //mmb_main.feature_arc_index = vlib_node_add_next(vm, ip4_lookup_node.index, ip4_mmb_classify_node.index);
 
