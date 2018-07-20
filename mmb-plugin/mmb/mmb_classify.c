@@ -75,8 +75,18 @@ static char * mmb_classify_error_strings[] = {
 #undef _
 };
 
-static inline void update_index(vlib_buffer_t *b0) {
-   return;
+static inline int mmb_match_opt(mmb_match_t *match, u8 *pkt) {
+   return 1;
+}
+
+static inline int mmb_match_opts(mmb_rule_t *rule, u8 *pkt) {
+   mmb_match_t *opt_matches = rule->opt_matches, *match;
+   vec_foreach(match, opt_matches) {
+      if (!mmb_match_opt(match, pkt))
+         return 0;
+   }
+
+   return 1;
 }
 
 static inline uword
@@ -104,16 +114,16 @@ mmb_classify_inline (vlib_main_t * vm,
   /* First pass: compute hashes */
   while (n_left_from > 2)
     {
-      vlib_buffer_t * b0, * b1;
+      vlib_buffer_t *b0, *b1;
       u32 bi0, bi1;
-      u8 * h0, * h1;
+      u8 *h0, *h1;
       u32 sw_if_index0, sw_if_index1;
       u32 table_index0, table_index1;
-      vnet_classify_table_t * t0, * t1;
+      vnet_classify_table_t *t0, *t1;
 
       /* Prefetch next iteration */
       {
-        vlib_buffer_t * p1, * p2;
+        vlib_buffer_t *p1, *p2;
 
         p1 = vlib_get_buffer (vm, from[1]);
         p2 = vlib_get_buffer (vm, from[2]);
@@ -156,14 +166,14 @@ mmb_classify_inline (vlib_main_t * vm,
       n_left_from -= 2;
     }
 
-  while (n_left_from > 0)
-    {
-      vlib_buffer_t * b0;
+  while (n_left_from > 0) {
+
+      vlib_buffer_t *b0;
       u32 bi0;
-      u8 * h0;
+      u8 *h0;
       u32 sw_if_index0;
       u32 table_index0;
-      vnet_classify_table_t * t0;
+      vnet_classify_table_t *t0;
 
       bi0 = from[0];
       b0 = vlib_get_buffer (vm, bi0);
@@ -181,7 +191,7 @@ mmb_classify_inline (vlib_main_t * vm,
 
       from++;
       n_left_from--;
-    }
+  }
 
   next_index = node->cached_next_index;
   from = vlib_frame_vector_args (frame);
@@ -200,17 +210,17 @@ mmb_classify_inline (vlib_main_t * vm,
           vlib_buffer_t *b0;
           u32 next0 = MMB_CLASSIFY_NEXT_INDEX_MISS;
           u32 table_index0;
-          vnet_classify_table_t * t0;
-          vnet_classify_entry_t * e0;
+          vnet_classify_table_t *t0;
+          vnet_classify_entry_t *e0;
           u64 hash0;
-          u8 * h0;
+          u8 *h0;
           u32 *matches;
-          mmb_rule_t *matched_rule;
+          mmb_rule_t *rule;
 
           /* Stride 3 seems to work best */
           if (PREDICT_TRUE(n_left_from > 3)) {
-              vlib_buffer_t * p1 = vlib_get_buffer(vm, from[3]);
-              vnet_classify_table_t * tp1;
+              vlib_buffer_t *p1 = vlib_get_buffer(vm, from[3]);
+              vnet_classify_table_t *tp1;
               u32 table_index1;
               u64 phash1;
 
@@ -241,14 +251,20 @@ mmb_classify_inline (vlib_main_t * vm,
           if (PREDICT_TRUE(table_index0 != ~0)) {
               hash0 = vnet_buffer(b0)->l2_classify.hash;
               t0 = pool_elt_at_index(vcm->tables, table_index0);
-              e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
+              e0 = vnet_classify_find_entry(t0, h0, hash0, now);
               if (e0) { /* match */
                   lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
+
                   vec_foreach(rule_index, lookup_entry->rule_indexes) {
-                     vec_add1(matches, *rule_index);
-                     next0 = e0->next_index;
-                     matched_rule = rules+*rule_index;
-                     matched_rule->match_count++;
+
+                     rule = rules+*rule_index;
+                     if (PREDICT_TRUE(!rule->opts_in_matches 
+                                     || mmb_match_opts(rule, h0))) {
+
+                        vec_add1(matches, *rule_index);
+                        next0 = e0->next_index;                     
+                        rule->match_count++;
+                     }   
                   }
                   hits++;
               } 
@@ -262,15 +278,20 @@ mmb_classify_inline (vlib_main_t * vm,
                    break;
                  }
 
-                 hash0 = vnet_classify_hash_packet(t0, (u8 *) h0);
-                 e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
+                 hash0 = vnet_classify_hash_packet(t0, h0);
+                 e0 = vnet_classify_find_entry(t0, h0, hash0, now);
                  if (e0) {
-                  lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
-                  vec_foreach(rule_index, lookup_entry->rule_indexes) {
-                       vec_add1(matches, *rule_index);
-                       next0 = e0->next_index;
-                       matched_rule = rules+*rule_index;
-                       matched_rule->match_count++;
+                    lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
+                    vec_foreach(rule_index, lookup_entry->rule_indexes) {
+
+                       rule = rules+*rule_index;
+                       if (PREDICT_TRUE(!rule->opts_in_matches 
+                                        || mmb_match_opts(rule, h0))) {
+
+                          vec_add1(matches, *rule_index);
+                          next0 = e0->next_index;                     
+                          rule->match_count++;
+                       } 
                     }
                     hits++;
                  }
@@ -284,7 +305,7 @@ mmb_classify_inline (vlib_main_t * vm,
               t->sw_if_index = vnet_buffer(b0)->sw_if_index[VLIB_RX];
               t->next_index = next0;
               t->rule_indexes = (u32*)vnet_buffer(b0)->l2_classify.hash;
-              clib_memcpy(t->packet_data, h0,//vlib_buffer_get_current(b0),
+              clib_memcpy(t->packet_data, h0,
 		                    sizeof (t->packet_data));
            }
 

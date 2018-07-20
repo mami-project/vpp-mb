@@ -244,7 +244,7 @@ typedef struct {
 
 typedef struct {
    u32 *rule_indexes; /*! vec of rule_index */
-
+   /* XXX: rule_has_opt_match flag for slow pathing */
 } mmb_lookup_entry_t;
 
 typedef struct {
