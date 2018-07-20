@@ -2027,6 +2027,11 @@ void free_rule(mmb_rule_t *rule) {
   }
   vec_free(rule->matches);
 
+  vec_foreach_index(index, rule->opt_matches) {
+    vec_free(rule->opt_matches[index].value);
+  }
+  vec_free(rule->opt_matches);
+
   vec_foreach_index(index, rule->targets) {
     vec_free(rule->targets[index].value);
   }
