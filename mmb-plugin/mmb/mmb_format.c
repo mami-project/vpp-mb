@@ -24,6 +24,7 @@
 #include <mmb/mmb_format.h>
 
 #define MMB_DISPLAY_MAX_BYTES 14
+#define MMB_DISPLAY_MAX_MASK_HEX 32
 
 #define bitmap_size(ai) vec_len(ai)*BITS(uword)
 
@@ -38,6 +39,7 @@ static u8* mmb_format_field(u8 *s, va_list *args);
 static u8* mmb_format_condition(u8 *s, va_list *args);
 static u8* mmb_format_keyword(u8 *s, va_list *args);
 static u8* mmb_format_rule_column(u8 *s, va_list *args);
+static u8* mmb_format_table(u8 *s, va_list *args);
 
 static const char* blanks = "                                                "
                             "                                                "
@@ -766,6 +768,94 @@ u8* mmb_format_rules(u8 *s, va_list *args) {
     s = format(s, " %d\t%U%s", rule_index+1, mmb_format_rule_column, 
                &rules[rule_index], rule_index == vec_len(rules)-1 ? "" : "\n");
   }
+
   return s;
+}
+
+static_always_inline u8* mmb_format_mask(u8 *s, va_list *args) {
+  u8 *bytes = va_arg(*args, u8*);
+  if (bytes == 0) 
+      return s;
+
+  u32 index;
+   vec_foreach_index(index, bytes) {
+     if (index % MMB_DISPLAY_MAX_MASK_HEX == 0 && index != 0) {
+       s = format(s, "\n\t%5s", blanks);
+     }
+     s = format(s, "%02x", bytes[index]);
+   }
+
+  return s;
+}
+
+static_always_inline u8* mmb_format_key(u8 *s, va_list *args) {
+  u8 *bytes = va_arg(*args, u8*);
+  if (bytes == 0) 
+      return s;
+
+  u32 index;
+   vec_foreach_index(index, bytes) {
+     if (index % MMB_DISPLAY_MAX_MASK_HEX == 0 && index != 0) {
+       s = format(s, "\n\t%8s", blanks);
+     }
+     s = format(s, "%02x", bytes[index]);
+   }
+
+  return s;
+}
+
+u8* mmb_format_u32_index(u8 *s, va_list *args) {
+   u32 index = va_arg(*args, u32);
+   if (index == ~0)
+      return format(s, "-1");
+   else
+      return format(s, "%u", index); 
+}
+
+u8 *mmb_format_session(u8 *s, va_list *args) {
+   mmb_session_t *session = va_arg(*args, mmb_session_t*);
+
+   s = format(s, "lookup index %U\n", mmb_format_u32_index, session->pool_index);
+   s = format(s, "\t%4skey %U", blanks, mmb_format_key, session->key);
+
+   return s;
+}
+
+u8* mmb_format_table(u8 *s, va_list *args) {
+   mmb_table_t *table = va_arg(*args, mmb_table_t*);
+   int verbose = va_arg(*args, int);
+
+   s = format(s, "index %U next %U prev %U\n", mmb_format_u32_index, table->index, 
+              mmb_format_u32_index, table->next_index, 
+              mmb_format_u32_index, table->previous_index);
+   s = format(s, "\tsession count %u capacity %u\n", table->entry_count, table->size);
+   s = format(s, "\tskip %u match %u\n", table->skip, table->match);
+   s = format(s, "\tmask %U\n", mmb_format_mask, table->mask);
+
+   if (verbose) {
+      mmb_session_t *session, *sessions = table->sessions;
+      uword session_index = 0;
+      vec_foreach_index(session_index, sessions) {
+         session = &sessions[session_index];
+         s = format(s, "\t%u:%2s%U\n", session_index, blanks, 
+                    mmb_format_session, session);
+      }
+   }
+
+   return s;
+}
+
+u8* mmb_format_tables(u8 *s, va_list *args) {
+   mmb_table_t *tables = va_arg(*args, mmb_table_t*);
+   int verbose = va_arg(*args, int);
+   uword table_index = 0;   
+
+   vec_foreach_index(table_index, tables) {
+      s = format(s, "[%u]:\t%U%s", table_index, mmb_format_table, 
+                 &tables[table_index], verbose, 
+                 table_index == vec_len(tables)-1 ? "" : "\n");
+   }
+
+   return s;
 }
 

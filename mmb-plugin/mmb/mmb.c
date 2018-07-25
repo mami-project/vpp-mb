@@ -428,6 +428,23 @@ flush_rules_command_fn(vlib_main_t * vm,
   return 0;
 }
 
+static clib_error_t*
+show_tables_command_fn(vlib_main_t * vm,
+                        unformat_input_t * input,
+                        vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
+  mmb_main_t *mm = &mmb_main;
+  int verbose = 0;
+  if (unformat(input, "verbose"))
+      verbose = 1;
+  if (!unformat_is_eof(input))
+     return clib_error_return(0, "Syntax error: unexpected additional element");
+  
+   vlib_cli_output(vm, "%U", mmb_format_tables, mm->tables, verbose);  
+
+   return 0;
+}
+
 static int vnet_set_mmb_classify_intfc(vlib_main_t *vm, u32 sw_if_index,
                                   u32 ip4_table_index, u32 ip6_table_index,
                                   u32 is_add) {
@@ -2068,6 +2085,15 @@ VLIB_CLI_COMMAND(sr_content_command_flush_rule, static) = {
     .path = "mmb flush",
     .short_help = "Remove all rules",
     .function = flush_rules_command_fn,
+};
+
+/**
+ * @brief CLI command to remove all rules.
+ */
+VLIB_CLI_COMMAND(sr_content_command_show_tables, static) = {
+    .path = "mmb show tables",
+    .short_help = "Display tables and sessions details: mmb show tables [verbose]",
+    .function = show_tables_command_fn,
 };
 
 static void
