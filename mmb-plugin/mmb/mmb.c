@@ -207,6 +207,14 @@ static int add_to_classifier(mmb_rule_t *rule);
  **/
 static void rechain_table(mmb_table_t *table, int to_table);
 
+/**
+ * mmb_add_rule
+ *
+ * Adds a rule to mmb
+ */
+static clib_error_t *mmb_add_rule(vlib_main_t *vm, unformat_input_t *input, 
+                                   int stateful);
+
 static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule) {
   return rule->opts_in_matches || rule->opts_in_targets;
 }
@@ -1513,9 +1521,8 @@ clib_error_t *parse_rule(unformat_input_t * input,
   return 0;
 }
 
-static clib_error_t *
-add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input, 
-                     vlib_cli_command_t * cmd) {
+clib_error_t * mmb_add_rule(vlib_main_t *vm, unformat_input_t *input, 
+                            int stateful) {
   unformat_input_tolower(input);
 
   mmb_rule_t rule;
@@ -1523,6 +1530,8 @@ add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input,
   mmb_main_t *mm = &mmb_main;
 
   init_rule(&rule);
+  if (stateful)
+    rule.stateful = 1;  
   if ( (error = parse_rule(input, &rule)) )
     return error;
 
@@ -1537,6 +1546,24 @@ add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input,
 
   vlib_cli_output(vm, "Added rule: %U", mmb_format_rule, &rule);
   return 0;
+}
+
+static clib_error_t *
+add_rule_command_fn(vlib_main_t *vm, unformat_input_t *input, 
+                     vlib_cli_command_t *cmd) {
+  return mmb_add_rule(vm, input, 0);
+}
+
+static clib_error_t *
+add_stateless_rule_command_fn(vlib_main_t *vm, unformat_input_t *input, 
+                     vlib_cli_command_t *cmd) {
+  return mmb_add_rule(vm, input, 0);
+}
+
+static clib_error_t *
+add_stateful_rule_command_fn(vlib_main_t *vm, unformat_input_t *input, 
+                     vlib_cli_command_t *cmd) {
+  return mmb_add_rule(vm, input, 1);
 }
 
 void update_lookup_pool(u32 rule_index) {
@@ -2059,7 +2086,7 @@ VLIB_CLI_COMMAND(sr_content_command_list_rules, static) = {
 };
 
 /**
- * @brief CLI command to add a new rule.
+ * @brief CLI command to add a rule.
  */
 VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
     .path = "mmb add",
@@ -2067,6 +2094,28 @@ VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
                   "[<field> [[<cond>] <value>] ...] <strip <option-field> "
                   "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
     .function = add_rule_command_fn,
+};
+
+/**
+ * @brief CLI command to add a stateless rule (same as add, added for completeness).
+ */
+VLIB_CLI_COMMAND(sr_content_command_add_stateless_rule, static) = {
+    .path = "mmb add-stateless",
+    .short_help = "Add a rule (same as mmb add): mmb add-stateless <field> [[<cond>] <value>] "
+                  "[<field> [[<cond>] <value>] ...] <strip <option-field> "
+                  "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
+    .function = add_stateless_rule_command_fn,
+};
+
+/**
+ * @brief CLI command to add a stateful rule.
+ */
+VLIB_CLI_COMMAND(sr_content_command_add_stateful_rule, static) = {
+    .path = "mmb add-stateful",
+    .short_help = "Add a stateful rule: mmb add-stateful <field> [[<cond>] <value>] "
+                  "[<field> [[<cond>] <value>] ...] <strip <option-field> "
+                  "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
+    .function = add_stateful_rule_command_fn,
 };
 
 /**

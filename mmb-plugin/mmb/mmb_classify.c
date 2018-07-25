@@ -387,7 +387,7 @@ mmb_classify_inline(vlib_main_t * vm,
                     rule = rules+*rule_index;
                     if (!rule->opts_in_matches 
                || mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid)) {
-
+                       /* of rule->stateful_flag then create_session and don't add */
                        vec_add1(matches, *rule_index);
                        next0 = e0->next_index;                     
                        rule->match_count++;
@@ -446,7 +446,7 @@ mmb_classify_inline(vlib_main_t * vm,
 
   vlib_node_increment_counter(vm, node->node_index,
                                MMB_CLASSIFY_ERROR_HIT, 
-                               hits); /* TODO update this */
+                               hits);
   vlib_node_increment_counter(vm, node->node_index,
                                MMB_CLASSIFY_ERROR_DROP,
                                drop);
