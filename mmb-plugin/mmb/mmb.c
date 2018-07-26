@@ -208,12 +208,14 @@ static int add_to_classifier(mmb_rule_t *rule);
 static void rechain_table(mmb_table_t *table, int to_table);
 
 /**
- * mmb_add_rule
+ * mmb_add_rule_command
  *
  * Adds a rule to mmb
  */
-static clib_error_t *mmb_add_rule(vlib_main_t *vm, unformat_input_t *input, 
+static clib_error_t *mmb_add_rule_command(vlib_main_t *vm, unformat_input_t *input, 
                                    int stateful);
+
+static clib_error_t *mmb_add_rule(mmb_rule_t *rule);
 
 static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule) {
   return rule->opts_in_matches || rule->opts_in_targets;
@@ -449,6 +451,30 @@ show_tables_command_fn(vlib_main_t * vm,
      return clib_error_return(0, "Syntax error: unexpected additional element");
   
    vlib_cli_output(vm, "%U", mmb_format_tables, mm->tables, verbose);  
+
+   return 0;
+}
+
+static clib_error_t*
+show_conn_command_fn(vlib_main_t * vm,
+                        unformat_input_t * input,
+                        vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
+  mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mst = mm->mmb_conn_table;
+  int verbose = 0;
+
+  if (unformat(input, "verbose"))
+      verbose = 1;
+  if (!unformat_is_eof(input))
+     return clib_error_return(0, "Syntax error: unexpected additional element");
+  
+   if (mst->conn_hash_is_initialized) {
+     vlib_cli_output(vm, "Connections lookup table:\n%U",
+                     BV(format_bihash), &mst->conn_hash, verbose);
+   } else {
+     vlib_cli_output(vm, "Connections lookup table is not allocated\n");
+   }
 
    return 0;
 }
@@ -1156,6 +1182,7 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, mmb_session_t *
     if (session != NULL) {
       
       if (mmb_lookup_pool_del(rule_index, rule->lookup_index)) {
+
          vec_free(session->key);
          vec_delete(table->sessions, 1, table->sessions-session);
 
@@ -1471,7 +1498,7 @@ int add_to_classifier(mmb_rule_t *rule) {
 
    /* Found table */
    table = &mm->tables[mmb_table];
-   if (table->entry_count == table->size)  /* Realloc table */
+   if (table->entry_count == table->size)
        realloc_table(table, ~0);   
    rule->classify_table_index = table->index;
 
@@ -1511,17 +1538,25 @@ clib_error_t *parse_rule(unformat_input_t * input,
   clib_error_t *error;
   if ( (error = validate_rule(rule)) )
     return error;
-
-  if (!add_to_classifier(rule))
-    return clib_error_return(0, "Invalid rule: Could not add to classifier");
-  mmb_main_t *mm = &mmb_main;
-  vl_print(mm->vlib_main, "opts_in_matches:%u matches_count:%d", 
-          rule->opts_in_matches, vec_len(rule->matches));
-
+      
   return 0;
 }
 
-clib_error_t * mmb_add_rule(vlib_main_t *vm, unformat_input_t *input, 
+clib_error_t *mmb_add_rule(mmb_rule_t *rule) {
+
+  mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mst = mm->mmb_conn_table;
+
+  if (!add_to_classifier(rule))
+    return clib_error_return(0, "Invalid rule: Could not add to classifier");
+
+  if (rule->stateful && !mst->conn_hash_is_initialized)
+    mmb_conn_hash_init();
+      
+  return 0;
+}
+
+clib_error_t * mmb_add_rule_command(vlib_main_t *vm, unformat_input_t *input, 
                             int stateful) {
   unformat_input_tolower(input);
 
@@ -1532,7 +1567,10 @@ clib_error_t * mmb_add_rule(vlib_main_t *vm, unformat_input_t *input,
   init_rule(&rule);
   if (stateful)
     rule.stateful = 1;  
+
   if ( (error = parse_rule(input, &rule)) )
+    return error;
+  if ( (error = mmb_add_rule(&rule)) )
     return error;
 
   vec_add1(mm->rules, rule);
@@ -1551,19 +1589,19 @@ clib_error_t * mmb_add_rule(vlib_main_t *vm, unformat_input_t *input,
 static clib_error_t *
 add_rule_command_fn(vlib_main_t *vm, unformat_input_t *input, 
                      vlib_cli_command_t *cmd) {
-  return mmb_add_rule(vm, input, 0);
+  return mmb_add_rule_command(vm, input, 0);
 }
 
 static clib_error_t *
 add_stateless_rule_command_fn(vlib_main_t *vm, unformat_input_t *input, 
                      vlib_cli_command_t *cmd) {
-  return mmb_add_rule(vm, input, 0);
+  return mmb_add_rule_command(vm, input, 0);
 }
 
 static clib_error_t *
 add_stateful_rule_command_fn(vlib_main_t *vm, unformat_input_t *input, 
                      vlib_cli_command_t *cmd) {
-  return mmb_add_rule(vm, input, 1);
+  return mmb_add_rule_command(vm, input, 1);
 }
 
 void update_lookup_pool(u32 rule_index) {
@@ -2137,12 +2175,21 @@ VLIB_CLI_COMMAND(sr_content_command_flush_rule, static) = {
 };
 
 /**
- * @brief CLI command to remove all rules.
+ * @brief CLI command to show classify tables
  */
 VLIB_CLI_COMMAND(sr_content_command_show_tables, static) = {
     .path = "mmb show tables",
     .short_help = "Display tables and sessions details: mmb show tables [verbose]",
     .function = show_tables_command_fn,
+};
+
+/**
+ * @brief CLI command to show connections tables
+ */
+VLIB_CLI_COMMAND(sr_content_command_show_conn, static) = {
+    .path = "mmb show connections",
+    .short_help = "Display connections details: mmb show connections [verbose]",
+    .function = show_conn_command_fn,
 };
 
 static void
@@ -2243,18 +2290,22 @@ setup_message_id_table(mmb_main_t * mm, api_main_t *am) {
 /**
  * @brief Initialize the mmb plugin.
  */
-static clib_error_t * mmb_init(vlib_main_t * vm) {
+static clib_error_t * mmb_init(vlib_main_t *vm) {
   mmb_main_t * mm = &mmb_main;
   clib_error_t * error = 0;
-  u8 * name;
+  u8 *name;
 
   memset(mm, 0, sizeof(mmb_main_t));
   mm->vnet_main = vnet_get_main();
   mm->vlib_main = vm;
   mm->mmb_classify_main = &mmb_classify_main;
   mm->mmb_classify_main->vnet_classify_main = &vnet_classify_main;
+   
+  if ((error = mmb_conn_table_init(vm)))
+    return error;
+  mm->mmb_conn_table = &mmb_conn_table;
 
-  name = format (0, "mmb_%08x%c", api_version, 0);
+  name = format(0, "mmb_%08x%c", api_version, 0);
 
   /* Ask for a correctly-sized block of API message decode slots */
   mm->msg_id_base = vl_msg_api_get_msg_ids 

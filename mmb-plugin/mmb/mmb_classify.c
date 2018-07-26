@@ -35,6 +35,7 @@ typedef struct {
   u32 *rule_indexes;
   u32 offset;
   u8 packet_data[16];
+  mmb_5tuple_t *packet_5tuple;
 } mmb_classify_trace_t;
 
 static u8 *
@@ -55,6 +56,12 @@ format_mmb_classify_trace(u8 * s, va_list * args)
                  t->sw_if_index, t->next_index);
   else
      s = format(s, "\n%U", format_hex_bytes, t->packet_data, sizeof(t->packet_data));
+  if (t->packet_5tuple)
+    s = format(s, "\n5-tuple\n %016llx %016llx\n %016llx\n %016llx %016llx\n : %016llx",
+     t->packet_5tuple->kv.key[0], t->packet_5tuple->kv.key[1], 
+     t->packet_5tuple->kv.key[2], t->packet_5tuple->kv.key[3], 
+     t->packet_5tuple->kv.key[4], t->packet_5tuple->kv.value);
+
   return s;
 }
 
@@ -225,11 +232,15 @@ mmb_classify_inline(vlib_main_t * vm,
 
   mmb_rule_t *rules = mm->rules;
   mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
-  mmb_tcp_options_t tcpo0;
   u32 *rule_index; 
   f64 now = vlib_time_now(vm);
   u32 hits = 0;
   u32 drop = 0;
+
+  mmb_tcp_options_t tcpo0;
+  u8 tcpo0_flag;
+  mmb_5tuple_t pkt_5tuple;
+  init_tcp_options(&tcpo0);
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -320,9 +331,6 @@ mmb_classify_inline(vlib_main_t * vm,
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
 
-  init_tcp_options(&tcpo0);
-  u8 tcpo0_flag;
-
   while (n_left_from > 0) {
 
      u32 n_left_to_next;
@@ -374,6 +382,8 @@ mmb_classify_inline(vlib_main_t * vm,
          t0 = 0;
          matches = 0;
          tcpo0_flag = 0;
+
+         mmb_fill_5tuple(b0, tid, &pkt_5tuple);
 
          if (PREDICT_TRUE(table_index0 != ~0)) {
              hash0 = vnet_buffer(b0)->l2_classify.hash;
@@ -432,8 +442,10 @@ mmb_classify_inline(vlib_main_t * vm,
               t->sw_if_index = vnet_buffer(b0)->sw_if_index[VLIB_RX];
               t->next_index = next0;
               t->rule_indexes = (u32*)vnet_buffer(b0)->l2_classify.hash;
+              clib_memcpy(t->packet_5tuple, &pkt_5tuple,
+		                    sizeof(pkt_5tuple));
               clib_memcpy(t->packet_data, h0,
-		                    sizeof(t->packet_data));
+		                    sizeof(t->packet_data)); /* offsetof */
          }
 
          /* Verify speculative enqueue, maybe switch current next frame */

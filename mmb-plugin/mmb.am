@@ -20,7 +20,8 @@ mmb_plugin_la_SOURCES = \
   mmb/mmb_classify.c    \
   mmb/mmb_rewrite.c     \
   mmb/mmb_opts.c        \
-  mmb/mmb_plugin.api.h
+  mmb/mmb_conn.c     \
+  mmb/mmb_plugin.api.h  
 
 API_FILES += mmb/mmb.api
 
