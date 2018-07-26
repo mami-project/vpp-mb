@@ -24,7 +24,9 @@
 
 #include <vppinfra/error.h>
 
+#include <mmb/mmb_opts.h>
 #include <mmb/mmb_classify.h>
+#include <mmb/mmb_conn.h>
 
 /* Comment out to remove calls to vlib_cli_output() */
 #define MMB_DEBUG
@@ -194,16 +196,6 @@ _(icmp,ICMP)
 _(ip4,IP4)                        \
 _(ip6,IP6)
 
-/* mmb-const,cli-name,opt-kind */
-#define foreach_mmb_tcp_opts               \
-_(MMB_FIELD_TCP_OPT_MSS,MSS,2)             \
-_(MMB_FIELD_TCP_OPT_WSCALE,WScale,3)       \
-_(MMB_FIELD_TCP_OPT_SACKP,SACK-P,4)        \
-_(MMB_FIELD_TCP_OPT_SACK,SACK,5)           \
-_(MMB_FIELD_TCP_OPT_TIMESTAMP,Timestamp,8) \
-_(MMB_FIELD_TCP_OPT_FAST_OPEN,FastOpen,34) \
-_(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)
-
 typedef struct {
    u8 l4;
    u8 kind;
@@ -317,6 +309,7 @@ typedef struct {
    vlib_main_t * vlib_main;
    vnet_main_t *vnet_main;
    mmb_classify_main_t *mmb_classify_main;
+   mmb_conn_table_t *mmb_conn_table;
 
    u8 opts_in_rules:1;
    u8 enabled:1;
@@ -375,7 +368,7 @@ inline u64 bytes_to_u64(u8 *bytes) {
   const u32 len = clib_min(7,vec_len(bytes)-1);
 
   vec_foreach_index(index, bytes) {
-    value += ((u64) bytes[index]) << ((len-index)*8);
+    value += ((u64) bytes[index]) << (len-index)*8;
     if (index==len) break;
   }
 
