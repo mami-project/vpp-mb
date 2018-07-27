@@ -553,7 +553,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       mmb_rule_t *ri0, *ri1;
       u32 *rule_index0, *rule_index1; 
       u32 *rule_indexes0 = (u32 *)vnet_buffer(b0)->l2_classify.hash;
-      u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;   
+      u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;   /*XXX vec_free */
 
       vec_foreach(rule_index0, rule_indexes0) { 
          ri0 = rules+*rule_index0; /** XXX preload? **/

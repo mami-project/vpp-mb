@@ -54,8 +54,9 @@ typedef union {
     u16 unused2;
     u8 tcp_flags;
     u8 tcp_flags_valid:1;
-    u8 is_input:1;
-    u8 l4_valid:1;
+    u8 is_quoted_packet:1; /* contains icmp quoted values */
+    /* contains enough data to read ports and protocol is supported by conn table */
+    u8 l4_valid:1; 
     u8 is_nonfirst_fragment:1;
     u8 is_ip6:1;
     u8 flags_reserved:3;
@@ -80,7 +81,21 @@ typedef union {
 
 typedef struct {
   mmb_5tuple_t info; /* 56 */
+  u64 last_active_time;   /* +8 bytes = 64 */
+  u32 *rule_indexes;  /* +4 = 4 */
+  u32 reserved1;  /* +4 = 8 */
+  u64 reserved2[7]; /* +56 = 64 */
 } mmb_conn_t;
+
+typedef struct {
+  union {
+    u64 as_u64;
+    struct {
+      u32 conn_index; /* pool indices are 32b */
+      u32 reserved;
+    };
+  };
+} mmb_conn_id_t;
 
 typedef struct {
   mmb_conn_t *conn_pool;   /* connection pool */
@@ -103,10 +118,47 @@ mmb_conn_table_t mmb_conn_table;
  *
  * extract 5tuple from packet
  */
-void mmb_fill_5tuple(vlib_buffer_t *b0, int is_ip6, mmb_5tuple_t *pkt_5tuple);
+void mmb_fill_5tuple(vlib_buffer_t *b0, u8* h0, int is_ip6, mmb_5tuple_t *pkt_5tuple);
 
-void mmb_print_5tuple(mmb_5tuple_t *pkt_5tuple);
 
+/**
+ * mmb_add_conn
+ *
+ * add a connection to connection hash and pool, set timestamp&rule indices to pool
+ */
+void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, u32 *matches_stateful, u64 now);
+
+/**
+ * mmb_find_conn
+ *
+ * lookup connection bihash to find if 5tuple is registered
+ * if it is, set value of pkt_conn_id to connection_index
+ */
+int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
+                  clib_bihash_kv_48_8_t *pkt_conn_id);
+
+void mmb_track_conn(mmb_conn_t *conn, mmb_5tuple_t *pkt_5tuple, u64 now);
+
+/** 
+ * update_conn_pool
+ *
+ * update pool when rule_index is deleted 
+ **/
+void update_conn_pool(mmb_conn_table_t *mct, u32 rule_index);
+
+/*
+ * purge_conn_index
+ *
+ * remove connections that only maps to rule_index
+ */
+void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index);
+
+/*
+ * purge_conn_expired
+ *
+ * remove expired connections
+ */
+void purge_conn_expired(mmb_conn_table_t *mct, u64 now);
 
 /**
  *

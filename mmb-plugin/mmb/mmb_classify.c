@@ -31,15 +31,15 @@
 typedef struct {
   u32 sw_if_index;
   u32 next_index;
-  //u32 table_index;
   u32 *rule_indexes;
   u32 offset;
   u8 packet_data[16];
-  mmb_5tuple_t *packet_5tuple;
+
+  u64 conn_index;
+  mmb_5tuple_t packet_5tuple;
 } mmb_classify_trace_t;
 
-static u8 *
-format_mmb_classify_trace(u8 * s, va_list * args)
+static u8 *format_mmb_classify_trace(u8 * s, va_list * args)
 {
   CLIB_UNUSED(vlib_main_t * vm) = va_arg(*args, vlib_main_t *);
   CLIB_UNUSED(vlib_node_t * node) = va_arg(*args, vlib_node_t *);
@@ -52,15 +52,17 @@ format_mmb_classify_trace(u8 * s, va_list * args)
   }
 
   if (vec_len(t->rule_indexes) == 0) 
-     s = format(s, "no match: sw_if_index %d next %d\n  ",
+     s = format(s, "\tno match: sw_if_index %d next %d\n  ",
                  t->sw_if_index, t->next_index);
-  else
-     s = format(s, "\n%U", format_hex_bytes, t->packet_data, sizeof(t->packet_data));
-  if (t->packet_5tuple)
-    s = format(s, "\n5-tuple\n %016llx %016llx\n %016llx\n %016llx %016llx\n : %016llx",
-     t->packet_5tuple->kv.key[0], t->packet_5tuple->kv.key[1], 
-     t->packet_5tuple->kv.key[2], t->packet_5tuple->kv.key[3], 
-     t->packet_5tuple->kv.key[4], t->packet_5tuple->kv.value);
+ // else
+ //    s = format(s, "\t\n%U", format_hex_bytes, t->packet_data, sizeof(t->packet_data));
+
+ /*s = format(s, "\n5-tuple\n %016llx %016llx\n %016llx\n %016llx %016llx\n %016llx : %016llx",
+  t->packet_5tuple.kv.key[0], t->packet_5tuple.kv.key[1], 
+  t->packet_5tuple.kv.key[2], t->packet_5tuple.kv.key[3], 
+  t->packet_5tuple.kv.key[4], t->packet_5tuple.kv.key[5], t->packet_5tuple.kv.value);*/
+
+  s = format(s, "conn id: %u\n", t->conn_index);
 
   return s;
 }
@@ -229,6 +231,7 @@ mmb_classify_inline(vlib_main_t * vm,
   mmb_main_t *mm = &mmb_main;
   mmb_classify_main_t *mcm = mm->mmb_classify_main;
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
 
   mmb_rule_t *rules = mm->rules;
   mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
@@ -240,6 +243,8 @@ mmb_classify_inline(vlib_main_t * vm,
   mmb_tcp_options_t tcpo0;
   u8 tcpo0_flag;
   mmb_5tuple_t pkt_5tuple;
+  clib_bihash_kv_48_8_t pkt_conn_index;
+
   init_tcp_options(&tcpo0);
 
   from = vlib_frame_vector_args(frame);
@@ -348,7 +353,7 @@ mmb_classify_inline(vlib_main_t * vm,
          vnet_classify_entry_t *e0;
          u64 hash0;
          u8 *h0;
-         u32 *matches;
+         u32 *matches, *matches_opener;
          mmb_rule_t *rule;
 
          /* Stride 3 seems to work best */
@@ -381,10 +386,12 @@ mmb_classify_inline(vlib_main_t * vm,
          e0 = 0;
          t0 = 0;
          matches = 0;
+         matches_opener = 0;
          tcpo0_flag = 0;
 
-         mmb_fill_5tuple(b0, tid, &pkt_5tuple);
+         mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
 
+         /* matching stateless rules */
          if (PREDICT_TRUE(table_index0 != ~0)) {
              hash0 = vnet_buffer(b0)->l2_classify.hash;
              t0 = pool_elt_at_index(vcm->tables, table_index0);
@@ -397,10 +404,16 @@ mmb_classify_inline(vlib_main_t * vm,
                     rule = rules+*rule_index;
                     if (!rule->opts_in_matches 
                || mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid)) {
-                       /* of rule->stateful_flag then create_session and don't add */
-                       vec_add1(matches, *rule_index);
-                       next0 = e0->next_index;                     
-                       rule->match_count++;
+                       
+                       
+                       if (rule->stateful == 0) {
+                          vec_add1(matches, *rule_index);
+                          next0 = e0->next_index;                     
+                        } else {
+                          vec_add1(matches_opener, *rule_index);
+                        }
+
+                        rule->match_count++;
                     }   
                  }
                  hits++;
@@ -411,7 +424,6 @@ mmb_classify_inline(vlib_main_t * vm,
                   t0 = pool_elt_at_index(vcm->tables,
                                           t0->next_table_index);
                 else { 
-                  vnet_buffer(b0)->l2_classify.hash = (u64)matches;
                   break;
                 }
 
@@ -425,8 +437,13 @@ mmb_classify_inline(vlib_main_t * vm,
                       if (!rule->opts_in_matches 
                 || mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid)) {
 
-                         vec_add1(matches, *rule_index);
-                         next0 = e0->next_index;                     
+                        if (rule->stateful == 0) {
+                           vec_add1(matches, *rule_index);
+                           next0 = e0->next_index;                     
+                         } else {
+                           vec_add1(matches_opener, *rule_index);
+                         }
+ 
                          rule->match_count++;
                       } 
                    }
@@ -435,6 +452,33 @@ mmb_classify_inline(vlib_main_t * vm,
              }
          }
 
+         /* stateful matching */
+         if (mct->conn_hash_is_initialized) {
+             mmb_conn_t *conn;
+
+            if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index)) { /* XXX check timeout */
+               /* found connection, update entry and add rule indexes  */
+
+               mmb_conn_id_t conn_id;
+               conn_id.as_u64 = pkt_conn_index.value;
+
+               conn = pool_elt_at_index(mct->conn_pool, conn_id.conn_index);
+               mmb_track_conn(conn, &pkt_5tuple, now);
+               vec_append(matches, conn->rule_indexes);
+
+            } else if (vec_len(matches_opener) != 0 
+                        && pkt_5tuple.pkt_info.l4_valid == 1) {
+               /* new valid connection matched */
+               mmb_add_conn(mct, &pkt_5tuple, matches_opener, now);
+               vec_append(matches, matches_opener);
+               
+            } else { /* XXX debugging, rm */
+               pkt_conn_index.value = ~0;
+            }
+         }
+
+         vnet_buffer(b0)->l2_classify.hash = (u64)matches;
+
          if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
               mmb_classify_trace_t * t =
@@ -442,11 +486,14 @@ mmb_classify_inline(vlib_main_t * vm,
               t->sw_if_index = vnet_buffer(b0)->sw_if_index[VLIB_RX];
               t->next_index = next0;
               t->rule_indexes = (u32*)vnet_buffer(b0)->l2_classify.hash;
-              clib_memcpy(t->packet_5tuple, &pkt_5tuple,
+              clib_memcpy(&t->packet_5tuple, &pkt_5tuple,
 		                    sizeof(pkt_5tuple));
               clib_memcpy(t->packet_data, h0,
 		                    sizeof(t->packet_data)); /* offsetof */
+              t->conn_index = pkt_conn_index.value;
          }
+
+         vec_free(matches_opener);
 
          /* Verify speculative enqueue, maybe switch current next frame */
          vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next,
@@ -462,6 +509,7 @@ mmb_classify_inline(vlib_main_t * vm,
   vlib_node_increment_counter(vm, node->node_index,
                                MMB_CLASSIFY_ERROR_DROP,
                                drop);
+
 
   return frame->n_vectors;
 }

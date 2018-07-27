@@ -461,7 +461,7 @@ show_conn_command_fn(vlib_main_t * vm,
                         vlib_cli_command_t * cmd) {
   unformat_input_tolower(input);
   mmb_main_t *mm = &mmb_main;
-  mmb_conn_table_t *mst = mm->mmb_conn_table;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
   int verbose = 0;
 
   if (unformat(input, "verbose"))
@@ -469,11 +469,37 @@ show_conn_command_fn(vlib_main_t * vm,
   if (!unformat_is_eof(input))
      return clib_error_return(0, "Syntax error: unexpected additional element");
   
-   if (mst->conn_hash_is_initialized) {
-     vlib_cli_output(vm, "Connections lookup table:\n%U",
-                     BV(format_bihash), &mst->conn_hash, verbose);
+   if (mct->conn_hash_is_initialized) {
+     vlib_cli_output(vm, "%U\n",
+                     BV(format_bihash), &mct->conn_hash, verbose);
+
+     if (verbose) {
+        vlib_cli_output(vm, "Connections pool\n");
+        if (pool_elts(mct->conn_pool) == 0)
+           vlib_cli_output(vm, "empty\n");
+        mmb_conn_t *conn;
+        pool_foreach(conn, mct->conn_pool,({
+
+           u32 conn_index = conn - mct->conn_pool;
+           vlib_cli_output(vm, "[%u]:\n key\n %016llx %016llx %016llx\n"
+                                " %016llx %016llx %016llx :\n %016llx\n",
+                          conn_index+1,
+                          conn->info.kv.key[0], conn->info.kv.key[1], 
+                          conn->info.kv.key[2], conn->info.kv.key[3], 
+                          conn->info.kv.key[4], conn->info.kv.key[5], 
+                          conn->info.kv.value); /* XXX print addresses */
+
+           vlib_cli_output(vm, " time %lu rules", conn->last_active_time);
+           u32 *rule_index;
+           vec_foreach(rule_index, conn->rule_indexes) {
+              vlib_cli_output(vm, " %u", *rule_index);
+           };
+           vlib_cli_output(vm, "\n");
+        }));
+      }      
+
    } else {
-     vlib_cli_output(vm, "Connections lookup table is not allocated\n");
+     vlib_cli_output(vm, "Connection table is not allocated\n");
    }
 
    return 0;
@@ -1431,7 +1457,7 @@ int mmb_lookup_pool_del(u32 rule_index, u32 pool_index) {
    lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
    if (vec_len(lookup_entry->rule_indexes) == 1) {
       vec_free(lookup_entry->rule_indexes);
-      pool_put_index(mm->lookup_pool, pool_index);
+      pool_put(mm->lookup_pool, lookup_entry);
    } else {
       vec_delete(lookup_entry->rule_indexes, 1, rule_index);
    }
@@ -1545,12 +1571,12 @@ clib_error_t *parse_rule(unformat_input_t * input,
 clib_error_t *mmb_add_rule(mmb_rule_t *rule) {
 
   mmb_main_t *mm = &mmb_main;
-  mmb_conn_table_t *mst = mm->mmb_conn_table;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
 
   if (!add_to_classifier(rule))
     return clib_error_return(0, "Invalid rule: Could not add to classifier");
 
-  if (rule->stateful && !mst->conn_hash_is_initialized)
+  if (rule->stateful && !mct->conn_hash_is_initialized)
     mmb_conn_hash_init();
       
   return 0;
@@ -1620,7 +1646,9 @@ void update_lookup_pool(u32 rule_index) {
 }
 
 static int remove_rule(u32 rule_index) {
+
   mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
   mmb_rule_t *rule, *rules = mm->rules;
   mmb_table_t *table, *tables = mm->tables;
   u32 table_index;
@@ -1664,6 +1692,12 @@ static int remove_rule(u32 rule_index) {
        realloc_table(table, rule_index); 
        rule->classify_table_index = table->index;
      }
+  }
+
+  if (rule->stateful) {
+    purge_conn_index(mct, rule_index);
+  } else {
+    update_conn_pool(mct, rule_index);
   }
 
   free_rule(rule);
