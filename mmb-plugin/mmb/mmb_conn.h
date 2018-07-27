@@ -83,7 +83,11 @@ typedef struct {
   mmb_5tuple_t info; /* 56 */
   u64 last_active_time;   /* +8 bytes = 64 */
   u32 *rule_indexes;  /* +4 = 4 */
-  u32 reserved1;  /* +4 = 8 */
+  union {
+    u8 as_u8[2];
+    u16 as_u16;
+  } tcp_flags_seen;   /* +2 bytes = 6 */
+  u16 reserved1;  /* +4 = 8 */
   u64 reserved2[7]; /* +56 = 64 */
 } mmb_conn_t;
 
@@ -92,7 +96,8 @@ typedef struct {
     u64 as_u64;
     struct {
       u32 conn_index; /* pool indices are 32b */
-      u32 reserved;
+      u8 dir; /* 0: first seen direction (SYN) 1: other direction (SYNACK) */
+      u8 reserved[3];
     };
   };
 } mmb_conn_id_t;
@@ -107,6 +112,8 @@ typedef struct {
   u32 conn_table_hash_num_buckets;
   uword conn_table_hash_memory_size;
   u64 conn_table_max_entries; 
+
+  u32 timeouts_value[3];
 
 } mmb_conn_table_t;
 
@@ -135,9 +142,9 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, u32 *matches_st
  * if it is, set value of pkt_conn_id to connection_index
  */
 int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
-                  clib_bihash_kv_48_8_t *pkt_conn_id);
+                  clib_bihash_kv_48_8_t *pkt_conn_id, u64 now);
 
-void mmb_track_conn(mmb_conn_t *conn, mmb_5tuple_t *pkt_5tuple, u64 now);
+void mmb_track_conn(mmb_conn_t *conn, mmb_5tuple_t *pkt_5tuple, u8 dir, u64 now);
 
 /** 
  * update_conn_pool
