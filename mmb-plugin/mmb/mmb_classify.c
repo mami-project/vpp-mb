@@ -237,7 +237,7 @@ mmb_classify_inline(vlib_main_t * vm,
   mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
   u32 *rule_index; 
   f64 now = vlib_time_now(vm);
-  u64 now_ticks = clib_cpu_time_now ();
+  u64 now_ticks = clib_cpu_time_now();
    
   u32 hits = 0;
   u32 drop = 0;
@@ -458,7 +458,7 @@ mmb_classify_inline(vlib_main_t * vm,
          if (mct->conn_hash_is_initialized) {
              mmb_conn_t *conn;
 
-            if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index, now)) { /* XXX check timeout */
+            if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index, now_ticks)) { /* XXX check timeout */
                /* found connection, update entry and add rule indexes  */
 
                mmb_conn_id_t conn_id;

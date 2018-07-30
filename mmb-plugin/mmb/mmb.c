@@ -23,6 +23,7 @@
 #include <mmb/mmb.h>
 #include <mmb/mmb_format.h>
 #include <mmb/mmb_classify.h>
+#include <mmb/mmb_conn.h>
 
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
@@ -313,6 +314,9 @@ enable_command_fn(vlib_main_t * vm,
    u32 sw_if_index, enabled_sw_if_index;
    mmb_main_t *mm = &mmb_main;
    clib_error_t *error;
+   mmb_conn_table_t *mct = mm->mmb_conn_table;
+
+   purge_conn_expired_now(mct);
 
    if ( (error = mmb_enable_disable_fn(vm, input, cmd, &sw_if_index)) )
      return error;
@@ -343,6 +347,9 @@ disable_command_fn(vlib_main_t * vm,
    u32 sw_if_index, enabled_sw_if_index;
    mmb_main_t *mm = &mmb_main;
    clib_error_t *error;
+   mmb_conn_table_t *mct = mm->mmb_conn_table;
+   
+   purge_conn_expired_now(mct);
 
    if ( (error = mmb_enable_disable_fn(vm, input, cmd, &sw_if_index)) )
      return error;
@@ -373,6 +380,9 @@ list_rules_command_fn(vlib_main_t * vm,
                           unformat_input_t * input,
                           vlib_cli_command_t * cmd) {
   mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
+
+  purge_conn_expired_now(mct);
 
   if (!unformat_is_eof(input))
     return clib_error_return(0, "Syntax error: unexpected additional element");
@@ -383,7 +393,9 @@ list_rules_command_fn(vlib_main_t * vm,
 }
 
 static void flush() {
+
   mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
   mmb_rule_t *rules = mm->rules, *rule;
   u32 first_table_index = ~0;
 
@@ -393,6 +405,8 @@ static void flush() {
   /* detach first table */
   first_table_index = mm->tables[0].index;
   attach_table_if(first_table_index, 0);
+
+  purge_conn_forced(mct);
 
   /* delete sessions */
   vec_foreach(rule, rules) {
@@ -444,7 +458,11 @@ show_tables_command_fn(vlib_main_t * vm,
                         vlib_cli_command_t * cmd) {
   unformat_input_tolower(input);
   mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
   int verbose = 0;
+
+  purge_conn_expired_now(mct);
+
   if (unformat(input, "verbose"))
       verbose = 1;
   if (!unformat_is_eof(input))
@@ -463,6 +481,8 @@ show_conn_command_fn(vlib_main_t * vm,
   mmb_main_t *mm = &mmb_main;
   mmb_conn_table_t *mct = mm->mmb_conn_table;
   int verbose = 0;
+
+  purge_conn_expired_now(mct);
 
   if (unformat(input, "verbose"))
       verbose = 1;
@@ -1589,6 +1609,9 @@ clib_error_t * mmb_add_rule_command(vlib_main_t *vm, unformat_input_t *input,
   mmb_rule_t rule;
   clib_error_t *error;
   mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
+
+  purge_conn_expired_now(mct);
 
   init_rule(&rule);
   if (stateful)
@@ -1714,8 +1737,13 @@ static clib_error_t*
 del_rule_command_fn(vlib_main_t *vm,
                     unformat_input_t *input,
                     vlib_cli_command_t *cmd) {
+
+  mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
   u32 rule_index;
   int ret;
+
+  purge_conn_expired_now(mct);
 
   if (!unformat(input, "%u", &rule_index)) 
     return clib_error_return(0, 

@@ -48,6 +48,8 @@
  */
 static void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes);
 
+static void purge_conn_expired(mmb_conn_table_t *mct, u64 now);
+
 /** 
  * return index of val in vec
  */
@@ -119,6 +121,25 @@ static_always_inline u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t
    return timeout_ticks + conn->last_active_time;
 }
 
+void purge_conn_forced(mmb_conn_table_t *mct) {
+
+  mmb_conn_t *conn;
+
+  /* purge hash */
+  mct->conn_hash_is_initialized = 0;
+  BV(clib_bihash_free) (&mct->conn_hash);
+
+  /* purge pool */
+  pool_flush(conn, mct->conn_pool, ({
+      vec_free(conn->rule_indexes);
+  }));
+  pool_free(mct->conn_pool);
+}
+
+void purge_conn_expired_now(mmb_conn_table_t *mct) {
+   purge_conn_expired(mct, clib_cpu_time_now());
+}
+
 void purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
 
    mmb_conn_t *conn;
@@ -162,6 +183,8 @@ void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
       conn_key.l4.port[0] = conn->info.l4.port[1];
       conn_key.l4.port[1] = conn->info.l4.port[0];  
       mmb_del_5tuple(mct, &conn_key.kv);
+
+      vec_free(conn->rule_indexes);
 
       pool_put(mct->conn_pool, conn);
    }

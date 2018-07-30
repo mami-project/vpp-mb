@@ -144,6 +144,11 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, u32 *matches_st
 int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
                   clib_bihash_kv_48_8_t *pkt_conn_id, u64 now);
 
+/**
+ * mmb_track_conn
+ *
+ * update connection state
+ */
 void mmb_track_conn(mmb_conn_t *conn, mmb_5tuple_t *pkt_5tuple, u8 dir, u64 now);
 
 /** 
@@ -153,19 +158,26 @@ void mmb_track_conn(mmb_conn_t *conn, mmb_5tuple_t *pkt_5tuple, u8 dir, u64 now)
  **/
 void update_conn_pool(mmb_conn_table_t *mct, u32 rule_index);
 
-/*
+/**
  * purge_conn_index
  *
  * remove connections that only maps to rule_index
  */
 void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index);
 
-/*
- * purge_conn_expired
+/**
+ * purge_conn_expired_now
  *
- * remove expired connections
+ * remove expired connections that are now expired
  */
-void purge_conn_expired(mmb_conn_table_t *mct, u64 now);
+void purge_conn_expired_now(mmb_conn_table_t *mct);
+
+/**
+ * purge_conn_forced
+ *
+ * purge all entries in connection tables
+ */
+void purge_conn_forced(mmb_conn_table_t *mct);
 
 /**
  *
