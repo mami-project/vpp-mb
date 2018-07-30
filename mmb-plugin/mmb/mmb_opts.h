@@ -29,18 +29,18 @@ _(MMB_FIELD_TCP_OPT_FAST_OPEN , FastOpen  , 34) \
 _(MMB_FIELD_TCP_OPT_MPTCP     , MPTCP     , 30)
 
 /* mmb-const,cli-name,opt-kind */
-#define foreach_mmb_ip6_eh                                   \
-_(MMB_FIELD_IP6_EH_HOPBYHOP , "HopByHop", 0)                      \
-_(MMB_FIELD_IP6_EH_ROUTING  , "Routing", 43)                       \
-_(MMB_FIELD_IP6_EH_FRAGMENT , "Fragment", 44)                      \
-_(MMB_FIELD_IP6_EH_ESP      , "EncapSecurityPayload", 50)            \
-_(MMB_FIELD_IP6_EH_AH       , "AuthenticationHeader", 51)              \
-_(MMB_FIELD_IP6_EH_DESTOPT  , "DestOpt", 60)                       \
-_(MMB_FIELD_IP6_EH_MOBILITY , "MobilityHeader", 135)                         \
-_(MMB_FIELD_IP6_EH_HIP      , "HostIdentityProtocol", 139) \
-_(MMB_FIELD_IP6_EH_SHIM6    , "Shim6", 140)                          \
-_(MMB_FIELD_IP6_EH_EXP1     , "ExpTesting1", 253)     \
-_(MMB_FIELD_IP6_EH_EXP2     , "ExpTesting2", 254)
+#define foreach_mmb_ip6_eh                                                 \
+_(MMB_FIELD_IP6_EH_HOPBYHOP , "HopByHop", 0)                               \
+_(MMB_FIELD_IP6_EH_ROUTING  , "Routing", 43)                               \
+_(MMB_FIELD_IP6_EH_FRAGMENT , "Fragment", 44)                              \
+_(MMB_FIELD_IP6_EH_ESP      , "EncapSecurityPayload", 50)/*matching only*/ \
+_(MMB_FIELD_IP6_EH_AH       , "AuthenticationHeader", 51)                  \
+_(MMB_FIELD_IP6_EH_DESTOPT  , "DestOpt", 60)                               \
+_(MMB_FIELD_IP6_EH_MOBILITY , "MobilityHeader", 135)                       \
+_(MMB_FIELD_IP6_EH_HIP      , "HostIdentityProtocol", 139)                 \
+_(MMB_FIELD_IP6_EH_SHIM6    , "Shim6", 140)                                \
+_(MMB_FIELD_IP6_EH_EXP1     , "ExpTesting1", 253) /* not in CLI */         \
+_(MMB_FIELD_IP6_EH_EXP2     , "ExpTesting2", 254) /* not in CLI */
 
 typedef struct {
   u8 is_stripped:1; // flag to tell if this option has been stripped

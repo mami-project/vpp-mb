@@ -135,6 +135,17 @@
   _(TCP_OPT_MPTCP, "tcp-opt-mptcp", 0, 0)         \
   _(TCP_OPT, "tcp-opt", 0, 0)                     \
                                                   \
+  _(IP6_EH_HOPBYHOP, "ip6-eh-hopbyhop", 8, 1)     \
+  _(IP6_EH_ROUTING, "ip6-eh-routing", 8, 1)       \
+  _(IP6_EH_FRAGMENT, "ip6-eh-fragment", 8, 1)     \
+  _(IP6_EH_ESP, "ip6-eh-esp", 8, 1)               \
+  _(IP6_EH_AH, "ip6-eh-ah", 8, 1)                 \
+  _(IP6_EH_DESTOPT, "ip6-eh-destopt", 8, 1)       \
+  _(IP6_EH_MOBILITY, "ip6-eh-mobility", 8, 1)     \
+  _(IP6_EH_HIP, "ip6-eh-hip", 8, 1)               \
+  _(IP6_EH_SHIM6, "ip6-eh-shim6", 8, 1)           \
+  _(IP6_EH, "ip6-eh", 8, 1)                       \
+                                                  \
   _(ALL, "all", 0, 1)
 
 enum
