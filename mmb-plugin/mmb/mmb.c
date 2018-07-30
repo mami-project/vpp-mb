@@ -482,7 +482,7 @@ show_conn_command_fn(vlib_main_t * vm,
   mmb_conn_table_t *mct = mm->mmb_conn_table;
   int verbose = 0;
 
-  //purge_conn_expired_now(mct);
+  purge_conn_expired_now(mct);
 
   if (unformat(input, "verbose"))
       verbose = 1;
@@ -1965,10 +1965,6 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
        goto end;
 
      switch (field) {
-       case MMB_FIELD_IP4_SADDR:case MMB_FIELD_IP4_DADDR:
-       case MMB_FIELD_IP6_SADDR:case MMB_FIELD_IP6_DADDR:
-           rule->loop_packet = 1;
-           break;
        case MMB_FIELD_ALL:
          if (keyword != MMB_TARGET_STRIP || vec_len(value)) {
            error = clib_error_return(0, "'all' in a <target> can only be used"
@@ -1995,7 +1991,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          translate_target_ip4_ecn(target);
          break;
 
-#define _(a,b,c) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=c;\
+#define _(a,b,c) case a: {target->field = field = MMB_FIELD_TCP_OPT; target->opt_kind=c;\
                           rule->opts_in_targets=1; break;}
    foreach_mmb_tcp_opts
 #undef _
@@ -2006,69 +2002,93 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
        default:
          break;
      }
-     
-     if (keyword == MMB_TARGET_STRIP) {
 
-       /* Ensure that field of strip target is a tcp opt. */
-       if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
-             && field <= MMB_FIELD_ALL)) {
-         error = clib_error_return(0, "strip <field> must be a tcp option or 'all'");
-         goto end;
-       }
-
-       /* build option strip list  */
-       if (!rule->has_strips)  {
-         rule->has_strips = 1; 
-         /* first strip target, set type */
-         if (reverse) {
-            rule->whitelist = 1;
-            /* flip bitmap to 1s XXX: typo in func name !!*/
-            clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
-         }
-       } else if (rule->whitelist != reverse) {
-         error = clib_error_return(0, "inconsistent use of ! in strip");
-         goto end;
-       }
-
-       if (field == MMB_FIELD_ALL) /* strip all */
-         target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
-
-       clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
-       vec_insert_elt_first(deletions, &index);
-     } else if (keyword == MMB_TARGET_ADD) { 
-
+    switch (keyword) {
+      case MMB_TARGET_STRIP:
         /* Ensure that field of strip target is a tcp opt. */
-       if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
-             && field < MMB_FIELD_ALL)) {
-         error = clib_error_return(0, "add <field> must be a tcp option");
-         goto end;
-       }
-
-       /* empty value should be fixed len and len = 0 */
-       if (vec_len(value) == 0 
-             && !(is_fixed_length(field) && lens[field_toindex(field)]==0) ) {
-         error = clib_error_return(0, "add <field> missing value");
-         goto end;
-       }
-
-       /* add transport opt to add-list and register for deletion */
-       mmb_transport_option_t opt = to_transport_option(target);
-       vec_add1(rule->opt_adds, opt);
-       rule->has_adds = 1;
-       vec_insert_elt_first(deletions, &index);
-     } else if (keyword == MMB_TARGET_MODIFY) { 
-        if  (MMB_FIELD_TCP_OPT_MSS <= field 
-             && field < MMB_FIELD_ALL) {
-          vec_add1(rule->opt_mods, *target);
-          vec_insert_elt_first(deletions, &index);
+        if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
+             && field <= MMB_FIELD_ALL)) {
+          error = clib_error_return(0, "strip <field> must be a tcp option or 'all'");
+          goto end;
         }
-     } else if (keyword == MMB_TARGET_LB) {
-       rule->lb = 1;
-       if (vec_len(rule->targets) > 1) {
-         error = clib_error_return(0, "lb is a unique target");
-         goto end;
-       }
-     }
+
+        /* build option strip list  */
+        if (!rule->has_strips)  {
+          rule->has_strips = 1; 
+          /* first strip target, set type */
+          if (reverse) {
+             rule->whitelist = 1;
+             /* flip bitmap to 1s XXX: typo in func name !!*/
+             clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
+          }
+        } else if (rule->whitelist != reverse) {
+          error = clib_error_return(0, "inconsistent use of ! in strip");
+          goto end;
+        }
+
+        if (field == MMB_FIELD_ALL) /* strip all */
+          target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
+
+        clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
+        vec_insert_elt_first(deletions, &index);
+        break;
+
+     case MMB_TARGET_ADD:
+        /* Ensure that field of add target is a tcp opt. */
+        if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
+              && field < MMB_FIELD_ALL)) {
+          error = clib_error_return(0, "add <field> must be a tcp option");
+          goto end;
+        }
+
+        /* empty value should be fixed len and len = 0 */
+        if (vec_len(value) == 0 
+              && !(is_fixed_length(field) && lens[field_toindex(field)]==0) ) {
+          error = clib_error_return(0, "add <field> missing value");
+          goto end;
+        }
+
+        /* add transport opt to add-list and register for deletion */
+        mmb_transport_option_t opt = to_transport_option(target);
+        vec_add1(rule->opt_adds, opt);
+        rule->has_adds = 1;
+        vec_insert_elt_first(deletions, &index);
+        break;
+      case MMB_TARGET_MODIFY:
+         if  (MMB_FIELD_TCP_OPT_MSS <= field 
+              && field < MMB_FIELD_ALL) {
+           vec_add1(rule->opt_mods, *target);
+           vec_insert_elt_first(deletions, &index);
+         }
+         break;
+      case MMB_TARGET_LB:
+         rule->lb = 1;
+         if (vec_len(rule->targets) > 1) {
+            error = clib_error_return(0, "lb is a unique target");
+            goto end;
+         }
+         break;
+      case MMB_TARGET_SHUFFLE:
+         if (rule->stateful == 0) {
+            error = clib_error_return(0, "shuffle is only valid with add-stateful");
+            goto end;
+         }
+         if (vec_len(value) != 0) {
+            error = clib_error_return(0, "shuffle does not allow value setting");
+            goto end;
+         }
+         if (!(field == MMB_FIELD_TCP_SEQ_NUM || field == MMB_FIELD_TCP_ACK_NUM 
+          || field == MMB_FIELD_TCP_SPORT || field == MMB_FIELD_TCP_DPORT 
+          || field == MMB_FIELD_UDP_SPORT || field == MMB_FIELD_UDP_DPORT
+          || (field == MMB_FIELD_TCP_OPT && target->opt_kind == 5) 
+          || field == MMB_FIELD_IP4_ID || field == MMB_FIELD_IP6_FLOW_LABEL)) {
+            error = clib_error_return(0, "invalid field for shuffle target");
+            goto end;
+         }
+         break;
+      default:
+         break;
+     } 
    } 
 
    /* delete opts from targets */ 

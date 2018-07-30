@@ -53,7 +53,8 @@
   _(STRIP)                 \
   _(MODIFY)                \
   _(ADD)                   \
-  _(LB)       
+  _(LB)                    \
+  _(SHUFFLE)  
 
 /* macro, CLI name, size, fixed len */
 #define foreach_mmb_field                         \
@@ -288,9 +289,9 @@ typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 *
   u8 has_adds:1;
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
-  u8 loop_packet:1;
   u8 lb:1;
   u8 stateful:1;
+  u8 unused:1;
 
 } mmb_rule_t;
 
