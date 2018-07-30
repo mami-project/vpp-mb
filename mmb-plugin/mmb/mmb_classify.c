@@ -338,6 +338,14 @@ mmb_classify_inline(vlib_main_t * vm,
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
 
+  /* perform timeout check if needed */
+  if (mct->conn_hash_is_initialized
+      && get_conn_table_check_time(vm, mm->last_conn_table_timeout_check) < now_ticks) {
+
+     if (purge_conn_expired(mct, now_ticks))
+         mm->last_conn_table_timeout_check = now_ticks;
+  }
+
   while (n_left_from > 0) {
 
      u32 n_left_to_next;
@@ -458,7 +466,7 @@ mmb_classify_inline(vlib_main_t * vm,
          if (mct->conn_hash_is_initialized) {
              mmb_conn_t *conn;
 
-            if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index, now_ticks)) { /* XXX check timeout */
+            if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index)) { 
                /* found connection, update entry and add rule indexes  */
 
                mmb_conn_id_t conn_id;

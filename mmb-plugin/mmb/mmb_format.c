@@ -859,3 +859,76 @@ u8* mmb_format_tables(u8 *s, va_list *args) {
    return s;
 }
 
+u8 *mmb_format_timeout_type(u8 *s, va_list *args) {
+   int timeout_type = va_arg(*args, int);
+
+   switch(timeout_type) {
+      case MMB_TIMEOUT_TCP_TRANSIENT:
+         s = format(s, "tcp transient");
+         break;
+      case MMB_TIMEOUT_TCP_IDLE:
+         s = format(s, "tcp idle");
+         break;
+      case MMB_TIMEOUT_UDP_IDLE:
+         s = format(s, "udp idle");
+         break;
+      default:
+         break;
+   }
+
+   return s;
+}
+
+u8 *mmb_format_conn_table(u8 *s, va_list *args) {
+
+   mmb_conn_table_t *mct = va_arg(*args, mmb_conn_table_t*);
+   int verbose = va_arg(*args, int);
+   
+   mmb_conn_t *conn_pool = mct->conn_pool, *conn;
+   u32 *rule_index, conn_index;   
+
+   if (verbose)
+      s = format(s, "%U\n",
+                 BV(format_bihash), &mct->conn_hash, verbose);
+
+   s = format(s, "Connections pool");
+   if (pool_elts(conn_pool) == 0)
+      s = format(s, " is empty");
+   s = format(s, "\n");
+
+   pool_foreach(conn, conn_pool,({
+
+     conn_index = conn - conn_pool;
+     s = format(s, "[%u]: %U\n", conn_index+1, mmb_format_timeout_type, 
+                     get_conn_timeout_type(mct, conn));
+     s = format(s, " key\n %016llx %016llx %016llx\n"
+                                " %016llx %016llx %016llx :\n %016llx\n",
+                conn->info.kv.key[0], conn->info.kv.key[1], 
+                conn->info.kv.key[2], conn->info.kv.key[3], 
+                conn->info.kv.key[4], conn->info.kv.key[5], 
+                conn->info.kv.value); /* XXX print addresses */
+
+     s = format(s, " time %lu rules", conn->last_active_time);
+     
+     vec_foreach(rule_index, conn->rule_indexes) {
+        s = format(s, " %u", *rule_index);
+     };
+
+     mmb_main_t *mm = &mmb_main; /* XXX rm */
+     int timeout_type = get_conn_timeout_type(mct, conn);
+     u64 timeout_ticks = mct->timeouts_value[timeout_type];
+     timeout_ticks *= mm->vlib_main->clib_time.clocks_per_second;
+     s = format(s, " now %lu last_active %lu expiring %lu\n", clib_cpu_time_now(),
+                conn->last_active_time, timeout_ticks + conn->last_active_time);
+     if (timeout_type > 0)
+        s = format(s, "tcp-flags-seen forward %02x backward %02x\n", 
+                     conn->tcp_flags_seen.as_u8[0], conn->tcp_flags_seen.as_u8[1]);
+
+     s = format(s, "\n");
+   }));     
+
+   s = format(s, "currently_handling_connections %u\n", mct->currently_handling_connections);
+
+   return s;
+}
+

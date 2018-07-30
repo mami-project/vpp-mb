@@ -482,7 +482,7 @@ show_conn_command_fn(vlib_main_t * vm,
   mmb_conn_table_t *mct = mm->mmb_conn_table;
   int verbose = 0;
 
-  purge_conn_expired_now(mct);
+  //purge_conn_expired_now(mct);
 
   if (unformat(input, "verbose"))
       verbose = 1;
@@ -490,33 +490,9 @@ show_conn_command_fn(vlib_main_t * vm,
      return clib_error_return(0, "Syntax error: unexpected additional element");
   
    if (mct->conn_hash_is_initialized) {
-     vlib_cli_output(vm, "%U\n",
-                     BV(format_bihash), &mct->conn_hash, verbose);
 
-     if (verbose) {
-        vlib_cli_output(vm, "Connections pool\n");
-        if (pool_elts(mct->conn_pool) == 0)
-           vlib_cli_output(vm, "empty\n");
-        mmb_conn_t *conn;
-        pool_foreach(conn, mct->conn_pool,({
-
-           u32 conn_index = conn - mct->conn_pool;
-           vlib_cli_output(vm, "[%u]:\n key\n %016llx %016llx %016llx\n"
-                                " %016llx %016llx %016llx :\n %016llx\n",
-                          conn_index+1,
-                          conn->info.kv.key[0], conn->info.kv.key[1], 
-                          conn->info.kv.key[2], conn->info.kv.key[3], 
-                          conn->info.kv.key[4], conn->info.kv.key[5], 
-                          conn->info.kv.value); /* XXX print addresses */
-
-           vlib_cli_output(vm, " time %lu rules", conn->last_active_time);
-           u32 *rule_index;
-           vec_foreach(rule_index, conn->rule_indexes) {
-              vlib_cli_output(vm, " %u", *rule_index);
-           };
-           vlib_cli_output(vm, "\n");
-        }));
-      }      
+      vlib_cli_output(vm, "%U\n",
+                      mmb_format_conn_table, mct, verbose);
 
    } else {
      vlib_cli_output(vm, "Connection table is not allocated\n");
@@ -2362,6 +2338,7 @@ static clib_error_t * mmb_init(vlib_main_t *vm) {
   mm->vlib_main = vm;
   mm->mmb_classify_main = &mmb_classify_main;
   mm->mmb_classify_main->vnet_classify_main = &vnet_classify_main;
+  mm->last_conn_table_timeout_check = clib_cpu_time_now();
    
   if ((error = mmb_conn_table_init(vm)))
     return error;

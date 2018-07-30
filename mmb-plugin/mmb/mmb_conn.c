@@ -17,8 +17,6 @@
  * Author: Korian Edeline
  */
 
-#include <netinet/in.h>
-
 #include <mmb/mmb.h>
 #include <mmb/mmb_opts.h>
 #include <mmb/mmb_conn.h>
@@ -29,17 +27,19 @@
 #  define vl_print(handle, ...) 
 #endif
 
-   
-#define MMB_TIMEOUT_TCP_TRANSIENT 0
-#define MMB_TIMEOUT_TCP_IDLE 1
-#define MMB_TIMEOUT_UDP_IDLE 2
-
+/*
 #define TCP_SESSION_TRANSIENT_TIMEOUT_SEC (3600*4)
 #define TCP_SESSION_IDLE_TIMEOUT_SEC 120
 #define UDP_SESSION_IDLE_TIMEOUT_SEC 600
+*/
 
-#define TCP_FLAGS_RSTFINACKSYN 0x17
-#define TCP_FLAGS_ACKSYN 0x12
+#define UDP_SESSION_IDLE_TIMEOUT_SEC 20
+#define TCP_SESSION_IDLE_TIMEOUT_SEC (3600*4)
+#define TCP_SESSION_TRANSIENT_TIMEOUT_SEC 5
+
+#define MMB_CONN_TABLE_DEFAULT_HASH_NUM_BUCKETS (64 * 1024)
+#define MMB_CONN_TABLE_DEFAULT_HASH_MEMORY_SIZE (1<<30)
+#define MMB_CONN_TABLE_DEFAULT_MAX_ENTRIES 1000000
 
 /**
  * purge_conn
@@ -48,7 +48,9 @@
  */
 static void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes);
 
-static void purge_conn_expired(mmb_conn_table_t *mct, u64 now);
+static void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index);
+
+static_always_inline void wait_and_lock_connection_handling(mmb_conn_table_t *mct);
 
 /** 
  * return index of val in vec
@@ -74,35 +76,9 @@ static_always_inline int mmb_add_5tuple(mmb_conn_table_t *mct, clib_bihash_kv_48
 }
 
 int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
-		            clib_bihash_kv_48_8_t *pkt_conn_id, u64 now) { /* XXX check timeout */
+		            clib_bihash_kv_48_8_t *pkt_conn_id) { 
   return (BV(clib_bihash_search) 
             (&mct->conn_hash, &pkt_5tuple->kv, pkt_conn_id) == 0);
-}
-
-static_always_inline int
-get_conn_timeout_type(mmb_conn_table_t *mct, mmb_conn_t *conn) {
-  /* seen both SYNs and ACKs but not FIN/RST means we are in establshed state */
-  u16 masked_flags =
-    conn->tcp_flags_seen.as_u16 & ((TCP_FLAGS_RSTFINACKSYN << 8) +
-				   TCP_FLAGS_RSTFINACKSYN);
-  switch (conn->info.l4.proto)
-    {
-    case IPPROTO_TCP:
-      if (((TCP_FLAGS_ACKSYN << 8) + TCP_FLAGS_ACKSYN) == masked_flags)
-	{
-	  return MMB_TIMEOUT_TCP_IDLE;
-	}
-      else
-	{
-	  return MMB_TIMEOUT_TCP_TRANSIENT;
-	}
-      break;
-    case IPPROTO_UDP:
-      return MMB_TIMEOUT_UDP_IDLE;
-      break;
-    default:
-      return MMB_TIMEOUT_UDP_IDLE;
-    }
 }
 
 /**
@@ -125,6 +101,8 @@ void purge_conn_forced(mmb_conn_table_t *mct) {
 
   mmb_conn_t *conn;
 
+  wait_and_lock_connection_handling(mct);
+
   /* purge hash */
   mct->conn_hash_is_initialized = 0;
   BV(clib_bihash_free) (&mct->conn_hash);
@@ -134,17 +112,25 @@ void purge_conn_forced(mmb_conn_table_t *mct) {
       vec_free(conn->rule_indexes);
   }));
   pool_free(mct->conn_pool);
+
+  mct->currently_handling_connections = 0;
 }
 
-void purge_conn_expired_now(mmb_conn_table_t *mct) {
-   purge_conn_expired(mct, clib_cpu_time_now());
+int purge_conn_expired_now(mmb_conn_table_t *mct) {
+   return purge_conn_expired(mct, clib_cpu_time_now());
 }
 
-void purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
+int purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
 
    mmb_conn_t *conn;
    u32 *purge_indexes = 0;
    u64 timeout_time;
+
+   /* connetions are already being checked, aborting */
+   if (mct->currently_handling_connections) 
+      return 0;
+   else
+      mct->currently_handling_connections = 1;
 
    /* remove rule_index from connections */
    pool_foreach(conn, mct->conn_pool, ({
@@ -157,6 +143,9 @@ void purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
    }));  
 
    purge_conn(mct, purge_indexes);
+
+   mct->currently_handling_connections = 0;
+   return 1;
 }
 
 void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
@@ -190,31 +179,55 @@ void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
    }
 }
 
+void wait_and_lock_connection_handling(mmb_conn_table_t *mct) {
+
+   mmb_main_t *mm = &mmb_main;
+   
+   while (mct->currently_handling_connections) {
+      vlib_process_suspend(mm->vlib_main, 0.0001);
+   }
+   mct->currently_handling_connections = 1;
+}
+
 void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index) {
 
    mmb_conn_t *conn;
    u32 *purge_indexes = 0, index_of_index;   
 
+   wait_and_lock_connection_handling(mct);
+
    /* remove rule_index from connections */
    pool_foreach(conn, mct->conn_pool, ({
+
       index_of_index = vec_find(conn->rule_indexes, rule_index);
+      if (index_of_index == ~0)
+         continue;
 
       if (vec_len(conn->rule_indexes) == 1) {
          vec_add1(purge_indexes, conn - mct->conn_pool);
          vec_free(conn->rule_indexes);
-      } else if (index_of_index != ~0) { /* conn still used by other rules */
+      } else { /* conn still used by other rules */
          vec_delete(conn->rule_indexes, 1, index_of_index);
       }
 
    }));
    
    /* decrement rules with index > rule_index */
-   update_conn_pool(mct, rule_index);
+   update_conn_pool_internal(mct, rule_index);
 
    purge_conn(mct, purge_indexes);
+
+   mct->currently_handling_connections = 0;
 }
 
 void update_conn_pool(mmb_conn_table_t *mct, u32 rule_index) {
+
+   wait_and_lock_connection_handling(mct);
+   update_conn_pool_internal(mct, rule_index);
+   mct->currently_handling_connections = 0;
+}
+
+void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index) {
 
    u32 *current_rule_index;   
    mmb_conn_t *conn;
@@ -356,8 +369,8 @@ void mmb_conn_hash_init() {
 
    if (!mct->conn_hash_is_initialized) {
       BV (clib_bihash_init) (&mct->conn_hash, "MMB plugin conn lookup",
-                             mct->conn_table_hash_num_buckets, 
-                             mct->conn_table_hash_memory_size);
+                             MMB_CONN_TABLE_DEFAULT_HASH_NUM_BUCKETS, 
+                             MMB_CONN_TABLE_DEFAULT_HASH_MEMORY_SIZE);
       mct->conn_hash_is_initialized = 1;
    }
 
@@ -368,10 +381,6 @@ clib_error_t *mmb_conn_table_init(vlib_main_t *vm) {
    clib_error_t *error = 0;
    mmb_conn_table_t *mct = &mmb_conn_table;
    memset (mct, 0, sizeof (mmb_conn_table_t));
-
-   mct->conn_table_hash_num_buckets = MMB_CONN_TABLE_DEFAULT_HASH_NUM_BUCKETS;
-   mct->conn_table_hash_memory_size = MMB_CONN_TABLE_DEFAULT_HASH_MEMORY_SIZE;
-   mct->conn_table_max_entries = MMB_CONN_TABLE_DEFAULT_MAX_ENTRIES;
 
    mct->timeouts_value[MMB_TIMEOUT_TCP_TRANSIENT] = TCP_SESSION_TRANSIENT_TIMEOUT_SEC;
    mct->timeouts_value[MMB_TIMEOUT_TCP_IDLE] = TCP_SESSION_IDLE_TIMEOUT_SEC;

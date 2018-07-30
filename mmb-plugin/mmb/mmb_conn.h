@@ -20,6 +20,7 @@
 #ifndef __included_mmb_conn_h__
 #define __included_mmb_conn_h__
 
+#include <netinet/in.h>
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
 
@@ -27,9 +28,15 @@
 #include <vppinfra/bihash_48_8.h>
 #include <vppinfra/error.h>
 
-#define MMB_CONN_TABLE_DEFAULT_HASH_NUM_BUCKETS (64 * 1024)
-#define MMB_CONN_TABLE_DEFAULT_HASH_MEMORY_SIZE (1<<30)
-#define MMB_CONN_TABLE_DEFAULT_MAX_ENTRIES 1000000
+/* XXX: add max entries val */
+/**
+ *
+ * min interval for timeout checking of connections.
+ */
+#define MMB_CONN_TABLE_TIMEOUT_CHECK_INTERVAL_SEC 5
+
+#define TCP_FLAGS_RSTFINACKSYN 0x17
+#define TCP_FLAGS_ACKSYN 0x12
 
 enum mmb_timeout_e {
   MMB_TIMEOUT_UDP_IDLE = 0,
@@ -108,10 +115,8 @@ typedef struct {
   int conn_hash_is_initialized;   /* bihash for connections index lookup */
   clib_bihash_48_8_t conn_hash; /* XXX replace with bihash_40_8 */
 
-  /* conn table parameters XXX: move out of this struct*/
-  u32 conn_table_hash_num_buckets;
-  uword conn_table_hash_memory_size;
-  u64 conn_table_max_entries; 
+  /* indicates that the connection checking is in progress */
+  u32 currently_handling_connections;
 
   u32 timeouts_value[3];
 
@@ -142,7 +147,7 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, u32 *matches_st
  * if it is, set value of pkt_conn_id to connection_index
  */
 int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
-                  clib_bihash_kv_48_8_t *pkt_conn_id, u64 now);
+                  clib_bihash_kv_48_8_t *pkt_conn_id);
 
 /**
  * mmb_track_conn
@@ -169,8 +174,11 @@ void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index);
  * purge_conn_expired_now
  *
  * remove expired connections that are now expired
+ *
+ * @return 1 if connections were purged, 0 if not
  */
-void purge_conn_expired_now(mmb_conn_table_t *mct);
+int purge_conn_expired_now(mmb_conn_table_t *mct);
+int purge_conn_expired(mmb_conn_table_t *mct, u64 now);
 
 /**
  * purge_conn_forced
@@ -190,5 +198,33 @@ clib_error_t *mmb_conn_table_init(vlib_main_t *vm);
  *
  */
 void mmb_conn_hash_init();
+
+/**
+ * return timestamp of next conn table check time 
+ *
+ */
+inline u64 get_conn_table_check_time(vlib_main_t *vm, u64 last_check) {
+   return last_check +
+      MMB_CONN_TABLE_TIMEOUT_CHECK_INTERVAL_SEC
+      * vm->clib_time.clocks_per_second;
+}
+
+inline int get_conn_timeout_type(mmb_conn_table_t *mct, mmb_conn_t *conn) {
+  /* seen both SYNs and ACKs but not FIN/RST means we are in establshed state */
+  u16 masked_flags =
+    conn->tcp_flags_seen.as_u16 & ((TCP_FLAGS_RSTFINACKSYN << 8) +
+				   TCP_FLAGS_RSTFINACKSYN);
+  switch (conn->info.l4.proto) {
+    case IPPROTO_TCP:
+      if (((TCP_FLAGS_ACKSYN << 8) + TCP_FLAGS_ACKSYN) == masked_flags)
+	      return MMB_TIMEOUT_TCP_IDLE;
+      else
+	      return MMB_TIMEOUT_TCP_TRANSIENT;
+    case IPPROTO_UDP:
+      return MMB_TIMEOUT_UDP_IDLE;
+    default:
+      return MMB_TIMEOUT_UDP_IDLE;
+  }
+}
 
 #endif
