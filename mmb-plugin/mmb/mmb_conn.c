@@ -27,15 +27,9 @@
 #  define vl_print(handle, ...) 
 #endif
 
-/*
-#define TCP_SESSION_TRANSIENT_TIMEOUT_SEC (3600*4)
-#define TCP_SESSION_IDLE_TIMEOUT_SEC 120
 #define UDP_SESSION_IDLE_TIMEOUT_SEC 600
-*/
-
-#define UDP_SESSION_IDLE_TIMEOUT_SEC 20
 #define TCP_SESSION_IDLE_TIMEOUT_SEC (3600*4)
-#define TCP_SESSION_TRANSIENT_TIMEOUT_SEC 5
+#define TCP_SESSION_TRANSIENT_TIMEOUT_SEC 120
 
 #define MMB_CONN_TABLE_DEFAULT_HASH_NUM_BUCKETS (64 * 1024)
 #define MMB_CONN_TABLE_DEFAULT_HASH_MEMORY_SIZE (1<<30)
@@ -48,12 +42,19 @@
  */
 static void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes);
 
+/**
+ *
+ * @see update_conn_pool
+ */
 static void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index);
 
+/** 
+ * wait for connection handling lock to be available
+ */
 static_always_inline void wait_and_lock_connection_handling(mmb_conn_table_t *mct);
 
 /** 
- * return index of val in vec
+ * return index of val in vec, ~0 if vec does not contain val
  */
 static_always_inline u32 vec_find(u32 *vec, u32 val) {
    u32 vec_index = 0;

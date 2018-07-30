@@ -675,69 +675,69 @@ static_always_inline void mmb_tcp_mask_and_key_inline(u8 *mask, u8 *key, int off
   switch (field) {
       case MMB_FIELD_TCP_SPORT:
          tcp_mask->src_port = 0xffff;
-         tcp_key->src_port = bytes_to_u32(value);
+         tcp_key->src_port  = bytes_to_u32(value);
          break;
       case MMB_FIELD_TCP_DPORT:
          tcp_mask->dst_port = 0xffff;
-         tcp_key->dst_port = bytes_to_u32(value);
+         tcp_key->dst_port  = bytes_to_u32(value);
          break;
       case MMB_FIELD_TCP_SEQ_NUM:
          tcp_mask->seq_number = 0xffffffff;
-         tcp_key->seq_number = bytes_to_u32(value);
+         tcp_key->seq_number  = bytes_to_u32(value);
          break;
       case MMB_FIELD_TCP_ACK_NUM:
          tcp_mask->ack_number = 0xffffffff;
-         tcp_key->ack_number = bytes_to_u32(value);
+         tcp_key->ack_number  = bytes_to_u32(value);
          break;
       case MMB_FIELD_TCP_OFFSET:
          tcp_mask->data_offset_and_reserved |= 0xf0;
-         tcp_key->data_offset_and_reserved |= (*value << 4);
+         tcp_key->data_offset_and_reserved  |= (*value << 4);
          break;
       case MMB_FIELD_TCP_RESERVED:
          tcp_mask->data_offset_and_reserved |= 0x0f;
-         tcp_key->data_offset_and_reserved |= *value;
+         tcp_key->data_offset_and_reserved  |= *value;
          break;
       case MMB_FIELD_TCP_FLAGS: 
          tcp_mask->flags = 0xff;
          tcp_key->flags |= *value;
          break;
       case MMB_FIELD_TCP_CWR:
-         tcp_mask->flags |= TCP_FLAG_CWR;
+         tcp_mask->flags  |= TCP_FLAG_CWR;
          if (*value)
            tcp_key->flags |= TCP_FLAG_CWR;
          break;
       case MMB_FIELD_TCP_ECE:
-         tcp_mask->flags |= TCP_FLAG_ECE;
+         tcp_mask->flags  |= TCP_FLAG_ECE;
          if (*value)
            tcp_key->flags |= TCP_FLAG_ECE;
          break;
       case MMB_FIELD_TCP_URG:
-         tcp_mask->flags |= TCP_FLAG_URG;
+         tcp_mask->flags  |= TCP_FLAG_URG;
          if (*value)
            tcp_key->flags |= TCP_FLAG_URG;
          break;
       case MMB_FIELD_TCP_ACK:
-         tcp_mask->flags |= TCP_FLAG_ACK;
+         tcp_mask->flags  |= TCP_FLAG_ACK;
          if (*value)
            tcp_key->flags |= TCP_FLAG_ACK;
          break;
       case MMB_FIELD_TCP_PUSH:
-         tcp_mask->flags |= TCP_FLAG_PSH;
+         tcp_mask->flags  |= TCP_FLAG_PSH;
          if (*value)
            tcp_key->flags |= TCP_FLAG_PSH;
          break;
       case MMB_FIELD_TCP_RST:
-         tcp_mask->flags |= TCP_FLAG_RST;
+         tcp_mask->flags  |= TCP_FLAG_RST;
          if (*value)
            tcp_key->flags |= TCP_FLAG_RST;
          break;
       case MMB_FIELD_TCP_SYN:
-         tcp_mask->flags |= TCP_FLAG_SYN;
+         tcp_mask->flags  |= TCP_FLAG_SYN;
          if (*value)
            tcp_key->flags |= TCP_FLAG_SYN;
          break;
       case MMB_FIELD_TCP_FIN:
-         tcp_mask->flags |= TCP_FLAG_FIN;
+         tcp_mask->flags  |= TCP_FLAG_FIN;
          if (*value)
            tcp_key->flags |= TCP_FLAG_FIN;
          break;

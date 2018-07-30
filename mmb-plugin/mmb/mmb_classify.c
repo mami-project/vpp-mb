@@ -476,12 +476,16 @@ mmb_classify_inline(vlib_main_t * vm,
                mmb_track_conn(conn, &pkt_5tuple, conn_id.dir, now_ticks);
                vec_append(matches, conn->rule_indexes);
 
+               if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
+                  next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
             } else if (vec_len(matches_opener) != 0 
                         && pkt_5tuple.pkt_info.l4_valid == 1) {
                /* new valid connection matched */
                mmb_add_conn(mct, &pkt_5tuple, matches_opener, now_ticks);
                vec_append(matches, matches_opener);
                
+               if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
+                  next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
             }
          }
 

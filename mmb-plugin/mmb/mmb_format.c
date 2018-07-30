@@ -933,6 +933,15 @@ u8 *mmb_format_conn_table(u8 *s, va_list *args) {
      s = format(s, "\n");
    }));     
 
+
+     s = format(s, "mmb_5tuple %d mmb_conn %d mmb_conn_id %d\n"
+                   "mmb_tcp_option %d mmb_tcp_options %d mmb_transport_option %d\n"
+                   "mmb_match %d mmb_target %d mmb_rule %d\n",
+         sizeof(mmb_5tuple_t), sizeof(mmb_conn_t), 
+         sizeof(mmb_conn_id_t), 
+          sizeof(mmb_tcp_option_t), sizeof(mmb_tcp_options_t),
+         sizeof(mmb_transport_option_t), sizeof(mmb_match_t), sizeof(mmb_target_t),
+         sizeof(mmb_rule_t));
    return s;
 }
 

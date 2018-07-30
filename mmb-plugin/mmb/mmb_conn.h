@@ -94,8 +94,16 @@ typedef struct {
     u8 as_u8[2];
     u16 as_u16;
   } tcp_flags_seen;   /* +2 bytes = 6 */
-  u16 reserved1;  /* +4 = 8 */
-  u64 reserved2[7]; /* +56 = 64 */
+
+  /* 'shuffle' state */
+  u32 tcp_seq_offset;  /* +4 = 10 */
+  u32 tcp_ack_offset; /* +4 = 14 */
+  u16 sport; /* +2 = 16 */
+  u16 dport; /* +2 = 18 */
+  u32 ip_id; /* +4 = 22 */
+
+  u16 reserved1; /* +2 = 24 */
+  u64 reserved2[4]; /* +40 = 64 */
 } mmb_conn_t;
 
 typedef struct {
