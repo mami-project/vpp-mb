@@ -104,9 +104,11 @@ typedef struct {
   u16 sport; /* +2 = 16 */
   u16 dport; /* +2 = 18 */
   u32 ip_id; /* +4 = 22 */
+  u8 mapped_sack:1;
 
-  u16 reserved1; /* +2 = 24 */
-  u64 reserved2[4]; /* +40 = 64 */
+  u8 unused1:7;/* +1 = 23 */
+  u8 unused2; /* +1 = 24 */
+  u64 unused3[4]; /* +40 = 64 */
 } mmb_conn_t;
 
 typedef struct {

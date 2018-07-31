@@ -794,7 +794,7 @@ static_always_inline u8* mmb_format_mask(u8 *s, va_list *args) {
   return s;
 }
 
-static_always_inline u8* mmb_format_key(u8 *s, va_list *args) {
+u8* mmb_format_key(u8 *s, va_list *args) {
   u8 *bytes = va_arg(*args, u8*);
   if (bytes == 0) 
       return s;
@@ -840,7 +840,7 @@ u8* mmb_format_table(u8 *s, va_list *args) {
 
    if (verbose) {
       mmb_session_t *session, *sessions = table->sessions;
-      uword session_index = 0;
+      u32 session_index = 0;
       vec_foreach_index(session_index, sessions) {
          session = &sessions[session_index];
          s = format(s, "\t%u:%2s%U\n", session_index, blanks, 

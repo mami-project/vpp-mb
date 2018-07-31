@@ -289,6 +289,7 @@ static_always_inline void init_conn_shuffle_seed(mmb_main_t *mm,
                conn->tcp_seq_offset = random_u32(&mm->random_seed);
             if (!conn->tcp_ack_offset)
                conn->tcp_ack_offset = random_u32(&mm->random_seed);
+            conn->mapped_sack = 1;
             break;
          case MMB_FIELD_IP4_ID :
             conn->ip_id = random_u32(&mm->random_seed);

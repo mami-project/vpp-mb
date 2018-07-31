@@ -71,7 +71,7 @@ typedef struct {
 
 static u8 mmb_rewrite_tcp_options(vlib_buffer_t *, mmb_tcp_options_t *);
 static void target_tcp_options(vlib_buffer_t *, u8 *, mmb_rule_t *, 
-                               mmb_tcp_options_t *, u8);
+                               mmb_tcp_options_t *, u8, mmb_conn_t *conn, u32 dir);
 
 /************************
  *   MMB Node format
@@ -275,13 +275,15 @@ static_always_inline u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options,
   return 0;
 }
 
-static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, u8 kind) {
+static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, 
+                                                  u8 kind) {
   u8 idx = tcp_options->idx[kind];
   tcp_options->parsed[idx].is_stripped = 1;
 }
 
 void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule, 
-                        mmb_tcp_options_t *tcp_options, u8 is_ip6) {
+                        mmb_tcp_options_t *tcp_options, u8 is_ip6,
+                        mmb_conn_t *conn, u32 dir) {
 
   u32 i;
   u8 old_opts_len = 0, new_opts_len = 0, opts_modified = 0;
@@ -388,10 +390,62 @@ static_always_inline void tcp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
     tcph->checksum = ip4_tcp_udp_compute_checksum(vm, b, (ip4_header_t*)p);
 }
 
+static_always_inline void mmb_map_sack(mmb_tcp_options_t *tcp_options, u8 is_ip6,
+                                       mmb_conn_t *conn, u32 dir) {
+   //TODO
+}
+
+static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 is_ip6) {
+
+  tcp_header_t *tcph;  
+
+   if (!is_ip6) {
+      ip4_header_t *iph4 = (ip4_header_t*)p;
+      tcph = ip4_next_header(iph4);
+      if(conn->ip_id) 
+         conn->ip_id = (conn->ip_id + 1) % 0x0000ffff;
+   } else {
+      ip6_header_t *iph6 = (ip6_header_t*)p;
+      tcph = ip6_next_header(iph6);
+      if(conn->ip_id)
+         conn->ip_id = (conn->ip_id + 1) % 0x000fffff;
+   }
+
+   if (conn->tcp_seq_offset) {
+      if (!dir) 
+         tcph->seq_number = (tcph->seq_number + conn->tcp_seq_offset) % 0xffffffff;
+      else
+         tcph->ack_number = (tcph->ack_number - conn->tcp_seq_offset 
+                              + 0xffffffff) % 0xffffffff;
+      
+   } 
+   if(conn->tcp_ack_offset) {
+      if (!dir) 
+         tcph->ack_number = (tcph->ack_number + conn->tcp_ack_offset) % 0xffffffff;
+      else
+         tcph->seq_number = (tcph->seq_number - conn->tcp_ack_offset
+                              + 0xffffffff) % 0xffffffff;
+   } 
+
+   if(conn->sport) {
+      if (!dir) 
+         tcph->src_port = conn->sport;
+      else 
+         tcph->dst_port = conn->sport;
+   }
+   if(conn->dport) {
+      if (!dir) 
+         tcph->dst_port = conn->dport;
+      else 
+         tcph->src_port = conn->dport;
+   }
+}
+
 
 static_always_inline 
-u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p, 
-                u32 next, u8 tcpo, mmb_tcp_options_t *tcp_options, u8 is_ip6) {
+u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule, 
+               vlib_buffer_t *b, u8 *p, 
+               u32 next, u8 tcpo, mmb_tcp_options_t *tcp_options, u8 is_ip6) {
 
   /* lb */
   if (rule->lb) {
@@ -434,13 +488,24 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
       break;
   }
 
+  u32 conn_index = vnet_buffer(b)->unused[0];
+  u32 conn_dir   = vnet_buffer(b)->unused[1];
+  mmb_conn_t *conn = NULL;
+
+  if (rule->shuffle) {
+
+    if (!pool_is_free_index(mct->conn_pool, conn_index)) {/* for safety */
+      conn = pool_elt_at_index(mct->conn_pool, conn_index);
+      mmb_map_shuffle(p, conn, conn_dir, is_ip6);
+    }
+  }
+
   /* tcp opts */
   if (tcpo)
-    target_tcp_options(b, p, rule, tcp_options, is_ip6);
+    target_tcp_options(b, p, rule, tcp_options, is_ip6, conn, conn_dir);
  
   /* ip4 checksum */
-  if (!is_ip6)
-  {
+  if (!is_ip6) {
     ip4_header_t *iph = (ip4_header_t*)p;
     iph->checksum = ip4_header_checksum(iph);
   }
@@ -563,7 +628,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
              else
                tcpo0 = mmb_parse_tcp_options(ip4_next_header((ip4_header_t*)p0), &tcp_options0);
          } 
-         next0 = mmb_rewrite(vm, ri0, b0, p0, next0, tcpo0, &tcp_options0, is_ip6);
+         next0 = mmb_rewrite(mm->mmb_conn_table, vm, ri0, b0, p0, 
+                             next0, tcpo0, &tcp_options0, is_ip6);
       }
 
       vec_foreach(rule_index1, rule_indexes1) { 
@@ -574,7 +640,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
              else
                tcpo1 = mmb_parse_tcp_options(ip4_next_header((ip4_header_t*)p1), &tcp_options1);
          } 
-         next1 = mmb_rewrite(vm, ri1, b1, p1, next1, tcpo1, &tcp_options1, is_ip6);
+         next1 = mmb_rewrite(mm->mmb_conn_table, vm, ri1, b1, p1, 
+                             next1, tcpo1, &tcp_options1, is_ip6);
       }
 
       /* get incoming interfaces */
@@ -637,7 +704,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
              else
                tcpo0 = mmb_parse_tcp_options(ip4_next_header((ip4_header_t*)p0), &tcp_options0);
          } 
-         next0 = mmb_rewrite(vm, ri0, b0, p0, next0, tcpo0, &tcp_options0, is_ip6);
+         next0 = mmb_rewrite(mm->mmb_conn_table, vm, ri0, b0, p0, 
+                             next0, tcpo0, &tcp_options0, is_ip6);
       }
 
       /* get incoming interface */

@@ -1550,7 +1550,11 @@ int add_to_classifier(mmb_rule_t *rule) {
       vl_print(mm->vlib_main, "found existing session in table:%u "
                               "with lookup_index:%u", 
                rule->classify_table_index, rule->lookup_index);
-   }
+      vl_print(mm->vlib_main, "rule key %U", 
+               mmb_format_key, rule->classify_key);
+      vl_print(mm->vlib_main, "session key %U", 
+               mmb_format_key, session->key);
+  }
 
   return !ret;
 }
@@ -1671,6 +1675,7 @@ static int remove_rule(u32 rule_index) {
   vl_print(mm->vlib_main, "rule at index:%u table internal index:%u classify_index:%u "
                            "lookup_index:%u",
            rule_index,table_index, rule->classify_table_index, rule->lookup_index);
+  vl_print(mm->vlib_main, "rule key %U", mmb_format_key, rule->classify_key);
 
   mmb_session_t *session = find_session(table, rule);
   if (add_del_session(table, rule, session, rule_index, 0)) { 
