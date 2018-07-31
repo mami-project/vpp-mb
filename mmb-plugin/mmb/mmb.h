@@ -222,7 +222,7 @@ _(ip6,IP6)
 typedef struct {
    u8 *key;
    u32 pool_index;
-
+   u32 next;
 } mmb_session_t;
 
 typedef struct {

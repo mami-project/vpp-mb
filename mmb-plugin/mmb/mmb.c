@@ -242,9 +242,10 @@ static_always_inline void update_flags(mmb_main_t *mm, mmb_rule_t *rules) {
 /*
  * return 1 if masks are equals
  */
-static_always_inline u8 mask_equal(u8 *a, u8 *b) {
+static_always_inline int mask_equal(u8 *a, u8 *b) {
    if (vec_len(a) != vec_len(b))
       return 0;
+
    uword index;
    vec_foreach_index(index, a) {
       if (a[index] != b[index])
@@ -471,6 +472,17 @@ show_tables_command_fn(vlib_main_t * vm,
      return clib_error_return(0, "Syntax error: unexpected additional element");
   
    vlib_cli_output(vm, "%U", mmb_format_tables, mm->tables, verbose);  
+
+   mmb_lookup_entry_t *lookup_entry;
+   u32 *rule_index, pool_index;
+   pool_foreach_index(pool_index, mm->lookup_pool, ({
+      vlib_cli_output(vm, "pool index %d", pool_index);
+
+      lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+      vec_foreach(rule_index, lookup_entry->rule_indexes) {
+         vlib_cli_output(vm, "  rule index %d", *rule_index);
+      }
+   }));
 
    return 0;
 }
@@ -1110,8 +1122,8 @@ mmb_classify_add_table(u8 *mask, u32 skip, u32 match,
   mmb_classify_main_t *mcm = mm->mmb_classify_main;
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
 
-  u32 nbuckets = max_entries;
-  u32 memory_size = nbuckets++ << 14; /* ??? */
+  u32 nbuckets = max_entries+1;
+  u32 memory_size = nbuckets << 14; /* ??? */
   u32 miss_next_index = IP_LOOKUP_NEXT_REWRITE;
   u32 current_data_flag = 0;
   int current_data_offset = 0;
@@ -1192,6 +1204,7 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule,
         mmb_session_t new_session;
         new_session.pool_index = mmb_lookup_pool_add(rule_index, ~0);
         new_session.key = vec_dup(rule->classify_key);
+        new_session.next = next_if_match(rule);
 
         vec_add1(table->sessions, new_session);
         rule->lookup_index = new_session.pool_index;
@@ -1209,7 +1222,7 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule,
       if (mmb_lookup_pool_del(rule_index, rule->lookup_index)) {
 
          vec_free(session->key);
-         vec_delete(table->sessions, 1, table->sessions-session);
+         vec_delete(table->sessions, 1, session - table->sessions);
 
          return 1;
       } else 
@@ -1375,16 +1388,16 @@ void rechain_table(mmb_table_t *table, int to_table) {
  *
  * @note table index will change
  */
-static void realloc_table(mmb_table_t *table, u32 deleted_index) {
+static void realloc_table(mmb_table_t *table, u8 is_increase) {
 
   mmb_main_t *mm = &mmb_main;
+  mmb_session_t *session;
   mmb_rule_t *rule, *rules = mm->rules;
   u32 old_index = table->index;
-  u32 index;
 
   /* create resized table */
   table->index = ~0;
-  if (deleted_index == ~0)
+  if (is_increase)
     table->size *= MMB_TABLE_SIZE_INC_RATIO;
   else 
     table->size /= MMB_TABLE_SIZE_DEC_RATIO;
@@ -1394,33 +1407,30 @@ static void realloc_table(mmb_table_t *table, u32 deleted_index) {
                           "to replace index %u", table->size, table->index, 
            old_index);
 
-  /* add sessions from old table */
-  vec_foreach_index(index, rules) {
-    if (index == deleted_index) /* skip index */
-       continue;
-
-    rule = &rules[index];
-    if (rule->classify_table_index == old_index) {
-      mmb_add_del_session(table->index, rule->classify_key, 
-                          next_if_match(rule), rule->lookup_index, 1); 
-      vl_print(mm->vlib_main, "added rule %u to table %u", 
-               index+1, table->index);
-    }
-  }  
+  /* add sessions to new table */
+  vec_foreach(session, table->sessions) {
+     mmb_add_del_session(table->index, session->key, 
+                         session->next, session->pool_index, 1); 
+     vl_print(mm->vlib_main, "added session to table %u", 
+              table->index);  
+  }
 
   rechain_table(table, 1);
 
   /* delete old sessions and table */
   vec_foreach(rule, rules) {
-
     if (rule->classify_table_index == old_index) {
-      vl_print(mm->vlib_main, "deleting session from table %u", 
-               old_index);
-      mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                          0, 0, 0); 
       rule->classify_table_index = table->index;
     }
-  }  
+  }
+
+  vec_foreach(session, table->sessions) {
+      vl_print(mm->vlib_main, "deleting session from table %u", 
+               old_index);
+      mmb_add_del_session(old_index, session->key, 
+                          0, 0, 0); 
+  }
+  
   mmb_classify_del_table(&old_index, 0);
 }
 
@@ -1451,9 +1461,9 @@ u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index) {
 int mmb_lookup_pool_del(u32 rule_index, u32 pool_index) {
 
    mmb_main_t *mm = &mmb_main;
-   mmb_lookup_entry_t *lookup_entry;
-   
-   lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+   mmb_lookup_entry_t *lookup_entry = 
+      pool_elt_at_index(mm->lookup_pool, pool_index);
+
    if (vec_len(lookup_entry->rule_indexes) == 1) {
       vec_free(lookup_entry->rule_indexes);
       pool_put(mm->lookup_pool, lookup_entry);
@@ -1524,7 +1534,7 @@ int add_to_classifier(mmb_rule_t *rule) {
    /* Found table */
    table = &mm->tables[mmb_table];
    if (table->entry_count == table->size)
-       realloc_table(table, ~0);   
+       realloc_table(table, 1);   
    rule->classify_table_index = table->index;
 
    /* check if no existing rule makes new rule invalid */ 
@@ -1550,10 +1560,6 @@ int add_to_classifier(mmb_rule_t *rule) {
       vl_print(mm->vlib_main, "found existing session in table:%u "
                               "with lookup_index:%u", 
                rule->classify_table_index, rule->lookup_index);
-      vl_print(mm->vlib_main, "rule key %U", 
-               mmb_format_key, rule->classify_key);
-      vl_print(mm->vlib_main, "session key %U", 
-               mmb_format_key, session->key);
   }
 
   return !ret;
@@ -1578,6 +1584,8 @@ clib_error_t *mmb_add_rule(mmb_rule_t *rule) {
 
   if (!add_to_classifier(rule))
     return clib_error_return(0, "Invalid rule: Could not add to classifier");
+
+  vl_print(mm->vlib_main, "key of new rule is %U", mmb_format_key, rule->classify_key);
 
   if (rule->stateful && !mct->conn_hash_is_initialized)
     mmb_conn_hash_init();
@@ -1675,7 +1683,6 @@ static int remove_rule(u32 rule_index) {
   vl_print(mm->vlib_main, "rule at index:%u table internal index:%u classify_index:%u "
                            "lookup_index:%u",
            rule_index,table_index, rule->classify_table_index, rule->lookup_index);
-  vl_print(mm->vlib_main, "rule key %U", mmb_format_key, rule->classify_key);
 
   mmb_session_t *session = find_session(table, rule);
   if (add_del_session(table, rule, session, rule_index, 0)) { 
@@ -1696,7 +1703,7 @@ static int remove_rule(u32 rule_index) {
 
        vl_print(mm->vlib_main, "table:%u is too large, shrinking", 
                 rule->classify_table_index);
-       realloc_table(table, rule_index); 
+       realloc_table(table, 0); 
        rule->classify_table_index = table->index;
      }
   }
