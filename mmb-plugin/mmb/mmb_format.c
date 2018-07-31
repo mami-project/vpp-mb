@@ -928,8 +928,7 @@ u8 *mmb_format_conn_table(u8 *s, va_list *args) {
                 conn->info.kv.key[4], conn->info.kv.key[5], 
                 conn->info.kv.value); /* XXX print addresses */
 
-     s = format(s, " time %lu rules", conn->last_active_time);
-     
+     s = format(s, " rules");
      vec_foreach(rule_index, conn->rule_indexes) {
         s = format(s, " %u", *rule_index);
      };

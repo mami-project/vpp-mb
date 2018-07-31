@@ -280,12 +280,14 @@ static_always_inline void init_conn_shuffle_seed(mmb_main_t *mm,
             conn->sport = clib_host_to_net_u16(
                             (u16) random_bounded_u16(&mm->random_seed, 
                                MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1));
+            conn->initial_sport = clib_host_to_net_u16(conn->info.l4.port[0]);
             break;
          case MMB_FIELD_TCP_DPORT:
          case MMB_FIELD_UDP_DPORT:
             conn->dport = clib_host_to_net_u16(
                             (u16) random_bounded_u16(&mm->random_seed, 
                                MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1));
+            conn->initial_dport = clib_host_to_net_u16(conn->info.l4.port[1]);
             break;
          case MMB_FIELD_TCP_OPT: /* opt_kind is guaranteed to be 5 here */
             if (!conn->tcp_seq_offset)
@@ -420,7 +422,6 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
         pkt_5tuple->pkt_info.l4_valid = 1;
 	   } else if ((proto == IP_PROTOCOL_ICMP) || (proto == IP_PROTOCOL_ICMP6)) {
          
-
         /** XXX match quoted packet here */
         pkt_5tuple->l4.port[0] =
            *(u8 *) (h0 + l4_offset + offsetof(icmp46_header_t, type));

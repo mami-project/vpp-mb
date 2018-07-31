@@ -99,16 +99,19 @@ typedef struct {
   } tcp_flags_seen;   /* +2 bytes = 6 */
 
   /* 'shuffle' state */
-  u32 tcp_seq_offset;  /* +4 = 10 */
-  u32 tcp_ack_offset; /* +4 = 14 */
-  u16 sport; /* +2 = 16 */
-  u16 dport; /* +2 = 18 */
-  u32 ip_id; /* +4 = 22 */
+  u32 tcp_seq_offset;
+  u32 tcp_ack_offset;
+  u16 sport; /* in network byte order */ 
+  u16 initial_sport;
+  u16 dport;/* in network byte order */
+  u16 initial_dport;
+  u32 ip_id; /* +20 = 26 */
   u8 mapped_sack:1;
 
-  u8 unused1:7;/* +1 = 23 */
-  u8 unused2; /* +1 = 24 */
-  u64 unused3[4]; /* +40 = 64 */
+  u8 unused1:7;/* +1 = 27 */
+  u8 unused2; /* +1 = 28 */
+  u32 unused3; /* +4 = 32 */
+  u64 unused4[4]; /* +32 = 64 */
 } mmb_conn_t;
 
 typedef struct {

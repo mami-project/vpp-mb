@@ -1417,18 +1417,17 @@ static void realloc_table(mmb_table_t *table, u8 is_increase) {
 
   rechain_table(table, 1);
 
-  /* delete old sessions and table */
+  /* fix rule attributes */
   vec_foreach(rule, rules) {
-    if (rule->classify_table_index == old_index) {
-      rule->classify_table_index = table->index;
-    }
+     if (rule->classify_table_index == old_index) 
+        rule->classify_table_index = table->index;
   }
 
+  /* delete old sessions and table */
   vec_foreach(session, table->sessions) {
-      vl_print(mm->vlib_main, "deleting session from table %u", 
+     vl_print(mm->vlib_main, "deleting session from table %u", 
                old_index);
-      mmb_add_del_session(old_index, session->key, 
-                          0, 0, 0); 
+     mmb_add_del_session(old_index, session->key, 0, 0, 0); 
   }
   
   mmb_classify_del_table(&old_index, 0);

@@ -431,13 +431,13 @@ static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 i
       if (!dir) 
          tcph->src_port = conn->sport;
       else 
-         tcph->dst_port = conn->info.l4.port[0];
+         tcph->dst_port = conn->initial_sport;
    }
    if(conn->dport) {
       if (!dir) 
          tcph->dst_port = conn->dport;
       else 
-         tcph->src_port = conn->info.l4.port[1];
+         tcph->src_port = conn->initial_dport;
    }
 }
 
@@ -741,7 +741,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 }
 
 vlib_node_registration_t ip4_mmb_rewrite_node;
-static uword //XXX: duplicate node per transport proto
+static uword
 mmb_node_ip4_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
   return mmb_node_fn(vm, node, frame, 0, &ip4_mmb_rewrite_node);
