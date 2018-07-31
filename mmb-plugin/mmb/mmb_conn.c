@@ -168,10 +168,11 @@ void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
       conn_key.kv.key[5] = conn->info.kv.key[5];
       mmb_del_5tuple(mct, &conn_key.kv);
 
+      /* XXX: make an inline function */
       conn_key.addr[0] = conn->info.addr[1];
       conn_key.addr[1] = conn->info.addr[0];
-      conn_key.l4.port[0] = conn->info.l4.port[1];
-      conn_key.l4.port[1] = conn->info.l4.port[0];  
+      conn_key.l4.port[0] = conn->dport ? ntohs(conn->dport) : pkt_5tuple->l4.port[1];
+      conn_key.l4.port[1] = conn->sport ? ntohs(conn->sport) : pkt_5tuple->l4.port[0]; 
       mmb_del_5tuple(mct, &conn_key.kv);
 
       vec_free(conn->rule_indexes);
@@ -276,13 +277,15 @@ static_always_inline void init_conn_shuffle_seed(mmb_main_t *mm,
             break;
          case MMB_FIELD_TCP_SPORT:
          case MMB_FIELD_UDP_SPORT:
-            conn->sport = (u16) random_bounded_u16(&mm->random_seed, 
-                           MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1);
+            conn->sport = clib_host_to_net_u16(
+                            (u16) random_bounded_u16(&mm->random_seed, 
+                               MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1));
             break;
          case MMB_FIELD_TCP_DPORT:
          case MMB_FIELD_UDP_DPORT:
-            conn->tcp_seq_offset = (u16) random_bounded_u16(&mm->random_seed, 
-                                    MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1);
+            conn->dport = clib_host_to_net_u16(
+                            (u16) random_bounded_u16(&mm->random_seed, 
+                               MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1));
             break;
          case MMB_FIELD_TCP_OPT: /* opt_kind is guaranteed to be 5 here */
             if (!conn->tcp_seq_offset)
@@ -334,7 +337,7 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    conn->rule_indexes = vec_dup(matches_stateful);
    conn->tcp_flags_seen.as_u16 = 0;
    if (pkt_5tuple->pkt_info.tcp_flags_valid) 
-      conn->tcp_flags_seen.as_u8[0] |= pkt_5tuple->pkt_info.tcp_flags;
+      conn->tcp_flags_seen.as_u8[0] = pkt_5tuple->pkt_info.tcp_flags;
 
    /* init shuffle offset if needed */
    vec_foreach(match, matches_shuffle) {
@@ -345,8 +348,8 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    /* adding backward 5tuple */
    conn_key.addr[0] = pkt_5tuple->addr[1];
    conn_key.addr[1] = pkt_5tuple->addr[0];
-   conn_key.l4.port[0] = conn->dport ? conn->dport : pkt_5tuple->l4.port[1];
-   conn_key.l4.port[1] = conn->sport ? conn->sport : pkt_5tuple->l4.port[0]; 
+   conn_key.l4.port[0] = conn->dport ? ntohs(conn->dport) : pkt_5tuple->l4.port[1];
+   conn_key.l4.port[1] = conn->sport ? ntohs(conn->sport) : pkt_5tuple->l4.port[0]; 
    conn_id.dir = 1;
    conn_key.kv.value = conn_id.as_u64; 
    conn_id.dir = 0; /* XXX replace with & */
