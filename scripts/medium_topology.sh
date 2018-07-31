@@ -6,7 +6,7 @@
 # server addr: 10.0.0.10
 
 # enable kernel forwarding
-sudo sysctl -w net.ipv4.ip_forward=1
+#sudo sysctl -w net.ipv4.ip_forward=1
 sysctl -p
 
 # VPP Nodes

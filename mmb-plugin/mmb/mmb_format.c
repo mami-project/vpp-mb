@@ -24,6 +24,7 @@
 #include <mmb/mmb_format.h>
 
 #define MMB_DISPLAY_MAX_BYTES 14
+#define MMB_DISPLAY_MAX_MASK_HEX 32
 
 #define bitmap_size(ai) vec_len(ai)*BITS(uword)
 
@@ -38,6 +39,7 @@ static u8* mmb_format_field(u8 *s, va_list *args);
 static u8* mmb_format_condition(u8 *s, va_list *args);
 static u8* mmb_format_keyword(u8 *s, va_list *args);
 static u8* mmb_format_rule_column(u8 *s, va_list *args);
+static u8* mmb_format_table(u8 *s, va_list *args);
 
 static const char* blanks = "                                                "
                             "                                                "
@@ -351,6 +353,9 @@ uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
      target->keyword=MMB_TARGET_DROP;
    else if (unformat(input, "lb%U", mmb_unformat_fibs, &target->value)) 
      target->keyword=MMB_TARGET_LB; 
+   else if (unformat(input, "shuffle %U", mmb_unformat_field, 
+                      &target->field, &target->opt_kind)) 
+     target->keyword=MMB_TARGET_SHUFFLE;
    else 
      return 0;
    
@@ -466,6 +471,9 @@ u8* mmb_format_keyword(u8 *s, va_list *args) {
     case MMB_TARGET_LB:
        keyword_str =  "lb";
        break;
+    case MMB_TARGET_SHUFFLE:
+       keyword_str =  "shuffle";
+       break;
     default:
        break;
   }
@@ -559,7 +567,8 @@ clib_bitmap_next_clear_corrected(uword *ai, uword i) {
 
 u8* mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
-  s = format(s, "l3:%U l4:%U in:%U out:%U ", format_ethernet_type, rule->l3, 
+  s = format(s, "s:%u l3:%U l4:%U in:%U out:%U ", rule->stateful, 
+             format_ethernet_type, rule->l3, 
              mmb_format_ip_protocol, rule->l4, mmb_format_if_sw_index, rule->in, 
              mmb_format_if_sw_index, rule->out);  
 
@@ -605,17 +614,25 @@ u8* mmb_format_rule(u8 *s, va_list *args) {
                 mmb_format_target, &opt_target);
   }
 
+  vec_foreach_index(index, rule->shuffle_targets) {
+    s = format(s, "%s%U", (vec_len(rule->targets)>0  || vec_len(rule->opt_mods)>0
+                            || rule->has_strips ||  vec_len(rule->opt_adds)>0) 
+                          ? ", ":"",
+                         mmb_format_target, &rule->shuffle_targets[index]);
+  }
+
   return s;
 }
 
 static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
 
-  s = format(s, "%-4U  %-8U %-16U %-16U",
+  s = format(s, "%-4U  %-8U %-16U %-16U %c%6s", 
                 format_ethernet_type, rule->l3, 
                 mmb_format_ip_protocol, rule->l4,
                 mmb_format_if_sw_index, rule->in,
-                mmb_format_if_sw_index, rule->out); 
+                mmb_format_if_sw_index, rule->out,
+                rule->stateful ? 'x' : ' ', blanks); 
   uword index, add_index=0, mod_index=0;
   uword strip_index = rule->whitelist ? clib_bitmap_first_clear(rule->opt_strips) 
                                       : clib_bitmap_first_set(rule->opt_strips);
@@ -627,26 +644,30 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   mmb_match_t *matches = vec_dup(rule->matches);
   vec_append(matches, rule->opt_matches);
 
+  /* merge shuffles and opt_mods */
+  mmb_target_t *targets = vec_dup(rule->opt_mods);
+  vec_append(targets,rule->shuffle_targets );
+
   /* count lines to print */
   uword match_count = vec_len(matches);
   uword strip_count = rule->whitelist 
                        ? bitmap_size(rule->opt_strips)
-                           -clib_bitmap_count_set_bits(rule->opt_strips)
+                           - clib_bitmap_count_set_bits(rule->opt_strips)
                        : clib_bitmap_count_set_bits(rule->opt_strips);
   uword target_count = vec_len(rule->targets)+vec_len(rule->opt_adds)
-                      +vec_len(rule->opt_mods)+strip_count;
+                       + vec_len(targets)+strip_count;
   uword count = clib_max(match_count,target_count);
                    
   for (index=0; index<count; index++) {
     if (index < match_count) {
       /* tabulate empty line */
       if (index) 
-         s = format(s, "%56s", "AND ");
+         s = format(s, "%64s", "AND ");
 
       s = format(s, "%-40U", mmb_format_match, &matches[index]);
 
     } else  
-      s = format(s, "%96s", blanks);
+      s = format(s, "%104s", blanks);
 
    if (index < vec_len(rule->targets)) 
       s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
@@ -654,8 +675,8 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
       mmb_target_t strip_target = target_from_strip(rule, strip_index);
       s = format(s, "%-40U", mmb_format_target, &strip_target);
       strip_index = next_func(rule->opt_strips, strip_index+1);
-    } else if (mod_index < vec_len(rule->opt_mods)) {
-      s = format(s, "%-40U", mmb_format_target, &rule->opt_mods[mod_index]);
+    } else if (mod_index < vec_len(targets)) {
+      s = format(s, "%-40U", mmb_format_target, &targets[mod_index]);
       mod_index++;
     } else if (add_index < vec_len(rule->opt_adds)) {
       mmb_target_t opt_target = target_from_add(rule, add_index);
@@ -668,6 +689,7 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   }
 
   vec_free(matches);
+  vec_free(targets);
   return s;
 }
 
@@ -759,13 +781,171 @@ u8* mmb_format_target(u8 *s, va_list *args) {
 u8* mmb_format_rules(u8 *s, va_list *args) {
   mmb_rule_t *rules = va_arg(*args, mmb_rule_t*);
 
-  s = format(s, " Index%2sL3%4sL4%7sin%15sout%13sMatches%33sTargets%33sCount\n", 
-                blanks, blanks, blanks, blanks, blanks, blanks, blanks);
+  s = format(s, " Index%2sL3%4sL4%7sin%15sout%14sS%6sMatches%33sTargets%33sCount\n", 
+                blanks, blanks, blanks, blanks, blanks, blanks, blanks, blanks);
   uword rule_index = 0;
   vec_foreach_index(rule_index, rules) {
     s = format(s, " %d\t%U%s", rule_index+1, mmb_format_rule_column, 
                &rules[rule_index], rule_index == vec_len(rules)-1 ? "" : "\n");
   }
+
   return s;
+}
+
+static_always_inline u8* mmb_format_mask(u8 *s, va_list *args) {
+  u8 *bytes = va_arg(*args, u8*);
+  if (bytes == 0) 
+      return s;
+
+  u32 index;
+   vec_foreach_index(index, bytes) {
+     if (index % MMB_DISPLAY_MAX_MASK_HEX == 0 && index != 0) {
+       s = format(s, "\n\t%5s", blanks);
+     }
+     s = format(s, "%02x", bytes[index]);
+   }
+
+  return s;
+}
+
+u8* mmb_format_key(u8 *s, va_list *args) {
+  u8 *bytes = va_arg(*args, u8*);
+  if (bytes == 0) 
+      return s;
+
+  u32 index;
+   vec_foreach_index(index, bytes) {
+     if (index % MMB_DISPLAY_MAX_MASK_HEX == 0 && index != 0) {
+       s = format(s, "\n\t%8s", blanks);
+     }
+     s = format(s, "%02x", bytes[index]);
+   }
+
+  return s;
+}
+
+u8* mmb_format_u32_index(u8 *s, va_list *args) {
+   u32 index = va_arg(*args, u32);
+   if (index == ~0)
+      return format(s, "-1");
+   else
+      return format(s, "%u", index); 
+}
+
+u8 *mmb_format_session(u8 *s, va_list *args) {
+   mmb_session_t *session = va_arg(*args, mmb_session_t*);
+
+   s = format(s, "lookup index %U\n", mmb_format_u32_index, session->pool_index);
+   s = format(s, "\t%4skey %U", blanks, mmb_format_key, session->key);
+
+   return s;
+}
+
+u8* mmb_format_table(u8 *s, va_list *args) {
+   mmb_table_t *table = va_arg(*args, mmb_table_t*);
+   int verbose = va_arg(*args, int);
+
+   s = format(s, "index %U next %U prev %U\n", mmb_format_u32_index, table->index, 
+              mmb_format_u32_index, table->next_index, 
+              mmb_format_u32_index, table->previous_index);
+   s = format(s, "\tsession count %u capacity %u\n", table->entry_count, table->size);
+   s = format(s, "\tskip %u match %u\n", table->skip, table->match);
+   s = format(s, "\tmask %U\n", mmb_format_mask, table->mask);
+
+   if (verbose) {
+      mmb_session_t *session, *sessions = table->sessions;
+      u32 session_index = 0;
+      vec_foreach_index(session_index, sessions) {
+         session = &sessions[session_index];
+         s = format(s, "\t%u:%2s%U\n", session_index, blanks, 
+                    mmb_format_session, session);
+      }
+   }
+
+   return s;
+}
+
+u8* mmb_format_tables(u8 *s, va_list *args) {
+   mmb_table_t *tables = va_arg(*args, mmb_table_t*);
+   int verbose = va_arg(*args, int);
+   uword table_index = 0;   
+
+   vec_foreach_index(table_index, tables) {
+      s = format(s, "[%u]:\t%U%s", table_index, mmb_format_table, 
+                 &tables[table_index], verbose, 
+                 table_index == vec_len(tables)-1 ? "" : "\n");
+   }
+
+   return s;
+}
+
+u8 *mmb_format_timeout_type(u8 *s, va_list *args) {
+   int timeout_type = va_arg(*args, int);
+
+   switch(timeout_type) {
+      case MMB_TIMEOUT_TCP_TRANSIENT:
+         s = format(s, "tcp transient");
+         break;
+      case MMB_TIMEOUT_TCP_IDLE:
+         s = format(s, "tcp idle");
+         break;
+      case MMB_TIMEOUT_UDP_IDLE:
+         s = format(s, "udp idle");
+         break;
+      default:
+         break;
+   }
+
+   return s;
+}
+
+u8 *mmb_format_conn_table(u8 *s, va_list *args) {
+
+   mmb_conn_table_t *mct = va_arg(*args, mmb_conn_table_t*);
+   int verbose = va_arg(*args, int);
+   
+   mmb_conn_t *conn_pool = mct->conn_pool, *conn;
+   u32 *rule_index, conn_index;   
+
+   if (verbose)
+      s = format(s, "%U\n",
+                 BV(format_bihash), &mct->conn_hash, verbose);
+
+   s = format(s, "Connections pool");
+   if (pool_elts(conn_pool) == 0)
+      s = format(s, " is empty");
+   s = format(s, "\n");
+
+   pool_foreach(conn, conn_pool,({
+
+     conn_index = conn - conn_pool;
+     s = format(s, "[%u]: %U\n", conn_index+1, mmb_format_timeout_type, 
+                     get_conn_timeout_type(mct, conn));
+     s = format(s, " key\n %016llx %016llx %016llx\n"
+                                " %016llx %016llx %016llx :\n %016llx\n",
+                conn->info.kv.key[0], conn->info.kv.key[1], 
+                conn->info.kv.key[2], conn->info.kv.key[3], 
+                conn->info.kv.key[4], conn->info.kv.key[5], 
+                conn->info.kv.value); /* XXX print addresses */
+
+     s = format(s, " rules");
+     vec_foreach(rule_index, conn->rule_indexes) {
+        s = format(s, " %u", *rule_index);
+     };
+
+     mmb_main_t *mm = &mmb_main; /* XXX rm */
+     int timeout_type = get_conn_timeout_type(mct, conn);
+     u64 timeout_ticks = mct->timeouts_value[timeout_type];
+     timeout_ticks *= mm->vlib_main->clib_time.clocks_per_second;
+     s = format(s, " now %lu last_active %lu expiring %lu\n", clib_cpu_time_now(),
+                conn->last_active_time, timeout_ticks + conn->last_active_time);
+     if (timeout_type > 0)
+        s = format(s, "tcp-flags-seen forward %02x backward %02x\n", 
+                     conn->tcp_flags_seen.as_u8[0], conn->tcp_flags_seen.as_u8[1]);
+
+     s = format(s, "\n");
+   }));     
+
+   return s;
 }
 

@@ -31,14 +31,16 @@
 typedef struct {
   u32 sw_if_index;
   u32 next_index;
-  //u32 table_index;
   u32 *rule_indexes;
   u32 offset;
   u8 packet_data[16];
+
+  u32 conn_index;
+  u32 conn_dir;
+  mmb_5tuple_t packet_5tuple;
 } mmb_classify_trace_t;
 
-static u8 *
-format_mmb_classify_trace(u8 * s, va_list * args)
+static u8 *format_mmb_classify_trace(u8 * s, va_list * args)
 {
   CLIB_UNUSED(vlib_main_t * vm) = va_arg(*args, vlib_main_t *);
   CLIB_UNUSED(vlib_node_t * node) = va_arg(*args, vlib_node_t *);
@@ -51,10 +53,19 @@ format_mmb_classify_trace(u8 * s, va_list * args)
   }
 
   if (vec_len(t->rule_indexes) == 0) 
-     s = format(s, "no match: sw_if_index %d next %d\n  ",
+     s = format(s, "\tno match: sw_if_index %d next %d\n  ",
                  t->sw_if_index, t->next_index);
-  else
-     s = format(s, "\n%U", format_hex_bytes, t->packet_data, sizeof(t->packet_data));
+ // else
+ //    s = format(s, "\t\n%U", format_hex_bytes, t->packet_data, sizeof(t->packet_data));
+
+ /*s = format(s, "\n5-tuple\n %016llx %016llx\n %016llx\n %016llx %016llx\n %016llx : %016llx",
+  t->packet_5tuple.kv.key[0], t->packet_5tuple.kv.key[1], 
+  t->packet_5tuple.kv.key[2], t->packet_5tuple.kv.key[3], 
+  t->packet_5tuple.kv.key[4], t->packet_5tuple.kv.key[5], t->packet_5tuple.kv.value);*/
+
+  if (t->conn_index != ~0) 
+    s = format(s, "conn id: %u dir:%u\n", t->conn_index, t->conn_dir);
+
   return s;
 }
 
@@ -222,14 +233,19 @@ mmb_classify_inline(vlib_main_t * vm,
   mmb_main_t *mm = &mmb_main;
   mmb_classify_main_t *mcm = mm->mmb_classify_main;
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
 
   mmb_rule_t *rules = mm->rules;
   mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
-  mmb_tcp_options_t tcpo0;
   u32 *rule_index; 
   f64 now = vlib_time_now(vm);
+  u64 now_ticks = clib_cpu_time_now();
+   
   u32 hits = 0;
   u32 drop = 0;
+
+  mmb_tcp_options_t tcpo0;
+  init_tcp_options(&tcpo0);
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -320,8 +336,13 @@ mmb_classify_inline(vlib_main_t * vm,
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
 
-  init_tcp_options(&tcpo0);
-  u8 tcpo0_flag;
+  /* perform timeout check if needed */
+  if (mct->conn_hash_is_initialized
+      && get_conn_table_check_time(vm, mm->last_conn_table_timeout_check) < now_ticks) {
+
+     if (purge_conn_expired(mct, now_ticks))
+         mm->last_conn_table_timeout_check = now_ticks;
+  }
 
   while (n_left_from > 0) {
 
@@ -340,8 +361,12 @@ mmb_classify_inline(vlib_main_t * vm,
          vnet_classify_entry_t *e0;
          u64 hash0;
          u8 *h0;
-         u32 *matches;
+         u32 *matches, *matches_opener, *matches_shuffle;
          mmb_rule_t *rule;
+         u32 conn_index, conn_dir;
+         u8 tcpo0_flag;
+         mmb_5tuple_t pkt_5tuple;
+         clib_bihash_kv_48_8_t pkt_conn_index;
 
          /* Stride 3 seems to work best */
          if (PREDICT_TRUE(n_left_from > 3)) {
@@ -373,12 +398,21 @@ mmb_classify_inline(vlib_main_t * vm,
          e0 = 0;
          t0 = 0;
          matches = 0;
+         matches_opener = 0;
+         matches_shuffle = 0;
          tcpo0_flag = 0;
+         conn_index = ~0;
+         conn_dir = 0;
 
+         mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
+
+         /* matching stateless rules */
          if (PREDICT_TRUE(table_index0 != ~0)) {
+
              hash0 = vnet_buffer(b0)->l2_classify.hash;
              t0 = pool_elt_at_index(vcm->tables, table_index0);
              e0 = vnet_classify_find_entry(t0, h0, hash0, now);
+
              if (e0) { /* match */
                  lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
 
@@ -387,9 +421,16 @@ mmb_classify_inline(vlib_main_t * vm,
                     rule = rules+*rule_index;
                     if (!rule->opts_in_matches 
                || mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid)) {
+                                              
+                       if (rule->stateful == 0) { /* stateless */
+                          vec_add1(matches, *rule_index);
+                          next0 = e0->next_index;                     
+                       } else if (rule->shuffle == 0) { /* stateful */
+                          vec_add1(matches_opener, *rule_index);
+                       } else { /* stateful + seed */
+                          vec_add1(matches_shuffle, *rule_index);
+                       }
 
-                       vec_add1(matches, *rule_index);
-                       next0 = e0->next_index;                     
                        rule->match_count++;
                     }   
                  }
@@ -401,13 +442,14 @@ mmb_classify_inline(vlib_main_t * vm,
                   t0 = pool_elt_at_index(vcm->tables,
                                           t0->next_table_index);
                 else { 
-                  vnet_buffer(b0)->l2_classify.hash = (u64)matches;
                   break;
                 }
 
                 hash0 = vnet_classify_hash_packet(t0, h0);
                 e0 = vnet_classify_find_entry(t0, h0, hash0, now);
+
                 if (e0) {
+
                    lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
                    vec_foreach(rule_index, lookup_entry->rule_indexes) {
 
@@ -415,8 +457,15 @@ mmb_classify_inline(vlib_main_t * vm,
                       if (!rule->opts_in_matches 
                 || mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid)) {
 
-                         vec_add1(matches, *rule_index);
-                         next0 = e0->next_index;                     
+                         if (rule->stateful == 0) { /* stateless */
+                            vec_add1(matches, *rule_index);
+                            next0 = e0->next_index;                     
+                         } else if (rule->shuffle == 0) { /* stateful */
+                            vec_add1(matches_opener, *rule_index);
+                         } else { /* stateful + seed */
+                            vec_add1(matches_shuffle, *rule_index);
+                         }
+ 
                          rule->match_count++;
                       } 
                    }
@@ -425,16 +474,62 @@ mmb_classify_inline(vlib_main_t * vm,
              }
          }
 
+         /* stateful matching */
+         if (mct->conn_hash_is_initialized) {
+             mmb_conn_t *conn;
+             mmb_conn_id_t conn_id;
+
+            if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index)) { 
+               /* found connection, update entry and add rule indexes  */
+
+               conn_id.as_u64 = pkt_conn_index.value;
+               conn = pool_elt_at_index(mct->conn_pool, conn_id.conn_index);
+               mmb_track_conn(conn, &pkt_5tuple, conn_id.dir, now_ticks);
+
+               vec_append(matches, conn->rule_indexes);
+               conn_index = conn_id.conn_index;
+               conn_dir   = conn_id.dir;
+               if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
+                  next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
+               
+            } else if ((vec_len(matches_opener) != 0 || vec_len(matches_shuffle) != 0)
+                        && pkt_5tuple.pkt_info.l4_valid == 1) {
+               /* new valid connection matched */
+
+               vec_append(matches_opener, matches_shuffle);
+               mmb_add_conn(mct, &pkt_5tuple, matches_opener, 
+                            matches_shuffle, now_ticks);
+               conn_index = pkt_5tuple.pkt_info.conn_index;
+               
+               vec_append(matches, matches_opener);
+               
+               if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
+                  next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
+            }
+         }
+
+         /* pass matches & conn id to next ode */
+         vnet_buffer(b0)->l2_classify.hash = (u64)matches;
+         vnet_buffer(b0)->unused[0] = conn_index;
+         vnet_buffer(b0)->unused[1] = conn_dir;
+
          if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
               mmb_classify_trace_t * t =
                 vlib_add_trace(vm, node, b0, sizeof(*t));
               t->sw_if_index = vnet_buffer(b0)->sw_if_index[VLIB_RX];
               t->next_index = next0;
-              t->rule_indexes = (u32*)vnet_buffer(b0)->l2_classify.hash;
+              t->rule_indexes = vec_dup((u32*)vnet_buffer(b0)->l2_classify.hash);
+              /*clib_memcpy(&t->packet_5tuple, &pkt_5tuple,
+		                    sizeof(pkt_5tuple));
               clib_memcpy(t->packet_data, h0,
-		                    sizeof(t->packet_data));
+		                    sizeof(t->packet_data)); *//* offsetof */
+              t->conn_index = conn_index;
+              t->conn_dir = conn_dir;
          }
+
+         vec_free(matches_opener);
+         vec_free(matches_shuffle);
 
          /* Verify speculative enqueue, maybe switch current next frame */
          vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next,
@@ -446,10 +541,11 @@ mmb_classify_inline(vlib_main_t * vm,
 
   vlib_node_increment_counter(vm, node->node_index,
                                MMB_CLASSIFY_ERROR_HIT, 
-                               hits); /* TODO update this */
+                               hits);
   vlib_node_increment_counter(vm, node->node_index,
                                MMB_CLASSIFY_ERROR_DROP,
                                drop);
+
 
   return frame->n_vectors;
 }

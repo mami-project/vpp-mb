@@ -24,12 +24,14 @@
 
 #include <vppinfra/error.h>
 
+#include <mmb/mmb_opts.h>
 #include <mmb/mmb_classify.h>
+#include <mmb/mmb_conn.h>
 
 /* Comment out to remove calls to vlib_cli_output() */
 #define MMB_DEBUG
 
-#define MMB_PLUGIN_BUILD_VER "0.2"
+#define MMB_PLUGIN_BUILD_VER "0.3"
 
 #define foreach_mmb_type \
   _(FIELD)               \
@@ -51,7 +53,8 @@
   _(STRIP)                 \
   _(MODIFY)                \
   _(ADD)                   \
-  _(LB)       
+  _(LB)                    \
+  _(SHUFFLE)  
 
 /* macro, CLI name, size, fixed len */
 #define foreach_mmb_field                         \
@@ -132,6 +135,17 @@
   _(TCP_OPT_MPTCP, "tcp-opt-mptcp", 0, 0)         \
   _(TCP_OPT, "tcp-opt", 0, 0)                     \
                                                   \
+  _(IP6_EH_HOPBYHOP, "ip6-eh-hopbyhop", 8, 1)     \
+  _(IP6_EH_ROUTING, "ip6-eh-routing", 8, 1)       \
+  _(IP6_EH_FRAGMENT, "ip6-eh-fragment", 8, 1)     \
+  _(IP6_EH_ESP, "ip6-eh-esp", 8, 1)               \
+  _(IP6_EH_AH, "ip6-eh-ah", 8, 1)                 \
+  _(IP6_EH_DESTOPT, "ip6-eh-destopt", 8, 1)       \
+  _(IP6_EH_MOBILITY, "ip6-eh-mobility", 8, 1)     \
+  _(IP6_EH_HIP, "ip6-eh-hip", 8, 1)               \
+  _(IP6_EH_SHIM6, "ip6-eh-shim6", 8, 1)           \
+  _(IP6_EH, "ip6-eh", 8, 1)                       \
+                                                  \
   _(ALL, "all", 0, 1)
 
 enum
@@ -194,38 +208,6 @@ _(icmp,ICMP)
 _(ip4,IP4)                        \
 _(ip6,IP6)
 
-/* mmb-const,cli-name,opt-kind */
-#define foreach_mmb_tcp_opts               \
-_(MMB_FIELD_TCP_OPT_MSS,MSS,2)             \
-_(MMB_FIELD_TCP_OPT_WSCALE,WScale,3)       \
-_(MMB_FIELD_TCP_OPT_SACKP,SACK-P,4)        \
-_(MMB_FIELD_TCP_OPT_SACK,SACK,5)           \
-_(MMB_FIELD_TCP_OPT_TIMESTAMP,Timestamp,8) \
-_(MMB_FIELD_TCP_OPT_FAST_OPEN,FastOpen,34) \
-_(MMB_FIELD_TCP_OPT_MPTCP,MPTCP,30)
-
-typedef struct {
-   u8 l4;
-   u8 kind;
-   u8 *value;
-} mmb_transport_option_t;
-
-typedef struct {
-   u8 field; /*! The field to match on */
-   u8 opt_kind; /*! The kind of option, if the field is one */
-   u8 condition; /*! The constraint condition (optional) */
-   u8 *value; /*! The constraint value (optional) */ 
-   u8 reverse; /*! reverse matching (boolean not) */
-} mmb_match_t;
-
-typedef struct {
-   u8 keyword; /*! The target keyword */ 
-   u8 field;  /*! The field to modify */
-   u8 opt_kind;  /*! The kind of option, if the field is one */
-   u8 *value; /*! The value to write */ 
-   u8 reverse; /*! whitelist (strip only) */
-} mmb_target_t;
-
 #define is_drop(rule)\
      (vec_len(rule->targets) == 1 && rule->targets[0].keyword == MMB_TARGET_DROP)
 #define next_if_match(rule)\
@@ -240,7 +222,7 @@ typedef struct {
 typedef struct {
    u8 *key;
    u32 pool_index;
-
+   u32 next;
 } mmb_session_t;
 
 typedef struct {
@@ -264,21 +246,47 @@ typedef struct {
 
 } mmb_table_t;
 
-typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 */
+typedef struct {
+   u8 l4;
+   u8 kind;
+   u8 *value;
+} mmb_transport_option_t;
+
+typedef struct {
+   u8 field; /*! The field to match on */
+   u8 opt_kind; /*! The kind of option, if the field is one */
+   u8 condition; /*! The constraint condition (optional) */
+   u8 *value; /*! The constraint value (optional) */ 
+   u8 reverse; /*! reverse matching (boolean not) */
+} mmb_match_t;
+
+typedef struct {
+   u8 keyword; /*! The target keyword */ 
+   u8 field;  /*! The field to modify */
+   u8 opt_kind;  /*! The kind of option, if the field is one */
+   u8 *value; /*! The value to write */ 
+   u8 reverse; /*! whitelist (strip only) */
+} mmb_target_t;
+
+typedef struct {
   u16 l3; /*! l3 protocol */
   u8 l4; /*! l4 protocol */
   u32 in; /*! input if */
   u32 out; /*! output if */
 
+  /* matches/constraints */
   mmb_match_t *matches; /*! Matches vector */
   mmb_match_t *opt_matches; /*! Options (tcp, ip6) */
-  uword match_count; /*! count of matched packets */
+  u32 match_count; /*! count of matched packets */
 
-  mmb_target_t *targets; /*! Targets vector */
+  /* targets/modifications */
+  mmb_target_t           *targets; /*! Targets vector */
   uword                  *opt_strips;
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
+  mmb_target_t           *shuffle_targets;
 
+  /* mmb_classify */
   u8 *classify_mask;
   u32 classify_skip; 
   u32 classify_match;
@@ -286,20 +294,21 @@ typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 *
   u32 classify_table_index; /*! index of table in classifier */
   u32 lookup_index; /*! index for session to list of rules mapping */
 
+  /* mmb_rewrite */
   u8 *rewrite_mask; 
   u32 rewrite_skip;
   u32 rewrite_match;
   u8 *rewrite_key;
 
+  /* flags */
   u8 has_strips:1;
+  u8 has_adds:1; /* unused */
   u8 whitelist:1;
-  u8 has_adds:1;
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
-  u8 loop_packet:1;
   u8 lb:1;
-
-  u8 unused:1;
+  u8 stateful:1;
+  u8 shuffle:1;
 
 } mmb_rule_t;
 
@@ -318,11 +327,15 @@ typedef struct {
    vlib_main_t * vlib_main;
    vnet_main_t *vnet_main;
    mmb_classify_main_t *mmb_classify_main;
+   mmb_conn_table_t *mmb_conn_table;
+   u64 last_conn_table_timeout_check;
 
    u8 opts_in_rules:1;
    u8 enabled:1;
-
    u8 unused:6;
+
+   u32 random_seed;
+
 } mmb_main_t;
 
 mmb_main_t mmb_main;
@@ -376,7 +389,7 @@ inline u64 bytes_to_u64(u8 *bytes) {
   const u32 len = clib_min(7,vec_len(bytes)-1);
 
   vec_foreach_index(index, bytes) {
-    value += ((u64) bytes[index]) << ((len-index)*8);
+    value += ((u64) bytes[index]) << (len-index)*8;
     if (index==len) break;
   }
 
