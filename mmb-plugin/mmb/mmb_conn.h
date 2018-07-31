@@ -60,8 +60,8 @@ typedef union {
 typedef union {
   u64 as_u64;
   struct {
-    u32 unused1;
-    u16 unused2;
+    u32 conn_index;
+    u16 unused;
     u8 tcp_flags;
     u8 tcp_flags_valid:1;
     u8 is_quoted_packet:1; /* contains icmp quoted values */

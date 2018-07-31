@@ -35,7 +35,7 @@ typedef struct {
   u32 offset;
   u8 packet_data[16];
 
-  u64 conn_index;
+  u32 conn_index;
   mmb_5tuple_t packet_5tuple;
 } mmb_classify_trace_t;
 
@@ -243,10 +243,6 @@ mmb_classify_inline(vlib_main_t * vm,
   u32 drop = 0;
 
   mmb_tcp_options_t tcpo0;
-  u8 tcpo0_flag;
-  mmb_5tuple_t pkt_5tuple;
-  clib_bihash_kv_48_8_t pkt_conn_index;
-
   init_tcp_options(&tcpo0);
 
   from = vlib_frame_vector_args(frame);
@@ -365,6 +361,10 @@ mmb_classify_inline(vlib_main_t * vm,
          u8 *h0;
          u32 *matches, *matches_opener, *matches_shuffle;
          mmb_rule_t *rule;
+         u32 conn_index, conn_dir;
+         u8 tcpo0_flag;
+         mmb_5tuple_t pkt_5tuple;
+         clib_bihash_kv_48_8_t pkt_conn_index;
 
          /* Stride 3 seems to work best */
          if (PREDICT_TRUE(n_left_from > 3)) {
@@ -399,6 +399,8 @@ mmb_classify_inline(vlib_main_t * vm,
          matches_opener = 0;
          matches_shuffle = 0;
          tcpo0_flag = 0;
+         conn_index = ~0;
+         conn_dir = 0;
 
          mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
 
@@ -473,19 +475,21 @@ mmb_classify_inline(vlib_main_t * vm,
          /* stateful matching */
          if (mct->conn_hash_is_initialized) {
              mmb_conn_t *conn;
+             mmb_conn_id_t conn_id;
 
             if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index)) { 
                /* found connection, update entry and add rule indexes  */
 
-               mmb_conn_id_t conn_id;
                conn_id.as_u64 = pkt_conn_index.value;
-
                conn = pool_elt_at_index(mct->conn_pool, conn_id.conn_index);
                mmb_track_conn(conn, &pkt_5tuple, conn_id.dir, now_ticks);
-               vec_append(matches, conn->rule_indexes);
 
+               vec_append(matches, conn->rule_indexes);
+               conn_index = conn_id.conn_index;
+               conn_dir   = conn_id.dir;
                if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
                   next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
+               
             } else if ((vec_len(matches_opener) != 0 || vec_len(matches_shuffle) != 0)
                         && pkt_5tuple.pkt_info.l4_valid == 1) {
                /* new valid connection matched */
@@ -493,6 +497,7 @@ mmb_classify_inline(vlib_main_t * vm,
                vec_append(matches_opener, matches_shuffle);
                mmb_add_conn(mct, &pkt_5tuple, matches_opener, 
                             matches_shuffle, now_ticks);
+               conn_index = pkt_5tuple.pkt_info.conn_index;
                
                vec_append(matches, matches_opener);
                
@@ -501,7 +506,10 @@ mmb_classify_inline(vlib_main_t * vm,
             }
          }
 
+         /* pass matches & conn id to next ode */
          vnet_buffer(b0)->l2_classify.hash = (u64)matches;
+         vnet_buffer(b0)->unused[0] = conn_index;
+         vnet_buffer(b0)->unused[1] = conn_dir;
 
          if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {

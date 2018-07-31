@@ -350,6 +350,9 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    conn_key.kv.value = conn_id.as_u64; 
    conn_id.dir = 0; /* XXX replace with & */
    mmb_add_5tuple(mct, &conn_key.kv);
+
+   /* put conn_index in 5tuple for the classify node */
+   pkt_5tuple->pkt_info.conn_index = conn_id.conn_index; 
 }
 
 void mmb_track_conn(mmb_conn_t *conn, mmb_5tuple_t *pkt_5tuple, u8 dir, u64 now) {
