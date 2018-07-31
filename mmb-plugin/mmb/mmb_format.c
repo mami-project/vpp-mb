@@ -614,6 +614,13 @@ u8* mmb_format_rule(u8 *s, va_list *args) {
                 mmb_format_target, &opt_target);
   }
 
+  vec_foreach_index(index, rule->shuffle_targets) {
+    s = format(s, "%s%U", (vec_len(rule->targets)>0  || vec_len(rule->opt_mods)>0
+                            || rule->has_strips ||  vec_len(rule->opt_adds)>0) 
+                          ? ", ":"",
+                         mmb_format_target, &rule->shuffle_targets[index]);
+  }
+
   return s;
 }
 
@@ -625,7 +632,7 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
                 mmb_format_ip_protocol, rule->l4,
                 mmb_format_if_sw_index, rule->in,
                 mmb_format_if_sw_index, rule->out,
-                rule->stateful ? 'X' : ' ', blanks); 
+                rule->stateful ? 'x' : ' ', blanks); 
   uword index, add_index=0, mod_index=0;
   uword strip_index = rule->whitelist ? clib_bitmap_first_clear(rule->opt_strips) 
                                       : clib_bitmap_first_set(rule->opt_strips);
@@ -637,14 +644,18 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   mmb_match_t *matches = vec_dup(rule->matches);
   vec_append(matches, rule->opt_matches);
 
+  /* merge shuffles and opt_mods */
+  mmb_target_t *targets = vec_dup(rule->opt_mods);
+  vec_append(targets,rule->shuffle_targets );
+
   /* count lines to print */
   uword match_count = vec_len(matches);
   uword strip_count = rule->whitelist 
                        ? bitmap_size(rule->opt_strips)
-                           -clib_bitmap_count_set_bits(rule->opt_strips)
+                           - clib_bitmap_count_set_bits(rule->opt_strips)
                        : clib_bitmap_count_set_bits(rule->opt_strips);
   uword target_count = vec_len(rule->targets)+vec_len(rule->opt_adds)
-                      +vec_len(rule->opt_mods)+strip_count;
+                       + vec_len(targets)+strip_count;
   uword count = clib_max(match_count,target_count);
                    
   for (index=0; index<count; index++) {
@@ -664,8 +675,8 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
       mmb_target_t strip_target = target_from_strip(rule, strip_index);
       s = format(s, "%-40U", mmb_format_target, &strip_target);
       strip_index = next_func(rule->opt_strips, strip_index+1);
-    } else if (mod_index < vec_len(rule->opt_mods)) {
-      s = format(s, "%-40U", mmb_format_target, &rule->opt_mods[mod_index]);
+    } else if (mod_index < vec_len(targets)) {
+      s = format(s, "%-40U", mmb_format_target, &targets[mod_index]);
       mod_index++;
     } else if (add_index < vec_len(rule->opt_adds)) {
       mmb_target_t opt_target = target_from_add(rule, add_index);
@@ -678,6 +689,7 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   }
 
   vec_free(matches);
+  vec_free(targets);
   return s;
 }
 

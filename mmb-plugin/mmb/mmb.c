@@ -1585,8 +1585,6 @@ clib_error_t *mmb_add_rule(mmb_rule_t *rule) {
   if (!add_to_classifier(rule))
     return clib_error_return(0, "Invalid rule: Could not add to classifier");
 
-  vl_print(mm->vlib_main, "key of new rule is %U", mmb_format_key, rule->classify_key);
-
   if (rule->stateful && !mct->conn_hash_is_initialized)
     mmb_conn_hash_init();
       
