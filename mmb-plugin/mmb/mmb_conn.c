@@ -242,14 +242,79 @@ void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index) {
    }));
 }
 
+/**
+ * random_bounded_u16()
+ *
+ * @return random u16 in [lo; hi+1]
+ */
+static_always_inline u16 random_bounded_u16(u32 *seed, uword lo, uword hi) {
+   if (lo == hi)  
+      return lo;
+
+   return (u16) ((random_u32(seed) % (hi - lo + 1)) + lo);
+}
+
+/**
+ * init_conn_shuffle_seed()
+ *
+ * init shuffle mapping offset
+ */
+static_always_inline void init_conn_shuffle_seed(mmb_main_t *mm,
+                                                 mmb_conn_t *conn,
+                                                 mmb_rule_t *rule) {
+   mmb_target_t *target;
+
+   vec_foreach(target, rule->shuffle_targets) {
+      switch (target->field) {
+         case MMB_FIELD_TCP_SEQ_NUM: 
+            if (!conn->tcp_seq_offset)
+               conn->tcp_seq_offset = random_u32(&mm->random_seed);
+            break;
+         case MMB_FIELD_TCP_ACK_NUM:
+            if (!conn->tcp_ack_offset)
+               conn->tcp_ack_offset = random_u32(&mm->random_seed);
+            break;
+         case MMB_FIELD_TCP_SPORT:
+         case MMB_FIELD_UDP_SPORT:
+            conn->sport = (u16) random_bounded_u16(&mm->random_seed, 
+                           MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1);
+            break;
+         case MMB_FIELD_TCP_DPORT:
+         case MMB_FIELD_UDP_DPORT:
+            conn->tcp_seq_offset = (u16) random_bounded_u16(&mm->random_seed, 
+                                    MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1);
+            break;
+         case MMB_FIELD_TCP_OPT: /* opt_kind is guaranteed to be 5 here */
+            if (!conn->tcp_seq_offset)
+               conn->tcp_seq_offset = random_u32(&mm->random_seed);
+            if (!conn->tcp_ack_offset)
+               conn->tcp_ack_offset = random_u32(&mm->random_seed);
+            break;
+         case MMB_FIELD_IP4_ID :
+            conn->ip_id = random_u32(&mm->random_seed);
+            break;
+         case MMB_FIELD_IP6_FLOW_LABEL:
+            conn->ip_id = random_u32(&mm->random_seed);
+            break;
+         default:
+            break;
+      }
+   }   
+}
+
+
 void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
-                  u32 *matches, u64 now) {
-   /** get in conn pool, fill conn, add to bihash **/
+                  u32 *matches_stateful, u32 *matches_shuffle, u64 now) {
+
+   mmb_main_t *mm = &mmb_main;
    mmb_conn_id_t conn_id;
    mmb_5tuple_t conn_key;
    mmb_conn_t *conn;
+   mmb_rule_t *rule;
+   u32 *match;
 
    pool_get(mct->conn_pool, conn);
+   memset(conn, 0, sizeof(*conn));
    conn_id.conn_index = conn - mct->conn_pool;
 
    /* adding forward 5tuple */
@@ -260,26 +325,30 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    conn_key.kv.key[4] = pkt_5tuple->kv.key[4];
    conn_key.kv.key[5] = pkt_5tuple->kv.key[5];
    conn_key.kv.value = conn_id.as_u64; 
-
    mmb_add_5tuple(mct, &conn_key.kv);  
 
+   /* init connection state*/
    clib_memcpy(conn, pkt_5tuple, sizeof(pkt_5tuple->kv.key));
    conn->last_active_time = now;
-   conn->rule_indexes = vec_dup(matches);
+   conn->rule_indexes = vec_dup(matches_stateful);
    conn->tcp_flags_seen.as_u16 = 0;
-   if (pkt_5tuple->pkt_info.tcp_flags_valid) {
+   if (pkt_5tuple->pkt_info.tcp_flags_valid) 
       conn->tcp_flags_seen.as_u8[0] |= pkt_5tuple->pkt_info.tcp_flags;
+
+   /* init shuffle offset if needed */
+   vec_foreach(match, matches_shuffle) {
+      rule = mm->rules + *match;
+      init_conn_shuffle_seed(mm, conn, rule);
    }
 
    /* adding backward 5tuple */
    conn_key.addr[0] = pkt_5tuple->addr[1];
    conn_key.addr[1] = pkt_5tuple->addr[0];
-   conn_key.l4.port[0] = pkt_5tuple->l4.port[1];
-   conn_key.l4.port[1] = pkt_5tuple->l4.port[0];  
+   conn_key.l4.port[0] = conn->dport ? conn->dport : pkt_5tuple->l4.port[1];
+   conn_key.l4.port[1] = conn->sport ? conn->sport : pkt_5tuple->l4.port[0]; 
    conn_id.dir = 1;
    conn_key.kv.value = conn_id.as_u64; 
    conn_id.dir = 0; /* XXX replace with & */
-
    mmb_add_5tuple(mct, &conn_key.kv);
 }
 
@@ -347,9 +416,9 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
 
         /** XXX match quoted packet here */
         pkt_5tuple->l4.port[0] =
-           *(u8 *) (h0 + l4_offset + offsetof (icmp46_header_t, type));
+           *(u8 *) (h0 + l4_offset + offsetof(icmp46_header_t, type));
         pkt_5tuple->l4.port[1] =
-           *(u8 *) (h0 + l4_offset + offsetof (icmp46_header_t, code));
+           *(u8 *) (h0 + l4_offset + offsetof(icmp46_header_t, code));
         pkt_5tuple->pkt_info.l4_valid = 1;
         pkt_5tuple->pkt_info.is_quoted_packet = 1;
       }

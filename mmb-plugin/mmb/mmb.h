@@ -334,6 +334,8 @@ typedef struct {
    u8 enabled:1;
    u8 unused:6;
 
+   u32 random_seed;
+
 } mmb_main_t;
 
 mmb_main_t mmb_main;

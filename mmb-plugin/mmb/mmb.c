@@ -20,6 +20,8 @@
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
 
+#include <vppinfra/random.h>
+
 #include <mmb/mmb.h>
 #include <mmb/mmb_format.h>
 #include <mmb/mmb_classify.h>
@@ -1909,11 +1911,12 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
          break;
        case MMB_FIELD_INTERFACE_IN:  
        case MMB_FIELD_INTERFACE_OUT:
-          if ( (error = validate_if(rule, match, field)) ) 
+         if ( (error = validate_if(rule, match, field)) ) 
             goto end;
-          vlib_cli_output(mmb_main.vlib_main, "if:%u\n", index);
-          vec_insert_elt_first(deletions, &index);
-          break;        
+         vlib_cli_output(mmb_main.vlib_main, "if:%u\n", index);
+         vec_insert_elt_first(deletions, &index);
+         vec_free(match->value);
+         break;        
        default:
          break;
      }
@@ -1928,11 +1931,10 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
      vlib_cli_output(mmb_main.vlib_main, "deleting %u size:%u\n", *deletion, vec_len(rule->matches));
 
      mmb_match_t *match = &rule->matches[*deletion];
-     vec_free(match->value);
      if (vec_len(rule->matches) == 1 && vec_len(rule->opt_matches) == 0) {
        match->field = MMB_FIELD_ALL;
        match->condition = 0;
-     } else  /* del */  
+     } else  /* del */
        vec_delete(rule->matches, 1, *deletion);
    }
 
@@ -1941,7 +1943,9 @@ end:
    return error;
 }
 
-static_always_inline mmb_transport_option_t to_transport_option(mmb_target_t *target) {
+static_always_inline mmb_transport_option_t 
+to_transport_option(mmb_target_t *target) {
+
    mmb_transport_option_t opt;
    memset(&opt, 0, sizeof(mmb_transport_option_t));
    opt.l4 = IP_PROTOCOL_TCP;
@@ -2377,6 +2381,10 @@ static clib_error_t * mmb_init(vlib_main_t *vm) {
   mm->mmb_classify_main = &mmb_classify_main;
   mm->mmb_classify_main->vnet_classify_main = &vnet_classify_main;
   mm->last_conn_table_timeout_check = clib_cpu_time_now();
+#ifdef CLIB_STANDALONE
+  standalone_random_default_seed = (u32) mm->last_conn_table_timeout_check;
+#endif
+  mm->random_seed = random_default_seed();
    
   if ((error = mmb_conn_table_init(vm)))
     return error;

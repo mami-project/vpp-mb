@@ -35,6 +35,9 @@
  */
 #define MMB_CONN_TABLE_TIMEOUT_CHECK_INTERVAL_SEC 5
 
+#define MMB_MIN_SHUFFLE_PORT 49152
+#define MMB_MAX_SHUFFLE_PORT 65535
+
 #define TCP_FLAGS_RSTFINACKSYN 0x17
 #define TCP_FLAGS_ACKSYN 0x12
 
@@ -145,8 +148,13 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8* h0, int is_ip6, mmb_5tuple_t *pkt_5t
  * mmb_add_conn
  *
  * add a connection to connection hash and pool, set timestamp&rule indices to pool
+ *
+ * @param matches_stateful contains indexes of all matched stateful openers
+ * @param matches_suffle contains indexes of matched stateful openers that require
+ *                       random seed.
  */
-void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, u32 *matches_stateful, u64 now);
+void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, 
+                  u32 *matches_stateful, u32 *matches_shuffle, u64 now);
 
 /**
  * mmb_find_conn
