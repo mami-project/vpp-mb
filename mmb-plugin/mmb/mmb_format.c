@@ -567,7 +567,8 @@ clib_bitmap_next_clear_corrected(uword *ai, uword i) {
 
 u8* mmb_format_rule(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
-  s = format(s, "l3:%U l4:%U in:%U out:%U ", format_ethernet_type, rule->l3, 
+  s = format(s, "s:%u l3:%U l4:%U in:%U out:%U ", rule->stateful, 
+             format_ethernet_type, rule->l3, 
              mmb_format_ip_protocol, rule->l4, mmb_format_if_sw_index, rule->in, 
              mmb_format_if_sw_index, rule->out);  
 
@@ -619,11 +620,12 @@ u8* mmb_format_rule(u8 *s, va_list *args) {
 static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   mmb_rule_t *rule = va_arg(*args, mmb_rule_t*);
 
-  s = format(s, "%-4U  %-8U %-16U %-16U",
+  s = format(s, "%-4U  %-8U %-16U %-16U %c%6s", 
                 format_ethernet_type, rule->l3, 
                 mmb_format_ip_protocol, rule->l4,
                 mmb_format_if_sw_index, rule->in,
-                mmb_format_if_sw_index, rule->out); 
+                mmb_format_if_sw_index, rule->out,
+                rule->stateful ? 'X' : ' ', blanks); 
   uword index, add_index=0, mod_index=0;
   uword strip_index = rule->whitelist ? clib_bitmap_first_clear(rule->opt_strips) 
                                       : clib_bitmap_first_set(rule->opt_strips);
@@ -649,12 +651,12 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
     if (index < match_count) {
       /* tabulate empty line */
       if (index) 
-         s = format(s, "%56s", "AND ");
+         s = format(s, "%64s", "AND ");
 
       s = format(s, "%-40U", mmb_format_match, &matches[index]);
 
     } else  
-      s = format(s, "%96s", blanks);
+      s = format(s, "%104s", blanks);
 
    if (index < vec_len(rule->targets)) 
       s = format(s, "%-40U", mmb_format_target, &rule->targets[index]);
@@ -767,8 +769,8 @@ u8* mmb_format_target(u8 *s, va_list *args) {
 u8* mmb_format_rules(u8 *s, va_list *args) {
   mmb_rule_t *rules = va_arg(*args, mmb_rule_t*);
 
-  s = format(s, " Index%2sL3%4sL4%7sin%15sout%13sMatches%33sTargets%33sCount\n", 
-                blanks, blanks, blanks, blanks, blanks, blanks, blanks);
+  s = format(s, " Index%2sL3%4sL4%7sin%15sout%14sS%6sMatches%33sTargets%33sCount\n", 
+                blanks, blanks, blanks, blanks, blanks, blanks, blanks, blanks);
   uword rule_index = 0;
   vec_foreach_index(rule_index, rules) {
     s = format(s, " %d\t%U%s", rule_index+1, mmb_format_rule_column, 
