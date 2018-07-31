@@ -279,7 +279,7 @@ typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 *
   u32 match_count; /*! count of matched packets */
 
   mmb_target_t *targets; /*! Targets vector */
-  uword                  *opt_strips; /* XXX: to u32 */
+  uword                  *opt_strips;
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
 

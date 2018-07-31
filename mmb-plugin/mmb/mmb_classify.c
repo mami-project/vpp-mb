@@ -403,9 +403,11 @@ mmb_classify_inline(vlib_main_t * vm,
 
          /* matching stateless rules */
          if (PREDICT_TRUE(table_index0 != ~0)) {
+
              hash0 = vnet_buffer(b0)->l2_classify.hash;
              t0 = pool_elt_at_index(vcm->tables, table_index0);
              e0 = vnet_classify_find_entry(t0, h0, hash0, now);
+
              if (e0) { /* match */
                  lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
 
@@ -439,7 +441,9 @@ mmb_classify_inline(vlib_main_t * vm,
 
                 hash0 = vnet_classify_hash_packet(t0, h0);
                 e0 = vnet_classify_find_entry(t0, h0, hash0, now);
+
                 if (e0) {
+
                    lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
                    vec_foreach(rule_index, lookup_entry->rule_indexes) {
 
@@ -481,6 +485,7 @@ mmb_classify_inline(vlib_main_t * vm,
             } else if (vec_len(matches_opener) != 0 
                         && pkt_5tuple.pkt_info.l4_valid == 1) {
                /* new valid connection matched */
+
                mmb_add_conn(mct, &pkt_5tuple, matches_opener, now_ticks);
                vec_append(matches, matches_opener);
                

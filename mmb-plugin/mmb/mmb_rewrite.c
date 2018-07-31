@@ -455,9 +455,9 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
   else 
     compute_l4_checksum = rule->l4;   
 
-  void *next_header = is_ip6 ? ip6_next_header((ip6_header_t*)p) : ip4_next_header((ip4_header_t*)p);
-  switch (compute_l4_checksum)
-  { 
+  void *next_header = is_ip6 ? 
+      ip6_next_header((ip6_header_t*)p) : ip4_next_header((ip4_header_t*)p);
+  switch (compute_l4_checksum) { 
     case IP_PROTOCOL_ICMP: 
     case IP_PROTOCOL_ICMP6:
       icmp_checksum(vm, b, p, (icmp46_header_t*) next_header, is_ip6);
@@ -485,8 +485,8 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
 static uword
 mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
             vlib_frame_t *frame, u8 is_ip6,
-            vlib_node_registration_t *mmb_node)
-{
+            vlib_node_registration_t *mmb_node) {
+
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
 
@@ -593,6 +593,9 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
             mmb_trace_ip_packet(vm, b1, node, p1, next1, sw_if_index1, is_ip6);
       }
 
+      vec_free(rule_indexes0);
+      vec_free(rule_indexes1);
+
       /* verify speculative enqueue, maybe switch current next frame */
       vlib_validate_buffer_enqueue_x2(vm, node, next_index,
 				       to_next, n_left_to_next,
@@ -648,6 +651,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
                         && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
          mmb_trace_ip_packet(vm, b0, node, p0, next0, sw_if_index0, is_ip6);
       }
+
+      vec_free(rule_indexes0);
 
       /* verify speculative enqueue, maybe switch current next frame */
       vlib_validate_buffer_enqueue_x1(vm, node, next_index,

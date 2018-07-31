@@ -1179,8 +1179,9 @@ static_always_inline mmb_session_t *find_session(mmb_table_t *table,
  *  @return 1 if a session was created/deleted, 
  *          0 if session already existed/still exist
  */
-static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, mmb_session_t *session,
-                            u32 rule_index, int is_add) {
+static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, 
+                           mmb_session_t *session,
+                           u32 rule_index, int is_add) {
 
   if (is_add) {
 
@@ -2129,6 +2130,11 @@ void init_rule(mmb_rule_t *rule) {
 void free_rule(mmb_rule_t *rule) {
   uword index;
 
+  vec_foreach_index(index, rule->targets) {
+    vec_free(rule->targets[index].value);
+  }
+  vec_free(rule->targets);
+
   vec_foreach_index(index, rule->matches) {
     vec_free(rule->matches[index].value);
   }
@@ -2139,17 +2145,22 @@ void free_rule(mmb_rule_t *rule) {
   }
   vec_free(rule->opt_matches);
 
-  vec_foreach_index(index, rule->targets) {
-    vec_free(rule->targets[index].value);
-  }
-  vec_free(rule->targets);
-
   clib_bitmap_free(rule->opt_strips);
+
+  vec_foreach_index(index, rule->opt_mods) {
+    vec_free(rule->opt_mods[index].value);
+  }
+  vec_free(rule->opt_mods);
 
   vec_foreach_index(index, rule->opt_adds) {
     vec_free(rule->opt_adds[index].value);
   }
   vec_free(rule->opt_adds);
+
+  vec_free(rule->classify_mask);
+  vec_free(rule->classify_key);
+  vec_free(rule->rewrite_mask);
+  vec_free(rule->rewrite_key);
 }
 
 /**
