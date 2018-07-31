@@ -71,7 +71,7 @@ typedef struct {
 
 static u8 mmb_rewrite_tcp_options(vlib_buffer_t *, mmb_tcp_options_t *);
 static void target_tcp_options(vlib_buffer_t *, u8 *, mmb_rule_t *, 
-                               mmb_tcp_options_t *, u8);
+                               mmb_tcp_options_t *, u8, mmb_conn_t *conn, u32 dir);
 
 /************************
  *   MMB Node format
@@ -102,7 +102,7 @@ mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * no
 
   t->next = next;
   t->sw_if_index = sw_if_index;
-  t->rule_indexes = (u32*)vnet_buffer(b)->l2_classify.hash;
+  t->rule_indexes = vec_dup((u32*)vnet_buffer(b)->l2_classify.hash);
 
   if (is_ip6) {
     ip6_header_t *iph = (ip6_header_t*)p;
@@ -275,13 +275,15 @@ static_always_inline u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options,
   return 0;
 }
 
-static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, u8 kind) {
+static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, 
+                                                  u8 kind) {
   u8 idx = tcp_options->idx[kind];
   tcp_options->parsed[idx].is_stripped = 1;
 }
 
 void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule, 
-                        mmb_tcp_options_t *tcp_options, u8 is_ip6) {
+                        mmb_tcp_options_t *tcp_options, u8 is_ip6,
+                        mmb_conn_t *conn, u32 dir) {
 
   u32 i;
   u8 old_opts_len = 0, new_opts_len = 0, opts_modified = 0;
@@ -388,10 +390,62 @@ static_always_inline void tcp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
     tcph->checksum = ip4_tcp_udp_compute_checksum(vm, b, (ip4_header_t*)p);
 }
 
+static_always_inline void mmb_map_sack(mmb_tcp_options_t *tcp_options, u8 is_ip6,
+                                       mmb_conn_t *conn, u32 dir) {
+   //TODO
+}
+
+static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 is_ip6) {
+
+  tcp_header_t *tcph;  
+
+   if (!is_ip6) {
+      ip4_header_t *iph4 = (ip4_header_t*)p;
+      tcph = ip4_next_header(iph4);
+      if(conn->ip_id) 
+         conn->ip_id = (conn->ip_id + 1) % 0x0000ffff;
+   } else {
+      ip6_header_t *iph6 = (ip6_header_t*)p;
+      tcph = ip6_next_header(iph6);
+      if(conn->ip_id)
+         conn->ip_id = (conn->ip_id + 1) % 0x000fffff;
+   }
+
+   if (conn->tcp_seq_offset) {
+      if (!dir) 
+         tcph->seq_number = (tcph->seq_number + conn->tcp_seq_offset) % 0xffffffff;
+      else
+         tcph->ack_number = (tcph->ack_number - conn->tcp_seq_offset 
+                              + 0xffffffff) % 0xffffffff;
+      
+   } 
+   if(conn->tcp_ack_offset) {
+      if (!dir) 
+         tcph->ack_number = (tcph->ack_number + conn->tcp_ack_offset) % 0xffffffff;
+      else
+         tcph->seq_number = (tcph->seq_number - conn->tcp_ack_offset
+                              + 0xffffffff) % 0xffffffff;
+   } 
+
+   if(conn->sport) {
+      if (!dir) 
+         tcph->src_port = conn->sport;
+      else 
+         tcph->dst_port = conn->initial_sport;
+   }
+   if(conn->dport) {
+      if (!dir) 
+         tcph->dst_port = conn->dport;
+      else 
+         tcph->src_port = conn->initial_dport;
+   }
+}
+
 
 static_always_inline 
-u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p, 
-                u32 next, u8 tcpo, mmb_tcp_options_t *tcp_options, u8 is_ip6) {
+u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule, 
+               vlib_buffer_t *b, u8 *p, 
+               u32 next, u8 tcpo, mmb_tcp_options_t *tcp_options, u8 is_ip6) {
 
   /* lb */
   if (rule->lb) {
@@ -434,13 +488,24 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
       break;
   }
 
+  u32 conn_index = vnet_buffer(b)->unused[0];
+  u32 conn_dir   = vnet_buffer(b)->unused[1];
+  mmb_conn_t *conn = NULL;
+
+  if (rule->shuffle) {
+
+    if (!pool_is_free_index(mct->conn_pool, conn_index)) {/* for safety */
+      conn = pool_elt_at_index(mct->conn_pool, conn_index);
+      mmb_map_shuffle(p, conn, conn_dir, is_ip6);
+    }
+  }
+
   /* tcp opts */
   if (tcpo)
-    target_tcp_options(b, p, rule, tcp_options, is_ip6);
+    target_tcp_options(b, p, rule, tcp_options, is_ip6, conn, conn_dir);
  
   /* ip4 checksum */
-  if (!is_ip6)
-  {
+  if (!is_ip6) {
     ip4_header_t *iph = (ip4_header_t*)p;
     iph->checksum = ip4_header_checksum(iph);
   }
@@ -455,9 +520,9 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
   else 
     compute_l4_checksum = rule->l4;   
 
-  void *next_header = is_ip6 ? ip6_next_header((ip6_header_t*)p) : ip4_next_header((ip4_header_t*)p);
-  switch (compute_l4_checksum)
-  { 
+  void *next_header = is_ip6 ? 
+      ip6_next_header((ip6_header_t*)p) : ip4_next_header((ip4_header_t*)p);
+  switch (compute_l4_checksum) { 
     case IP_PROTOCOL_ICMP: 
     case IP_PROTOCOL_ICMP6:
       icmp_checksum(vm, b, p, (icmp46_header_t*) next_header, is_ip6);
@@ -485,8 +550,8 @@ u32 mmb_rewrite(vlib_main_t *vm, mmb_rule_t *rule, vlib_buffer_t *b, u8 *p,
 static uword
 mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
             vlib_frame_t *frame, u8 is_ip6,
-            vlib_node_registration_t *mmb_node)
-{
+            vlib_node_registration_t *mmb_node) {
+
   mmb_main_t *mm = &mmb_main;
   mmb_rule_t *rules = mm->rules;
 
@@ -553,7 +618,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       mmb_rule_t *ri0, *ri1;
       u32 *rule_index0, *rule_index1; 
       u32 *rule_indexes0 = (u32 *)vnet_buffer(b0)->l2_classify.hash;
-      u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;   
+      u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;   /*XXX vec_free */
 
       vec_foreach(rule_index0, rule_indexes0) { 
          ri0 = rules+*rule_index0; /** XXX preload? **/
@@ -563,7 +628,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
              else
                tcpo0 = mmb_parse_tcp_options(ip4_next_header((ip4_header_t*)p0), &tcp_options0);
          } 
-         next0 = mmb_rewrite(vm, ri0, b0, p0, next0, tcpo0, &tcp_options0, is_ip6);
+         next0 = mmb_rewrite(mm->mmb_conn_table, vm, ri0, b0, p0, 
+                             next0, tcpo0, &tcp_options0, is_ip6);
       }
 
       vec_foreach(rule_index1, rule_indexes1) { 
@@ -574,7 +640,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
              else
                tcpo1 = mmb_parse_tcp_options(ip4_next_header((ip4_header_t*)p1), &tcp_options1);
          } 
-         next1 = mmb_rewrite(vm, ri1, b1, p1, next1, tcpo1, &tcp_options1, is_ip6);
+         next1 = mmb_rewrite(mm->mmb_conn_table, vm, ri1, b1, p1, 
+                             next1, tcpo1, &tcp_options1, is_ip6);
       }
 
       /* get incoming interfaces */
@@ -592,6 +659,9 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
          if (b1->flags & VLIB_BUFFER_IS_TRACED)
             mmb_trace_ip_packet(vm, b1, node, p1, next1, sw_if_index1, is_ip6);
       }
+
+      vec_free(rule_indexes0);
+      vec_free(rule_indexes1);
 
       /* verify speculative enqueue, maybe switch current next frame */
       vlib_validate_buffer_enqueue_x2(vm, node, next_index,
@@ -634,7 +704,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
              else
                tcpo0 = mmb_parse_tcp_options(ip4_next_header((ip4_header_t*)p0), &tcp_options0);
          } 
-         next0 = mmb_rewrite(vm, ri0, b0, p0, next0, tcpo0, &tcp_options0, is_ip6);
+         next0 = mmb_rewrite(mm->mmb_conn_table, vm, ri0, b0, p0, 
+                             next0, tcpo0, &tcp_options0, is_ip6);
       }
 
       /* get incoming interface */
@@ -648,6 +719,8 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
                         && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
          mmb_trace_ip_packet(vm, b0, node, p0, next0, sw_if_index0, is_ip6);
       }
+
+      vec_free(rule_indexes0);
 
       /* verify speculative enqueue, maybe switch current next frame */
       vlib_validate_buffer_enqueue_x1(vm, node, next_index,
@@ -668,7 +741,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 }
 
 vlib_node_registration_t ip4_mmb_rewrite_node;
-static uword //XXX: duplicate node per transport proto
+static uword
 mmb_node_ip4_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
                     vlib_frame_t *frame) {
   return mmb_node_fn(vm, node, frame, 0, &ip4_mmb_rewrite_node);

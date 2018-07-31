@@ -20,9 +20,12 @@
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
 
+#include <vppinfra/random.h>
+
 #include <mmb/mmb.h>
 #include <mmb/mmb_format.h>
 #include <mmb/mmb_classify.h>
+#include <mmb/mmb_conn.h>
 
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
@@ -207,6 +210,16 @@ static int add_to_classifier(mmb_rule_t *rule);
  **/
 static void rechain_table(mmb_table_t *table, int to_table);
 
+/**
+ * mmb_add_rule_command
+ *
+ * Adds a rule to mmb
+ */
+static clib_error_t *mmb_add_rule_command(vlib_main_t *vm, unformat_input_t *input, 
+                                   int stateful);
+
+static clib_error_t *mmb_add_rule(mmb_rule_t *rule);
+
 static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule) {
   return rule->opts_in_matches || rule->opts_in_targets;
 }
@@ -229,9 +242,10 @@ static_always_inline void update_flags(mmb_main_t *mm, mmb_rule_t *rules) {
 /*
  * return 1 if masks are equals
  */
-static_always_inline u8 mask_equal(u8 *a, u8 *b) {
+static_always_inline int mask_equal(u8 *a, u8 *b) {
    if (vec_len(a) != vec_len(b))
       return 0;
+
    uword index;
    vec_foreach_index(index, a) {
       if (a[index] != b[index])
@@ -303,6 +317,9 @@ enable_command_fn(vlib_main_t * vm,
    u32 sw_if_index, enabled_sw_if_index;
    mmb_main_t *mm = &mmb_main;
    clib_error_t *error;
+   mmb_conn_table_t *mct = mm->mmb_conn_table;
+
+   purge_conn_expired_now(mct);
 
    if ( (error = mmb_enable_disable_fn(vm, input, cmd, &sw_if_index)) )
      return error;
@@ -333,6 +350,9 @@ disable_command_fn(vlib_main_t * vm,
    u32 sw_if_index, enabled_sw_if_index;
    mmb_main_t *mm = &mmb_main;
    clib_error_t *error;
+   mmb_conn_table_t *mct = mm->mmb_conn_table;
+   
+   purge_conn_expired_now(mct);
 
    if ( (error = mmb_enable_disable_fn(vm, input, cmd, &sw_if_index)) )
      return error;
@@ -363,6 +383,9 @@ list_rules_command_fn(vlib_main_t * vm,
                           unformat_input_t * input,
                           vlib_cli_command_t * cmd) {
   mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
+
+  purge_conn_expired_now(mct);
 
   if (!unformat_is_eof(input))
     return clib_error_return(0, "Syntax error: unexpected additional element");
@@ -373,7 +396,9 @@ list_rules_command_fn(vlib_main_t * vm,
 }
 
 static void flush() {
+
   mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
   mmb_rule_t *rules = mm->rules, *rule;
   u32 first_table_index = ~0;
 
@@ -383,6 +408,8 @@ static void flush() {
   /* detach first table */
   first_table_index = mm->tables[0].index;
   attach_table_if(first_table_index, 0);
+
+  purge_conn_forced(mct);
 
   /* delete sessions */
   vec_foreach(rule, rules) {
@@ -426,6 +453,66 @@ flush_rules_command_fn(vlib_main_t * vm,
                         vlib_cli_command_t * cmd) {
   flush();
   return 0;
+}
+
+static clib_error_t*
+show_tables_command_fn(vlib_main_t * vm,
+                        unformat_input_t * input,
+                        vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
+  mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
+  int verbose = 0;
+
+  purge_conn_expired_now(mct);
+
+  if (unformat(input, "verbose"))
+      verbose = 1;
+  if (!unformat_is_eof(input))
+     return clib_error_return(0, "Syntax error: unexpected additional element");
+  
+   vlib_cli_output(vm, "%U", mmb_format_tables, mm->tables, verbose);  
+
+   mmb_lookup_entry_t *lookup_entry;
+   u32 *rule_index, pool_index;
+   pool_foreach_index(pool_index, mm->lookup_pool, ({
+      vlib_cli_output(vm, "pool index %d", pool_index);
+
+      lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+      vec_foreach(rule_index, lookup_entry->rule_indexes) {
+         vlib_cli_output(vm, "  rule index %d", *rule_index);
+      }
+   }));
+
+   return 0;
+}
+
+static clib_error_t*
+show_conn_command_fn(vlib_main_t * vm,
+                        unformat_input_t * input,
+                        vlib_cli_command_t * cmd) {
+  unformat_input_tolower(input);
+  mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
+  int verbose = 0;
+
+  purge_conn_expired_now(mct);
+
+  if (unformat(input, "verbose"))
+      verbose = 1;
+  if (!unformat_is_eof(input))
+     return clib_error_return(0, "Syntax error: unexpected additional element");
+  
+   if (mct->conn_hash_is_initialized) {
+
+      vlib_cli_output(vm, "%U\n",
+                      mmb_format_conn_table, mct, verbose);
+
+   } else {
+     vlib_cli_output(vm, "Connection table is not allocated\n");
+   }
+
+   return 0;
 }
 
 static int vnet_set_mmb_classify_intfc(vlib_main_t *vm, u32 sw_if_index,
@@ -602,69 +689,69 @@ static_always_inline void mmb_tcp_mask_and_key_inline(u8 *mask, u8 *key, int off
   switch (field) {
       case MMB_FIELD_TCP_SPORT:
          tcp_mask->src_port = 0xffff;
-         tcp_key->src_port = bytes_to_u32(value);
+         tcp_key->src_port  = bytes_to_u32(value);
          break;
       case MMB_FIELD_TCP_DPORT:
          tcp_mask->dst_port = 0xffff;
-         tcp_key->dst_port = bytes_to_u32(value);
+         tcp_key->dst_port  = bytes_to_u32(value);
          break;
       case MMB_FIELD_TCP_SEQ_NUM:
          tcp_mask->seq_number = 0xffffffff;
-         tcp_key->seq_number = bytes_to_u32(value);
+         tcp_key->seq_number  = bytes_to_u32(value);
          break;
       case MMB_FIELD_TCP_ACK_NUM:
          tcp_mask->ack_number = 0xffffffff;
-         tcp_key->ack_number = bytes_to_u32(value);
+         tcp_key->ack_number  = bytes_to_u32(value);
          break;
       case MMB_FIELD_TCP_OFFSET:
          tcp_mask->data_offset_and_reserved |= 0xf0;
-         tcp_key->data_offset_and_reserved |= (*value << 4);
+         tcp_key->data_offset_and_reserved  |= (*value << 4);
          break;
       case MMB_FIELD_TCP_RESERVED:
          tcp_mask->data_offset_and_reserved |= 0x0f;
-         tcp_key->data_offset_and_reserved |= *value;
+         tcp_key->data_offset_and_reserved  |= *value;
          break;
       case MMB_FIELD_TCP_FLAGS: 
          tcp_mask->flags = 0xff;
          tcp_key->flags |= *value;
          break;
       case MMB_FIELD_TCP_CWR:
-         tcp_mask->flags |= TCP_FLAG_CWR;
+         tcp_mask->flags  |= TCP_FLAG_CWR;
          if (*value)
            tcp_key->flags |= TCP_FLAG_CWR;
          break;
       case MMB_FIELD_TCP_ECE:
-         tcp_mask->flags |= TCP_FLAG_ECE;
+         tcp_mask->flags  |= TCP_FLAG_ECE;
          if (*value)
            tcp_key->flags |= TCP_FLAG_ECE;
          break;
       case MMB_FIELD_TCP_URG:
-         tcp_mask->flags |= TCP_FLAG_URG;
+         tcp_mask->flags  |= TCP_FLAG_URG;
          if (*value)
            tcp_key->flags |= TCP_FLAG_URG;
          break;
       case MMB_FIELD_TCP_ACK:
-         tcp_mask->flags |= TCP_FLAG_ACK;
+         tcp_mask->flags  |= TCP_FLAG_ACK;
          if (*value)
            tcp_key->flags |= TCP_FLAG_ACK;
          break;
       case MMB_FIELD_TCP_PUSH:
-         tcp_mask->flags |= TCP_FLAG_PSH;
+         tcp_mask->flags  |= TCP_FLAG_PSH;
          if (*value)
            tcp_key->flags |= TCP_FLAG_PSH;
          break;
       case MMB_FIELD_TCP_RST:
-         tcp_mask->flags |= TCP_FLAG_RST;
+         tcp_mask->flags  |= TCP_FLAG_RST;
          if (*value)
            tcp_key->flags |= TCP_FLAG_RST;
          break;
       case MMB_FIELD_TCP_SYN:
-         tcp_mask->flags |= TCP_FLAG_SYN;
+         tcp_mask->flags  |= TCP_FLAG_SYN;
          if (*value)
            tcp_key->flags |= TCP_FLAG_SYN;
          break;
       case MMB_FIELD_TCP_FIN:
-         tcp_mask->flags |= TCP_FLAG_FIN;
+         tcp_mask->flags  |= TCP_FLAG_FIN;
          if (*value)
            tcp_key->flags |= TCP_FLAG_FIN;
          break;
@@ -1035,8 +1122,8 @@ mmb_classify_add_table(u8 *mask, u32 skip, u32 match,
   mmb_classify_main_t *mcm = mm->mmb_classify_main;
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
 
-  u32 nbuckets = max_entries;
-  u32 memory_size = nbuckets++ << 14; /* ??? */
+  u32 nbuckets = max_entries+1;
+  u32 memory_size = nbuckets << 14; /* ??? */
   u32 miss_next_index = IP_LOOKUP_NEXT_REWRITE;
   u32 current_data_flag = 0;
   int current_data_offset = 0;
@@ -1106,8 +1193,9 @@ static_always_inline mmb_session_t *find_session(mmb_table_t *table,
  *  @return 1 if a session was created/deleted, 
  *          0 if session already existed/still exist
  */
-static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, mmb_session_t *session,
-                            u32 rule_index, int is_add) {
+static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, 
+                           mmb_session_t *session,
+                           u32 rule_index, int is_add) {
 
   if (is_add) {
 
@@ -1116,6 +1204,7 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, mmb_session_t *
         mmb_session_t new_session;
         new_session.pool_index = mmb_lookup_pool_add(rule_index, ~0);
         new_session.key = vec_dup(rule->classify_key);
+        new_session.next = next_if_match(rule);
 
         vec_add1(table->sessions, new_session);
         rule->lookup_index = new_session.pool_index;
@@ -1131,8 +1220,9 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, mmb_session_t *
     if (session != NULL) {
       
       if (mmb_lookup_pool_del(rule_index, rule->lookup_index)) {
+
          vec_free(session->key);
-         vec_delete(table->sessions, 1, table->sessions-session);
+         vec_delete(table->sessions, 1, session - table->sessions);
 
          return 1;
       } else 
@@ -1298,16 +1388,16 @@ void rechain_table(mmb_table_t *table, int to_table) {
  *
  * @note table index will change
  */
-static void realloc_table(mmb_table_t *table, u32 deleted_index) {
+static void realloc_table(mmb_table_t *table, u8 is_increase) {
 
   mmb_main_t *mm = &mmb_main;
+  mmb_session_t *session;
   mmb_rule_t *rule, *rules = mm->rules;
   u32 old_index = table->index;
-  u32 index;
 
   /* create resized table */
   table->index = ~0;
-  if (deleted_index == ~0)
+  if (is_increase)
     table->size *= MMB_TABLE_SIZE_INC_RATIO;
   else 
     table->size /= MMB_TABLE_SIZE_DEC_RATIO;
@@ -1317,33 +1407,29 @@ static void realloc_table(mmb_table_t *table, u32 deleted_index) {
                           "to replace index %u", table->size, table->index, 
            old_index);
 
-  /* add sessions from old table */
-  vec_foreach_index(index, rules) {
-    if (index == deleted_index) /* skip index */
-       continue;
-
-    rule = &rules[index];
-    if (rule->classify_table_index == old_index) {
-      mmb_add_del_session(table->index, rule->classify_key, 
-                          next_if_match(rule), rule->lookup_index, 1); 
-      vl_print(mm->vlib_main, "added rule %u to table %u", 
-               index+1, table->index);
-    }
-  }  
+  /* add sessions to new table */
+  vec_foreach(session, table->sessions) {
+     mmb_add_del_session(table->index, session->key, 
+                         session->next, session->pool_index, 1); 
+     vl_print(mm->vlib_main, "added session to table %u", 
+              table->index);  
+  }
 
   rechain_table(table, 1);
 
-  /* delete old sessions and table */
+  /* fix rule attributes */
   vec_foreach(rule, rules) {
+     if (rule->classify_table_index == old_index) 
+        rule->classify_table_index = table->index;
+  }
 
-    if (rule->classify_table_index == old_index) {
-      vl_print(mm->vlib_main, "deleting session from table %u", 
+  /* delete old sessions and table */
+  vec_foreach(session, table->sessions) {
+     vl_print(mm->vlib_main, "deleting session from table %u", 
                old_index);
-      mmb_add_del_session(rule->classify_table_index, rule->classify_key, 
-                          0, 0, 0); 
-      rule->classify_table_index = table->index;
-    }
-  }  
+     mmb_add_del_session(old_index, session->key, 0, 0, 0); 
+  }
+  
   mmb_classify_del_table(&old_index, 0);
 }
 
@@ -1374,12 +1460,12 @@ u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index) {
 int mmb_lookup_pool_del(u32 rule_index, u32 pool_index) {
 
    mmb_main_t *mm = &mmb_main;
-   mmb_lookup_entry_t *lookup_entry;
-   
-   lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+   mmb_lookup_entry_t *lookup_entry = 
+      pool_elt_at_index(mm->lookup_pool, pool_index);
+
    if (vec_len(lookup_entry->rule_indexes) == 1) {
       vec_free(lookup_entry->rule_indexes);
-      pool_put_index(mm->lookup_pool, pool_index);
+      pool_put(mm->lookup_pool, lookup_entry);
    } else {
       vec_delete(lookup_entry->rule_indexes, 1, rule_index);
    }
@@ -1446,8 +1532,8 @@ int add_to_classifier(mmb_rule_t *rule) {
 
    /* Found table */
    table = &mm->tables[mmb_table];
-   if (table->entry_count == table->size)  /* Realloc table */
-       realloc_table(table, ~0);   
+   if (table->entry_count == table->size)
+       realloc_table(table, 1);   
    rule->classify_table_index = table->index;
 
    /* check if no existing rule makes new rule invalid */ 
@@ -1473,7 +1559,7 @@ int add_to_classifier(mmb_rule_t *rule) {
       vl_print(mm->vlib_main, "found existing session in table:%u "
                               "with lookup_index:%u", 
                rule->classify_table_index, rule->lookup_index);
-   }
+  }
 
   return !ret;
 }
@@ -1486,27 +1572,42 @@ clib_error_t *parse_rule(unformat_input_t * input,
   clib_error_t *error;
   if ( (error = validate_rule(rule)) )
     return error;
-
-  if (!add_to_classifier(rule))
-    return clib_error_return(0, "Invalid rule: Could not add to classifier");
-  mmb_main_t *mm = &mmb_main;
-  vl_print(mm->vlib_main, "opts_in_matches:%u matches_count:%d", 
-          rule->opts_in_matches, vec_len(rule->matches));
-
+      
   return 0;
 }
 
-static clib_error_t *
-add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input, 
-                     vlib_cli_command_t * cmd) {
+clib_error_t *mmb_add_rule(mmb_rule_t *rule) {
+
+  mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
+
+  if (!add_to_classifier(rule))
+    return clib_error_return(0, "Invalid rule: Could not add to classifier");
+
+  if (rule->stateful && !mct->conn_hash_is_initialized)
+    mmb_conn_hash_init();
+      
+  return 0;
+}
+
+clib_error_t * mmb_add_rule_command(vlib_main_t *vm, unformat_input_t *input, 
+                            int stateful) {
   unformat_input_tolower(input);
 
   mmb_rule_t rule;
   clib_error_t *error;
   mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
+
+  purge_conn_expired_now(mct);
 
   init_rule(&rule);
+  if (stateful)
+    rule.stateful = 1;  
+
   if ( (error = parse_rule(input, &rule)) )
+    return error;
+  if ( (error = mmb_add_rule(&rule)) )
     return error;
 
   vec_add1(mm->rules, rule);
@@ -1520,6 +1621,24 @@ add_rule_command_fn(vlib_main_t * vm, unformat_input_t * input,
 
   vlib_cli_output(vm, "Added rule: %U", mmb_format_rule, &rule);
   return 0;
+}
+
+static clib_error_t *
+add_rule_command_fn(vlib_main_t *vm, unformat_input_t *input, 
+                     vlib_cli_command_t *cmd) {
+  return mmb_add_rule_command(vm, input, 0);
+}
+
+static clib_error_t *
+add_stateless_rule_command_fn(vlib_main_t *vm, unformat_input_t *input, 
+                     vlib_cli_command_t *cmd) {
+  return mmb_add_rule_command(vm, input, 0);
+}
+
+static clib_error_t *
+add_stateful_rule_command_fn(vlib_main_t *vm, unformat_input_t *input, 
+                     vlib_cli_command_t *cmd) {
+  return mmb_add_rule_command(vm, input, 1);
 }
 
 void update_lookup_pool(u32 rule_index) {
@@ -1538,7 +1657,9 @@ void update_lookup_pool(u32 rule_index) {
 }
 
 static int remove_rule(u32 rule_index) {
+
   mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
   mmb_rule_t *rule, *rules = mm->rules;
   mmb_table_t *table, *tables = mm->tables;
   u32 table_index;
@@ -1579,9 +1700,15 @@ static int remove_rule(u32 rule_index) {
 
        vl_print(mm->vlib_main, "table:%u is too large, shrinking", 
                 rule->classify_table_index);
-       realloc_table(table, rule_index); 
+       realloc_table(table, 0); 
        rule->classify_table_index = table->index;
      }
+  }
+
+  if (rule->stateful) {
+    purge_conn_index(mct, rule_index);
+  } else {
+    update_conn_pool(mct, rule_index);
   }
 
   free_rule(rule);
@@ -1598,8 +1725,13 @@ static clib_error_t*
 del_rule_command_fn(vlib_main_t *vm,
                     unformat_input_t *input,
                     vlib_cli_command_t *cmd) {
+
+  mmb_main_t *mm = &mmb_main;
+  mmb_conn_table_t *mct = mm->mmb_conn_table;
   u32 rule_index;
   int ret;
+
+  purge_conn_expired_now(mct);
 
   if (!unformat(input, "%u", &rule_index)) 
     return clib_error_return(0, 
@@ -1788,11 +1920,12 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
          break;
        case MMB_FIELD_INTERFACE_IN:  
        case MMB_FIELD_INTERFACE_OUT:
-          if ( (error = validate_if(rule, match, field)) ) 
+         if ( (error = validate_if(rule, match, field)) ) 
             goto end;
-          vlib_cli_output(mmb_main.vlib_main, "if:%u\n", index);
-          vec_insert_elt_first(deletions, &index);
-          break;        
+         vlib_cli_output(mmb_main.vlib_main, "if:%u\n", index);
+         vec_insert_elt_first(deletions, &index);
+         vec_free(match->value);
+         break;        
        default:
          break;
      }
@@ -1807,11 +1940,10 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
      vlib_cli_output(mmb_main.vlib_main, "deleting %u size:%u\n", *deletion, vec_len(rule->matches));
 
      mmb_match_t *match = &rule->matches[*deletion];
-     vec_free(match->value);
      if (vec_len(rule->matches) == 1 && vec_len(rule->opt_matches) == 0) {
        match->field = MMB_FIELD_ALL;
        match->condition = 0;
-     } else  /* del */  
+     } else  /* del */
        vec_delete(rule->matches, 1, *deletion);
    }
 
@@ -1820,7 +1952,9 @@ end:
    return error;
 }
 
-static_always_inline mmb_transport_option_t to_transport_option(mmb_target_t *target) {
+static_always_inline mmb_transport_option_t 
+to_transport_option(mmb_target_t *target) {
+
    mmb_transport_option_t opt;
    memset(&opt, 0, sizeof(mmb_transport_option_t));
    opt.l4 = IP_PROTOCOL_TCP;
@@ -1845,10 +1979,6 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
        goto end;
 
      switch (field) {
-       case MMB_FIELD_IP4_SADDR:case MMB_FIELD_IP4_DADDR:
-       case MMB_FIELD_IP6_SADDR:case MMB_FIELD_IP6_DADDR:
-           rule->loop_packet = 1;
-           break;
        case MMB_FIELD_ALL:
          if (keyword != MMB_TARGET_STRIP || vec_len(value)) {
            error = clib_error_return(0, "'all' in a <target> can only be used"
@@ -1875,7 +2005,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          translate_target_ip4_ecn(target);
          break;
 
-#define _(a,b,c) case a: {target->field = MMB_FIELD_TCP_OPT; target->opt_kind=c;\
+#define _(a,b,c) case a: {target->field = field = MMB_FIELD_TCP_OPT; target->opt_kind=c;\
                           rule->opts_in_targets=1; break;}
    foreach_mmb_tcp_opts
 #undef _
@@ -1886,69 +2016,100 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
        default:
          break;
      }
-     
-     if (keyword == MMB_TARGET_STRIP) {
 
-       /* Ensure that field of strip target is a tcp opt. */
-       if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
-             && field <= MMB_FIELD_ALL)) {
-         error = clib_error_return(0, "strip <field> must be a tcp option or 'all'");
-         goto end;
-       }
-
-       /* build option strip list  */
-       if (!rule->has_strips)  {
-         rule->has_strips = 1; 
-         /* first strip target, set type */
-         if (reverse) {
-            rule->whitelist = 1;
-            /* flip bitmap to 1s XXX: typo in func name !!*/
-            clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
-         }
-       } else if (rule->whitelist != reverse) {
-         error = clib_error_return(0, "inconsistent use of ! in strip");
-         goto end;
-       }
-
-       if (field == MMB_FIELD_ALL) /* strip all */
-         target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
-
-       clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
-       vec_insert_elt_first(deletions, &index);
-     } else if (keyword == MMB_TARGET_ADD) { 
-
+    switch (keyword) {
+      case MMB_TARGET_STRIP:
         /* Ensure that field of strip target is a tcp opt. */
-       if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
-             && field < MMB_FIELD_ALL)) {
-         error = clib_error_return(0, "add <field> must be a tcp option");
-         goto end;
-       }
-
-       /* empty value should be fixed len and len = 0 */
-       if (vec_len(value) == 0 
-             && !(is_fixed_length(field) && lens[field_toindex(field)]==0) ) {
-         error = clib_error_return(0, "add <field> missing value");
-         goto end;
-       }
-
-       /* add transport opt to add-list and register for deletion */
-       mmb_transport_option_t opt = to_transport_option(target);
-       vec_add1(rule->opt_adds, opt);
-       rule->has_adds = 1;
-       vec_insert_elt_first(deletions, &index);
-     } else if (keyword == MMB_TARGET_MODIFY) { 
-        if  (MMB_FIELD_TCP_OPT_MSS <= field 
-             && field < MMB_FIELD_ALL) {
-          vec_add1(rule->opt_mods, *target);
-          vec_insert_elt_first(deletions, &index);
+        if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
+             && field <= MMB_FIELD_ALL)) {
+          error = clib_error_return(0, "strip <field> must be a tcp option or 'all'");
+          goto end;
         }
-     } else if (keyword == MMB_TARGET_LB) {
-       rule->lb = 1;
-       if (vec_len(rule->targets) > 1) {
-         error = clib_error_return(0, "lb is a unique target");
-         goto end;
-       }
-     }
+
+        /* build option strip list  */
+        if (!rule->has_strips)  {
+          rule->has_strips = 1; 
+          /* first strip target, set type */
+          if (reverse) {
+             rule->whitelist = 1;
+             /* flip bitmap to 1s XXX: typo in func name !!*/
+             clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
+          }
+        } else if (rule->whitelist != reverse) {
+          error = clib_error_return(0, "inconsistent use of ! in strip");
+          goto end;
+        }
+
+        if (field == MMB_FIELD_ALL) /* strip all */
+          target->opt_kind = MMB_FIELD_TCP_OPT_ALL;
+
+        clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
+        vec_insert_elt_first(deletions, &index);
+        break;
+
+     case MMB_TARGET_ADD:
+        /* Ensure that field of add target is a tcp opt. */
+        if  (!(MMB_FIELD_TCP_OPT_MSS <= field 
+              && field < MMB_FIELD_ALL)) {
+          error = clib_error_return(0, "add <field> must be a tcp option");
+          goto end;
+        }
+
+        /* empty value should be fixed len and len = 0 */
+        if (vec_len(value) == 0 
+              && !(is_fixed_length(field) && lens[field_toindex(field)]==0) ) {
+          error = clib_error_return(0, "add <field> missing value");
+          goto end;
+        }
+
+        /* add transport opt to add-list and register for deletion */
+        mmb_transport_option_t opt = to_transport_option(target);
+        vec_add1(rule->opt_adds, opt);
+        rule->has_adds = 1;
+        vec_insert_elt_first(deletions, &index);
+        break;
+
+      case MMB_TARGET_MODIFY:
+         if  (MMB_FIELD_TCP_OPT_MSS <= field 
+              && field < MMB_FIELD_ALL) {
+           vec_add1(rule->opt_mods, *target);
+           vec_insert_elt_first(deletions, &index);
+         }
+         break;
+
+      case MMB_TARGET_LB:
+         if (vec_len(rule->targets) > 1) {
+            error = clib_error_return(0, "lb is a unique target");
+            goto end;
+         }
+         rule->lb = 1;
+         break;
+
+      case MMB_TARGET_SHUFFLE:
+         if (rule->stateful == 0) {
+            error = clib_error_return(0, "shuffle is only valid with add-stateful");
+            goto end;
+         }
+         if (vec_len(value) != 0) {
+            error = clib_error_return(0, "shuffle does not allow value setting");
+            goto end;
+         }
+         if (!(field == MMB_FIELD_TCP_SEQ_NUM || field == MMB_FIELD_TCP_ACK_NUM 
+          || field == MMB_FIELD_TCP_SPORT || field == MMB_FIELD_TCP_DPORT 
+          || field == MMB_FIELD_UDP_SPORT || field == MMB_FIELD_UDP_DPORT
+          || (field == MMB_FIELD_TCP_OPT && target->opt_kind == 5) 
+          || field == MMB_FIELD_IP4_ID || field == MMB_FIELD_IP6_FLOW_LABEL)) {
+            error = clib_error_return(0, "invalid field for shuffle target");
+            goto end;
+         }
+
+         vec_add1(rule->shuffle_targets, *target);
+         vec_insert_elt_first(deletions, &index);      
+         rule->shuffle = 1;
+         break;
+      default:
+         break;
+     } 
    } 
 
    /* delete opts from targets */ 
@@ -1989,6 +2150,11 @@ void init_rule(mmb_rule_t *rule) {
 void free_rule(mmb_rule_t *rule) {
   uword index;
 
+  vec_foreach_index(index, rule->targets) {
+    vec_free(rule->targets[index].value);
+  }
+  vec_free(rule->targets);
+
   vec_foreach_index(index, rule->matches) {
     vec_free(rule->matches[index].value);
   }
@@ -1999,17 +2165,22 @@ void free_rule(mmb_rule_t *rule) {
   }
   vec_free(rule->opt_matches);
 
-  vec_foreach_index(index, rule->targets) {
-    vec_free(rule->targets[index].value);
-  }
-  vec_free(rule->targets);
-
   clib_bitmap_free(rule->opt_strips);
+
+  vec_foreach_index(index, rule->opt_mods) {
+    vec_free(rule->opt_mods[index].value);
+  }
+  vec_free(rule->opt_mods);
 
   vec_foreach_index(index, rule->opt_adds) {
     vec_free(rule->opt_adds[index].value);
   }
   vec_free(rule->opt_adds);
+
+  vec_free(rule->classify_mask);
+  vec_free(rule->classify_key);
+  vec_free(rule->rewrite_mask);
+  vec_free(rule->rewrite_key);
 }
 
 /**
@@ -2042,7 +2213,7 @@ VLIB_CLI_COMMAND(sr_content_command_list_rules, static) = {
 };
 
 /**
- * @brief CLI command to add a new rule.
+ * @brief CLI command to add a rule.
  */
 VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
     .path = "mmb add",
@@ -2050,6 +2221,28 @@ VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
                   "[<field> [[<cond>] <value>] ...] <strip <option-field> "
                   "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
     .function = add_rule_command_fn,
+};
+
+/**
+ * @brief CLI command to add a stateless rule (same as add, added for completeness).
+ */
+VLIB_CLI_COMMAND(sr_content_command_add_stateless_rule, static) = {
+    .path = "mmb add-stateless",
+    .short_help = "Add a rule (same as mmb add): mmb add-stateless <field> [[<cond>] <value>] "
+                  "[<field> [[<cond>] <value>] ...] <strip <option-field> "
+                  "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
+    .function = add_stateless_rule_command_fn,
+};
+
+/**
+ * @brief CLI command to add a stateful rule.
+ */
+VLIB_CLI_COMMAND(sr_content_command_add_stateful_rule, static) = {
+    .path = "mmb add-stateful",
+    .short_help = "Add a stateful rule: mmb add-stateful <field> [[<cond>] <value>] "
+                  "[<field> [[<cond>] <value>] ...] <strip <option-field> "
+                  "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
+    .function = add_stateful_rule_command_fn,
 };
 
 /**
@@ -2068,6 +2261,24 @@ VLIB_CLI_COMMAND(sr_content_command_flush_rule, static) = {
     .path = "mmb flush",
     .short_help = "Remove all rules",
     .function = flush_rules_command_fn,
+};
+
+/**
+ * @brief CLI command to show classify tables
+ */
+VLIB_CLI_COMMAND(sr_content_command_show_tables, static) = {
+    .path = "mmb show tables",
+    .short_help = "Display tables and sessions details: mmb show tables [verbose]",
+    .function = show_tables_command_fn,
+};
+
+/**
+ * @brief CLI command to show connections tables
+ */
+VLIB_CLI_COMMAND(sr_content_command_show_conn, static) = {
+    .path = "mmb show connections",
+    .short_help = "Display connections details: mmb show connections [verbose]",
+    .function = show_conn_command_fn,
 };
 
 static void
@@ -2168,18 +2379,27 @@ setup_message_id_table(mmb_main_t * mm, api_main_t *am) {
 /**
  * @brief Initialize the mmb plugin.
  */
-static clib_error_t * mmb_init(vlib_main_t * vm) {
+static clib_error_t * mmb_init(vlib_main_t *vm) {
   mmb_main_t * mm = &mmb_main;
   clib_error_t * error = 0;
-  u8 * name;
+  u8 *name;
 
   memset(mm, 0, sizeof(mmb_main_t));
   mm->vnet_main = vnet_get_main();
   mm->vlib_main = vm;
   mm->mmb_classify_main = &mmb_classify_main;
   mm->mmb_classify_main->vnet_classify_main = &vnet_classify_main;
+  mm->last_conn_table_timeout_check = clib_cpu_time_now();
+#ifdef CLIB_STANDALONE
+  standalone_random_default_seed = (u32) mm->last_conn_table_timeout_check;
+#endif
+  mm->random_seed = random_default_seed();
+   
+  if ((error = mmb_conn_table_init(vm)))
+    return error;
+  mm->mmb_conn_table = &mmb_conn_table;
 
-  name = format (0, "mmb_%08x%c", api_version, 0);
+  name = format(0, "mmb_%08x%c", api_version, 0);
 
   /* Ask for a correctly-sized block of API message decode slots */
   mm->msg_id_base = vl_msg_api_get_msg_ids 
