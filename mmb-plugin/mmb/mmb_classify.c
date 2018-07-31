@@ -36,6 +36,7 @@ typedef struct {
   u8 packet_data[16];
 
   u32 conn_index;
+  u32 conn_dir;
   mmb_5tuple_t packet_5tuple;
 } mmb_classify_trace_t;
 
@@ -62,7 +63,8 @@ static u8 *format_mmb_classify_trace(u8 * s, va_list * args)
   t->packet_5tuple.kv.key[2], t->packet_5tuple.kv.key[3], 
   t->packet_5tuple.kv.key[4], t->packet_5tuple.kv.key[5], t->packet_5tuple.kv.value);*/
 
-  s = format(s, "conn id: %u\n", t->conn_index);
+  if (t->conn_index != ~0) 
+    s = format(s, "conn id: %u dir:%u\n", t->conn_index, t->conn_dir);
 
   return s;
 }
@@ -517,12 +519,13 @@ mmb_classify_inline(vlib_main_t * vm,
                 vlib_add_trace(vm, node, b0, sizeof(*t));
               t->sw_if_index = vnet_buffer(b0)->sw_if_index[VLIB_RX];
               t->next_index = next0;
-              t->rule_indexes = (u32*)vnet_buffer(b0)->l2_classify.hash;
-              clib_memcpy(&t->packet_5tuple, &pkt_5tuple,
+              t->rule_indexes = vec_dup((u32*)vnet_buffer(b0)->l2_classify.hash);
+              /*clib_memcpy(&t->packet_5tuple, &pkt_5tuple,
 		                    sizeof(pkt_5tuple));
               clib_memcpy(t->packet_data, h0,
-		                    sizeof(t->packet_data)); /* offsetof */
-              t->conn_index = pkt_conn_index.value;
+		                    sizeof(t->packet_data)); *//* offsetof */
+              t->conn_index = conn_index;
+              t->conn_dir = conn_dir;
          }
 
          vec_free(matches_opener);

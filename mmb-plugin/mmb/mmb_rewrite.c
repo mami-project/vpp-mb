@@ -102,7 +102,7 @@ mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * no
 
   t->next = next;
   t->sw_if_index = sw_if_index;
-  t->rule_indexes = (u32*)vnet_buffer(b)->l2_classify.hash;
+  t->rule_indexes = vec_dup((u32*)vnet_buffer(b)->l2_classify.hash);
 
   if (is_ip6) {
     ip6_header_t *iph = (ip6_header_t*)p;
@@ -431,13 +431,13 @@ static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 i
       if (!dir) 
          tcph->src_port = conn->sport;
       else 
-         tcph->dst_port = conn->sport;
+         tcph->dst_port = conn->info.l4.port[0];
    }
    if(conn->dport) {
       if (!dir) 
          tcph->dst_port = conn->dport;
       else 
-         tcph->src_port = conn->dport;
+         tcph->src_port = conn->info.l4.port[1];
    }
 }
 
