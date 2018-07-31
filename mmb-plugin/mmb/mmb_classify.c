@@ -363,7 +363,7 @@ mmb_classify_inline(vlib_main_t * vm,
          vnet_classify_entry_t *e0;
          u64 hash0;
          u8 *h0;
-         u32 *matches, *matches_opener;
+         u32 *matches, *matches_opener, *matches_shuffle;
          mmb_rule_t *rule;
 
          /* Stride 3 seems to work best */
@@ -397,6 +397,7 @@ mmb_classify_inline(vlib_main_t * vm,
          t0 = 0;
          matches = 0;
          matches_opener = 0;
+         matches_shuffle = 0;
          tcpo0_flag = 0;
 
          mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
@@ -416,16 +417,17 @@ mmb_classify_inline(vlib_main_t * vm,
                     rule = rules+*rule_index;
                     if (!rule->opts_in_matches 
                || mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid)) {
-                       
-                       
-                       if (rule->stateful == 0) {
+                                              
+                       if (rule->stateful == 0) { /* stateless */
                           vec_add1(matches, *rule_index);
                           next0 = e0->next_index;                     
-                        } else {
+                       } else if (rule->shuffle == 0) { /* stateful */
                           vec_add1(matches_opener, *rule_index);
-                        }
+                       } else { /* stateful + seed */
+                          vec_add1(matches_shuffle, *rule_index);
+                       }
 
-                        rule->match_count++;
+                       rule->match_count++;
                     }   
                  }
                  hits++;
@@ -451,11 +453,13 @@ mmb_classify_inline(vlib_main_t * vm,
                       if (!rule->opts_in_matches 
                 || mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid)) {
 
-                        if (rule->stateful == 0) {
-                           vec_add1(matches, *rule_index);
-                           next0 = e0->next_index;                     
-                         } else {
-                           vec_add1(matches_opener, *rule_index);
+                         if (rule->stateful == 0) { /* stateless */
+                            vec_add1(matches, *rule_index);
+                            next0 = e0->next_index;                     
+                         } else if (rule->shuffle == 0) { /* stateful */
+                            vec_add1(matches_opener, *rule_index);
+                         } else { /* stateful + seed */
+                            vec_add1(matches_shuffle, *rule_index);
                          }
  
                          rule->match_count++;
@@ -482,11 +486,14 @@ mmb_classify_inline(vlib_main_t * vm,
 
                if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
                   next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
-            } else if (vec_len(matches_opener) != 0 
+            } else if ((vec_len(matches_opener) != 0 || vec_len(matches_shuffle) != 0)
                         && pkt_5tuple.pkt_info.l4_valid == 1) {
                /* new valid connection matched */
 
-               mmb_add_conn(mct, &pkt_5tuple, matches_opener, now_ticks);
+               vec_append(matches_opener, matches_shuffle);
+               mmb_add_conn(mct, &pkt_5tuple, matches_opener, 
+                            matches_shuffle, now_ticks);
+               
                vec_append(matches, matches_opener);
                
                if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
@@ -511,6 +518,7 @@ mmb_classify_inline(vlib_main_t * vm,
          }
 
          vec_free(matches_opener);
+         vec_free(matches_shuffle);
 
          /* Verify speculative enqueue, maybe switch current next frame */
          vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next,

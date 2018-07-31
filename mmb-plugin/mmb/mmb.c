@@ -2055,6 +2055,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
         rule->has_adds = 1;
         vec_insert_elt_first(deletions, &index);
         break;
+
       case MMB_TARGET_MODIFY:
          if  (MMB_FIELD_TCP_OPT_MSS <= field 
               && field < MMB_FIELD_ALL) {
@@ -2062,13 +2063,15 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
            vec_insert_elt_first(deletions, &index);
          }
          break;
+
       case MMB_TARGET_LB:
-         rule->lb = 1;
          if (vec_len(rule->targets) > 1) {
             error = clib_error_return(0, "lb is a unique target");
             goto end;
          }
+         rule->lb = 1;
          break;
+
       case MMB_TARGET_SHUFFLE:
          if (rule->stateful == 0) {
             error = clib_error_return(0, "shuffle is only valid with add-stateful");
@@ -2086,6 +2089,10 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
             error = clib_error_return(0, "invalid field for shuffle target");
             goto end;
          }
+
+         vec_add1(rule->shuffle_targets, *target);
+         vec_insert_elt_first(deletions, &index);      
+         rule->shuffle = 1;
          break;
       default:
          break;

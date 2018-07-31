@@ -208,28 +208,6 @@ _(icmp,ICMP)
 _(ip4,IP4)                        \
 _(ip6,IP6)
 
-typedef struct {
-   u8 l4;
-   u8 kind;
-   u8 *value;
-} mmb_transport_option_t;
-
-typedef struct {
-   u8 field; /*! The field to match on */
-   u8 opt_kind; /*! The kind of option, if the field is one */
-   u8 condition; /*! The constraint condition (optional) */
-   u8 *value; /*! The constraint value (optional) */ 
-   u8 reverse; /*! reverse matching (boolean not) */
-} mmb_match_t;
-
-typedef struct {
-   u8 keyword; /*! The target keyword */ 
-   u8 field;  /*! The field to modify */
-   u8 opt_kind;  /*! The kind of option, if the field is one */
-   u8 *value; /*! The value to write */ 
-   u8 reverse; /*! whitelist (strip only) */
-} mmb_target_t;
-
 #define is_drop(rule)\
      (vec_len(rule->targets) == 1 && rule->targets[0].keyword == MMB_TARGET_DROP)
 #define next_if_match(rule)\
@@ -268,21 +246,47 @@ typedef struct {
 
 } mmb_table_t;
 
-typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 */
+typedef struct {
+   u8 l4;
+   u8 kind;
+   u8 *value;
+} mmb_transport_option_t;
+
+typedef struct {
+   u8 field; /*! The field to match on */
+   u8 opt_kind; /*! The kind of option, if the field is one */
+   u8 condition; /*! The constraint condition (optional) */
+   u8 *value; /*! The constraint value (optional) */ 
+   u8 reverse; /*! reverse matching (boolean not) */
+} mmb_match_t;
+
+typedef struct {
+   u8 keyword; /*! The target keyword */ 
+   u8 field;  /*! The field to modify */
+   u8 opt_kind;  /*! The kind of option, if the field is one */
+   u8 *value; /*! The value to write */ 
+   u8 reverse; /*! whitelist (strip only) */
+} mmb_target_t;
+
+typedef struct {
   u16 l3; /*! l3 protocol */
   u8 l4; /*! l4 protocol */
   u32 in; /*! input if */
   u32 out; /*! output if */
 
+  /* matches/constraints */
   mmb_match_t *matches; /*! Matches vector */
   mmb_match_t *opt_matches; /*! Options (tcp, ip6) */
   u32 match_count; /*! count of matched packets */
 
-  mmb_target_t *targets; /*! Targets vector */
+  /* targets/modifications */
+  mmb_target_t           *targets; /*! Targets vector */
   uword                  *opt_strips;
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
+  mmb_target_t           *shuffle_targets;
 
+  /* mmb_classify */
   u8 *classify_mask;
   u32 classify_skip; 
   u32 classify_match;
@@ -290,19 +294,21 @@ typedef struct {/* XXX: optimize mem access, struct len has to be a power of 2 *
   u32 classify_table_index; /*! index of table in classifier */
   u32 lookup_index; /*! index for session to list of rules mapping */
 
+  /* mmb_rewrite */
   u8 *rewrite_mask; 
   u32 rewrite_skip;
   u32 rewrite_match;
   u8 *rewrite_key;
 
+  /* flags */
   u8 has_strips:1;
+  u8 has_adds:1; /* unused */
   u8 whitelist:1;
-  u8 has_adds:1;
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
   u8 lb:1;
   u8 stateful:1;
-  u8 unused:1;
+  u8 shuffle:1;
 
 } mmb_rule_t;
 
