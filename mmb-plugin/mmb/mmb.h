@@ -196,6 +196,7 @@ enum
 #define cond_tomacro(index) index+MMB_0_COND+1
 
 #define MMB_MAX_FIELD_LEN 64
+#define MMB_MAX_DROP_RATE_VALUE 100000
 
 /* cli-name,protocol-name */
 #define foreach_mmb_transport_proto \
@@ -300,7 +301,8 @@ typedef struct {
   u32 rewrite_match;
   u8 *rewrite_key;
 
-  u8 drop_rate;
+  /* drop rate, unit is 0.001% */
+  u32 drop_rate;
 
   /* flags */
   u8 has_strips:1;

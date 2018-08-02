@@ -423,14 +423,16 @@ static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 i
                                           % 0x100000000);
    } 
    if(conn->tcp_ack_offset) {
-      if (!dir) 
-         tcph->ack_number = clib_host_to_net_u32(
-                              (clib_net_to_host_u32(tcph->ack_number) 
-                                 + conn->tcp_ack_offset) % 0x100000000);
-      else
+      if (!dir) { 
+         if (!(tcph->flags & TCP_FLAG_SYN))
+            tcph->ack_number = clib_host_to_net_u32(
+                                 (clib_net_to_host_u32(tcph->ack_number) 
+                                    - conn->tcp_ack_offset + 0x100000000)
+                                      % 0x100000000);
+      } else
          tcph->seq_number = clib_host_to_net_u32(
                               (clib_net_to_host_u32(tcph->seq_number) 
-                                 - conn->tcp_ack_offset + 0x100000000) % 0x100000000);
+                                 + conn->tcp_ack_offset) % 0x100000000);
    } 
 
    if(conn->sport) {

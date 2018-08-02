@@ -330,10 +330,11 @@ uword mmb_unformat_fibs(unformat_input_t *input, va_list *args) {
 
 uword mmb_unformat_perc(unformat_input_t *input, va_list *args) {
    u8 **bytes = va_arg(*args, u8**);
-   u32 perc;
+   f64 perc;
 
-   if (unformat(input, "%u", &perc) && perc > 0 && perc <= 100) {
-      vec_add1(*bytes, (u8)perc);  
+   if (unformat(input, "%lf", &perc) && perc > 0.0 && perc <= 100.0) {
+      vec_validate(*bytes, 4);
+      (*((u32**)bytes))[0] = (u32) (perc * (MMB_MAX_DROP_RATE_VALUE/100)); /* XXX: not kosher */
       return 1;
    }
 
@@ -517,6 +518,22 @@ static_always_inline u8 *mmb_format_lb(u8 *s, va_list *args) {
    s = format(s, "lb");
    vec_foreach(byte, bytes) {
      s = format(s, " %u", *byte);
+   }
+
+   return s;
+}
+
+static_always_inline u8 *mmb_format_drop(u8 *s, va_list *args) {
+   u8 *drop_value = va_arg(*args, u8*);
+   u32 drop_rate; 
+
+   s = format(s, "drop");
+   if (vec_len(drop_value) == 0)
+      return s;
+
+   drop_rate = ((u32*)drop_value)[0];
+   if (drop_rate != MMB_MAX_DROP_RATE_VALUE) {
+      s = format(s, " %.2f%%", (f64)drop_rate/(MMB_MAX_DROP_RATE_VALUE/100));
    }
 
    return s;
@@ -784,6 +801,8 @@ u8* mmb_format_target(u8 *s, va_list *args) {
   mmb_target_t *target = va_arg(*args, mmb_target_t*);
   if (target->keyword == MMB_TARGET_LB)
      return format(s, "%U", mmb_format_lb, target->value);
+  if (target->keyword == MMB_TARGET_DROP)
+     return format(s, "%U", mmb_format_drop, target->value);  
 
   return format(s, "%s%U %U %U", (target->reverse) ? "! ":"",
                          mmb_format_keyword, &target->keyword,

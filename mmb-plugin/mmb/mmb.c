@@ -2081,11 +2081,10 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
             error = clib_error_return(0, "drop is a unique target");
             goto end;
          }
-         if (vec_len(value) > 0) {
-            rule->drop_rate = value[0];
-            vec_free(target->value);
-         } else
-            rule->drop_rate = 100;
+         if (vec_len(value) > 0) 
+            rule->drop_rate = ((u32*)value)[0];
+         else
+            rule->drop_rate = MMB_MAX_DROP_RATE_VALUE;
 
          break;
 
