@@ -171,8 +171,8 @@ void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
       /* XXX: make an inline function */
       conn_key.addr[0] = conn->info.addr[1];
       conn_key.addr[1] = conn->info.addr[0];
-      conn_key.l4.port[0] = conn->dport ? ntohs(conn->dport) : pkt_5tuple->l4.port[1];
-      conn_key.l4.port[1] = conn->sport ? ntohs(conn->sport) : pkt_5tuple->l4.port[0]; 
+      conn_key.l4.port[0] = conn->dport ? ntohs(conn->dport) : conn->info.l4.port[1];
+      conn_key.l4.port[1] = conn->sport ? ntohs(conn->sport) : conn->info.l4.port[0]; 
       mmb_del_5tuple(mct, &conn_key.kv);
 
       vec_free(conn->rule_indexes);
