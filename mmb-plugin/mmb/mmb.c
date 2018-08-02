@@ -2065,7 +2065,6 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
         /* add transport opt to add-list and register for deletion */
         mmb_transport_option_t opt = to_transport_option(target);
         vec_add1(rule->opt_adds, opt);
-        rule->has_adds = 1;
         vec_insert_elt_first(deletions, &index);
         break;
 
@@ -2075,6 +2074,18 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
            vec_add1(rule->opt_mods, *target);
            vec_insert_elt_first(deletions, &index);
          }
+         break;
+
+      case MMB_TARGET_DROP:
+         if (vec_len(rule->targets) > 1) {
+            error = clib_error_return(0, "drop is a unique target");
+            goto end;
+         }
+         if (vec_len(value) > 0) 
+            rule->drop_rate = ((u32*)value)[0];
+         else
+            rule->drop_rate = MMB_MAX_DROP_RATE_VALUE;
+
          break;
 
       case MMB_TARGET_LB:
