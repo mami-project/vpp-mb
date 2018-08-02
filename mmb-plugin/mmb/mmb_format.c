@@ -328,6 +328,18 @@ uword mmb_unformat_fibs(unformat_input_t *input, va_list *args) {
    return vec_len(*bytes) > 0;
 }
 
+uword mmb_unformat_perc(unformat_input_t *input, va_list *args) {
+   u8 **bytes = va_arg(*args, u8**);
+   u32 perc;
+
+   if (unformat(input, "%u", &perc) && perc > 0 && perc <= 100) {
+      vec_add1(*bytes, (u8)perc);  
+      return 1;
+   }
+
+   return 0;
+}
+
 uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
    mmb_target_t *target = va_arg(*args, mmb_target_t*);
 
@@ -349,6 +361,8 @@ uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
    else if (unformat(input, "add %U", mmb_unformat_field, 
                       &target->field, &target->opt_kind)) 
      target->keyword=MMB_TARGET_ADD;
+   else if (unformat(input, "drop %U", mmb_unformat_perc, &target->value))
+     target->keyword=MMB_TARGET_DROP;
    else if (unformat(input, "drop"))
      target->keyword=MMB_TARGET_DROP;
    else if (unformat(input, "lb%U", mmb_unformat_fibs, &target->value)) 

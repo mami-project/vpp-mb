@@ -300,15 +300,17 @@ typedef struct {
   u32 rewrite_match;
   u8 *rewrite_key;
 
+  u8 drop_rate;
+
   /* flags */
   u8 has_strips:1;
-  u8 has_adds:1; /* unused */
   u8 whitelist:1;
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
   u8 lb:1;
   u8 stateful:1;
   u8 shuffle:1;
+  u8 unused:1; 
 
 } mmb_rule_t;
 

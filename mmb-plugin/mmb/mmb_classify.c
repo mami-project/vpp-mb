@@ -222,6 +222,12 @@ static inline int mmb_match_opts(mmb_rule_t *rule, u8 *p0,
    return 1;
 }
 
+static_always_inline int random_drop(mmb_main_t *mm, u8 drop_rate) {
+
+   u8 random_value = (u8)(random_u32(&mm->random_seed) % 101);
+   return random_value < drop_rate;
+}
+
 static inline uword
 mmb_classify_inline(vlib_main_t * vm,
                      vlib_node_runtime_t * node,
@@ -424,11 +430,15 @@ mmb_classify_inline(vlib_main_t * vm,
                                               
                        if (rule->stateful == 0) { /* stateless */
                           vec_add1(matches, *rule_index);
-                          next0 = e0->next_index;                     
-                       } else if (rule->shuffle == 0) { /* stateful */
-                          vec_add1(matches_opener, *rule_index);
-                       } else { /* stateful + seed */
-                          vec_add1(matches_shuffle, *rule_index);
+                          if (rule->drop_rate == 0 || rule->drop_rate == 100
+                              || random_drop(mm, rule->drop_rate))
+                             next0 = e0->next_index;  
+                       } else { 
+                          if (rule->shuffle == 0) { /* stateful */
+                             vec_add1(matches_opener, *rule_index);
+                          } else { /* stateful + seed */
+                             vec_add1(matches_shuffle, *rule_index);
+                          }
                        }
 
                        rule->match_count++;
