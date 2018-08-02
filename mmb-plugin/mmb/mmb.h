@@ -31,7 +31,7 @@
 /* Comment out to remove calls to vlib_cli_output() */
 #define MMB_DEBUG
 
-#define MMB_PLUGIN_BUILD_VER "0.3"
+#define MMB_PLUGIN_BUILD_VER "0.3.1"
 
 #define foreach_mmb_type \
   _(FIELD)               \
