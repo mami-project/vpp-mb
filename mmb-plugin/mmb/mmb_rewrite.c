@@ -413,11 +413,14 @@ static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 i
 
    if (conn->tcp_seq_offset) {
       if (!dir) 
-         tcph->seq_number = (tcph->seq_number + conn->tcp_seq_offset) % 0x100000000;
+         tcph->seq_number = clib_host_to_net_u32(
+                              (clib_net_to_host_u32(tcph->seq_number)
+                                 + conn->tcp_seq_offset) % 0x100000000);
       else
-         tcph->ack_number = (tcph->ack_number - conn->tcp_seq_offset 
-                              + 0x100000000) % 0x100000000;
-      
+         tcph->ack_number =  clib_host_to_net_u32(
+                                 (clib_net_to_host_u32(tcph->ack_number) 
+                                    - conn->tcp_seq_offset + 0x100000000) 
+                                          % 0x100000000);
    } 
    if(conn->tcp_ack_offset) {
       if (!dir) 
