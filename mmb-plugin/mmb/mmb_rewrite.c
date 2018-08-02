@@ -403,28 +403,28 @@ static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 i
       ip4_header_t *iph4 = (ip4_header_t*)p;
       tcph = ip4_next_header(iph4);
       if(conn->ip_id) 
-         conn->ip_id = (conn->ip_id + 1) % 0x0000ffff;
+         conn->ip_id = (conn->ip_id + 1) % 0x00010000;
    } else {
       ip6_header_t *iph6 = (ip6_header_t*)p;
       tcph = ip6_next_header(iph6);
       if(conn->ip_id)
-         conn->ip_id = (conn->ip_id + 1) % 0x000fffff;
+         conn->ip_id = (conn->ip_id + 1) % 0x00100000;
    }
 
    if (conn->tcp_seq_offset) {
       if (!dir) 
-         tcph->seq_number = (tcph->seq_number + conn->tcp_seq_offset) % 0xffffffff;
+         tcph->seq_number = (tcph->seq_number + conn->tcp_seq_offset) % 0x100000000;
       else
          tcph->ack_number = (tcph->ack_number - conn->tcp_seq_offset 
-                              + 0xffffffff) % 0xffffffff;
+                              + 0x100000000) % 0x100000000;
       
    } 
    if(conn->tcp_ack_offset) {
       if (!dir) 
-         tcph->ack_number = (tcph->ack_number + conn->tcp_ack_offset) % 0xffffffff;
+         tcph->ack_number = (tcph->ack_number + conn->tcp_ack_offset) % 0x100000000;
       else
          tcph->seq_number = (tcph->seq_number - conn->tcp_ack_offset
-                              + 0xffffffff) % 0xffffffff;
+                              + 0x100000000) % 0x100000000;
    } 
 
    if(conn->sport) {
