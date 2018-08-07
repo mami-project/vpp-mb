@@ -14,5 +14,4 @@ m4/*
 missing
 */.deps/*
 */.dirstamp
-*/*.api.h
 */*.json

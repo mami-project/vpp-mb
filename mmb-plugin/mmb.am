@@ -27,8 +27,9 @@ API_FILES += mmb/mmb.api
 
 nobase_apiinclude_HEADERS += \
   mmb/mmb_all_api_h.h        \
-  mmb/mmb_msg_enum.h         \
-  mmb/mmb.api.h           
+  mmb/mmb_msg_enum.h	     \
+  mmb/mmb.api.h
+
 
 mmb_test_plugin_la_SOURCES = mmb/mmb_test.c mmb/mmb_plugin.api.h
 
