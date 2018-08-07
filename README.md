@@ -1,6 +1,8 @@
 VPP Modular Middlebox
 =====================
 
+[![Coverage Status](https://coveralls.io/repos/github/mami-project/vpp-mb/badge.svg?branch=master)](https://coveralls.io/github/mami-project/vpp-mb?branch=mask)
+
 ## Vagrant
 
 Install **Vagrant** on your host machine.
