@@ -1,7 +1,7 @@
 VPP Modular Middlebox
 =====================
 
-[![Coverage Status](https://coveralls.io/repos/github/mami-project/vpp-mb/badge.svg?branch=mask)](https://coveralls.io/github/mami-project/vpp-mb?branch=mask)
+[![Coverage Status](https://coveralls.io/repos/github/mami-project/vpp-mb/badge.svg?branch=master)](https://coveralls.io/github/mami-project/vpp-mb?branch=master)
 
 ## Vagrant
 
