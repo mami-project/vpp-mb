@@ -16,5 +16,4 @@ In *vagrant* folder (`vpp-mb/vagrant/`), run:
     vagrant up
     vagrant ssh
 
-## Follow instructions from pdf file
 

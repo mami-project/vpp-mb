@@ -2,19 +2,17 @@
 # vi: set ft=ruby :
 
 $script = <<SCRIPT
-  ln -s /vagrant/simple_tracebox.py /home/vagrant/simple_tracebox.py
   service vpp stop
 SCRIPT
 
 Vagrant.configure(2) do |config|
 
-  config.vm.box = "uliege/mmb"
-  config.vm.box_url = ["http://summerschool.mami-project.eu/mmb.box", 
-                       "http://queen.run.montefiore.ulg.ac.be/~iurman/mmb.box"]
-
-  config.vm.hostname = "mmb-tutorial"
-  config.vm.define "mmb-tutorial"
-  config.vm.post_up_message = "Welcome in MMB tutorial !"
+  config.vm.box = "uliege/tracebox"
+  config.vm.box_url = ["http://queen.run.montefiore.ulg.ac.be/~edeline/trace.box"]
+  
+  config.vm.hostname = "tracebox-tutorial"
+  config.vm.define "tracebox-tutorial"
+  config.vm.post_up_message = "Welcome to the RCM tutorial !"
 
   config.vm.provision :shell, :inline => $script
 
