@@ -175,18 +175,18 @@ static void update_lookup_pool(u32 rule_index);
 /**
  * mmb_lookup_pool_add
  *
- * add rule_index at pool_index
- * @param pool_index: ~0 if no entry, or index of entry 
+ * add rule_index at lookup_index
+ * @param lookup_index: ~0 if no entry, or index of entry 
  */
-static_always_inline u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index);
+static_always_inline u32 mmb_lookup_pool_add(u32 rule_index, u32 lookup_index);
 
 /** 
  * mmb_lookup_pool_del
  *
- * remove rule_index from pool_index
+ * remove rule_index from lookup_index
  * @return 1 if entry was also removed, 0 if it was not
  */
-static_always_inline int mmb_lookup_pool_del(u32 rule_index, u32 pool_index);
+static_always_inline int mmb_lookup_pool_del(u32 rule_index, u32 lookup_index);
 
 /**
  * add_to_classifier
@@ -474,11 +474,11 @@ show_tables_command_fn(vlib_main_t * vm,
    vlib_cli_output(vm, "%U", mmb_format_tables, mm->tables, verbose);  
 
    mmb_lookup_entry_t *lookup_entry;
-   u32 *rule_index, pool_index;
-   pool_foreach_index(pool_index, mm->lookup_pool, ({
-      vlib_cli_output(vm, "pool index %d", pool_index);
+   u32 *rule_index, lookup_index;
+   pool_foreach_index(lookup_index, mm->lookup_pool, ({
+      vlib_cli_output(vm, "lookup index %d", lookup_index);
 
-      lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+      lookup_entry = pool_elt_at_index(mm->lookup_pool, lookup_index);
       vec_foreach(rule_index, lookup_entry->rule_indexes) {
          vlib_cli_output(vm, "  rule index %d", *rule_index);
       }
@@ -1202,17 +1202,17 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule,
      if (session == NULL) {
 
         mmb_session_t new_session;
-        new_session.pool_index = mmb_lookup_pool_add(rule_index, ~0);
+        new_session.lookup_index = mmb_lookup_pool_add(rule_index, ~0);
         new_session.key = vec_dup(rule->classify_key);
         new_session.next = next_if_match(rule);
 
         vec_add1(table->sessions, new_session);
-        rule->lookup_index = new_session.pool_index;
+        rule->lookup_index = new_session.lookup_index;
         return 1;
      } else {
 
-        rule->lookup_index = session->pool_index;
-        mmb_lookup_pool_add(rule_index, session->pool_index);
+        rule->lookup_index = session->lookup_index;
+        mmb_lookup_pool_add(rule_index, session->lookup_index);
         return 0;
      }
    
@@ -1410,7 +1410,7 @@ static void realloc_table(mmb_table_t *table, u8 is_increase) {
   /* add sessions to new table */
   vec_foreach(session, table->sessions) {
      mmb_add_del_session(table->index, session->key, 
-                         session->next, session->pool_index, 1); 
+                         session->next, session->lookup_index, 1); 
      vl_print(mm->vlib_main, "added session to table %u", 
               table->index);  
   }
@@ -1433,35 +1433,35 @@ static void realloc_table(mmb_table_t *table, u8 is_increase) {
   mmb_classify_del_table(&old_index, 0);
 }
 
-u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index) {
+u32 mmb_lookup_pool_add(u32 rule_index, u32 lookup_index) {
 
    mmb_main_t *mm = &mmb_main;
    mmb_lookup_entry_t *lookup_entry;
 
-   if (pool_index == ~0) { /* new lookup element */
+   if (lookup_index == ~0) { /* new lookup element */
       pool_get(mm->lookup_pool, lookup_entry);
       vec_add1(lookup_entry->rule_indexes, rule_index);
-      pool_index = lookup_entry - mm->lookup_pool;
+      lookup_index = lookup_entry - mm->lookup_pool;
 
       vl_print(mm->vlib_main, "new entry lookup_index:%u rule_index:%u \n", 
-               pool_index, rule_index);
+               lookup_index, rule_index);
 
    } else {
-      lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+      lookup_entry = pool_elt_at_index(mm->lookup_pool, lookup_index);
       vec_add1(lookup_entry->rule_indexes, rule_index);
 
       vl_print(mm->vlib_main, "appended lookup_index:%u rule_index:%u \n", 
-               pool_index, rule_index);
+               lookup_index, rule_index);
    }
 
-   return pool_index;
+   return lookup_index;
 }
 
-int mmb_lookup_pool_del(u32 rule_index, u32 pool_index) {
+int mmb_lookup_pool_del(u32 rule_index, u32 lookup_index) {
 
    mmb_main_t *mm = &mmb_main;
    mmb_lookup_entry_t *lookup_entry = 
-      pool_elt_at_index(mm->lookup_pool, pool_index);
+      pool_elt_at_index(mm->lookup_pool, lookup_index);
 
    if (vec_len(lookup_entry->rule_indexes) == 1) {
       vec_free(lookup_entry->rule_indexes);
@@ -1472,7 +1472,7 @@ int mmb_lookup_pool_del(u32 rule_index, u32 pool_index) {
 
    update_lookup_pool(rule_index);
 
-   return pool_is_free_index(mm->lookup_pool, pool_index);
+   return pool_is_free_index(mm->lookup_pool, lookup_index);
 }
 
 int add_to_classifier(mmb_rule_t *rule) {
@@ -1540,7 +1540,7 @@ int add_to_classifier(mmb_rule_t *rule) {
    mmb_session_t *session = find_session(table, rule);
    if (session != NULL) {
       mmb_lookup_entry_t *lookup_entry = pool_elt_at_index(mm->lookup_pool, 
-                                             session->pool_index);
+                                             session->lookup_index);
       /* checking one is enough */
       mmb_rule_t *sample_rule = &mm->rules[lookup_entry->rule_indexes[0]] ;
       if (next_if_match(sample_rule) != next_if_match(rule)) 

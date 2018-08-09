@@ -868,7 +868,7 @@ u8* mmb_format_u32_index(u8 *s, va_list *args) {
 u8 *mmb_format_session(u8 *s, va_list *args) {
    mmb_session_t *session = va_arg(*args, mmb_session_t*);
 
-   s = format(s, "lookup index %U\n", mmb_format_u32_index, session->pool_index);
+   s = format(s, "lookup index %U\n", mmb_format_u32_index, session->lookup_index);
    s = format(s, "\t%4skey %U", blanks, mmb_format_key, session->key);
 
    return s;

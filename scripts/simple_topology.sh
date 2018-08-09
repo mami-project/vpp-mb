@@ -7,7 +7,7 @@
 ####
 
 ## create vpp1 and connect it to host
-sudo vpp unix { log /tmp/vpp1.log cli-listen /run/vpp/cli-vpp1.sock } api-segment { prefix vpp1 } plugins { plugin dpdk_plugin.so { disable } }
+sudo vpp unix { log /tmp/vpp1.log cli-listen /run/vpp/cli-vpp1.sock } api-segment { prefix vpp1 }
 sleep 1
 
 # veth interface between host and vpp1
@@ -24,13 +24,15 @@ sudo vppctl -s /run/vpp/cli-vpp1.sock set int ip address host-vpp1out 10.10.1.2/
 
 
 ## create vpp2 and connect it to vpp1
-sudo vpp unix { log /tmp/vpp2.log cli-listen /run/vpp/cli-vpp2.sock } api-segment { prefix vpp2 } plugins { plugin dpdk_plugin.so { disable } }
+sudo vpp unix { log /tmp/vpp2.log cli-listen /run/vpp/cli-vpp2.sock } api-segment { prefix vpp2 }
 sleep 1
 
+# create interface memif id 0 master
 sudo vppctl -s /run/vpp/cli-vpp1.sock create memif socket /run/vpp/memif-vpp1vpp2 master
 sudo vppctl -s /run/vpp/cli-vpp1.sock set int state memif0/0 up
 sudo vppctl -s /run/vpp/cli-vpp1.sock set int ip address memif0/0 10.10.2.1/24
 
+#create interface memif id 0 slave
 sudo vppctl -s /run/vpp/cli-vpp2.sock create memif socket /run/vpp/memif-vpp1vpp2 slave
 sudo vppctl -s /run/vpp/cli-vpp2.sock set int state memif0/0 up
 sudo vppctl -s /run/vpp/cli-vpp2.sock set int ip address memif0/0 10.10.2.2/24
