@@ -17,9 +17,11 @@
  * @author Korian Edeline
  */
 
+#include <ctype.h>
+#include <netdb.h>
+
 #include <vppinfra/string.h>
 #include <vlib/vlib.h>
-#include <ctype.h>
 
 #include <mmb/mmb_format.h>
 
@@ -771,6 +773,10 @@ static_always_inline u8* mmb_format_value(u8 *s, va_list *args) {
     case MMB_FIELD_IP6_DADDR:
       s = format(s, "%U", mmb_format_ip6_address, bytes);
       break;
+    case MMB_FIELD_IP4_PROTO:
+    case MMB_FIELD_IP6_NEXT:
+      s = format(s, "%U", format_ip_protocol, bytes[0]);
+      break;
 
     default: /* 40 chars = 20 bytes = field (var) + cond (4) + [..] */
       vec_foreach_index(index, bytes) {
@@ -1017,7 +1023,7 @@ u8 *mmb_format_conn_table(u8 *s, va_list *args) {
         
         if (timeout_type != MMB_TIMEOUT_UDP_IDLE)
            s = format(s, " tcp-flags-seen forward %02x backward %02x\n", 
-                        conn->tcp_flags_seen.as_u8[0], conn->tcp_flags_seen.as_u8[1]);
+                       conn->tcp_flags_seen.as_u8[0], conn->tcp_flags_seen.as_u8[1]);
         
         if (conn->tcp_seq_offset)
            s = format(s, " tcp-seq-num shuffled by offset %08llx\n", 
