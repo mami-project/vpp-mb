@@ -473,16 +473,10 @@ show_tables_command_fn(vlib_main_t * vm,
   
    vlib_cli_output(vm, "%U", mmb_format_tables, mm->tables, verbose);  
 
-   mmb_lookup_entry_t *lookup_entry;
-   u32 *rule_index, lookup_index;
-   pool_foreach_index(lookup_index, mm->lookup_pool, ({
-      vlib_cli_output(vm, "lookup index %d", lookup_index);
-
-      lookup_entry = pool_elt_at_index(mm->lookup_pool, lookup_index);
-      vec_foreach(rule_index, lookup_entry->rule_indexes) {
-         vlib_cli_output(vm, "  rule index %d", *rule_index);
-      }
-   }));
+   if (verbose) {
+      vlib_cli_output(vm, "\n");
+      vlib_cli_output(vm, "%U", mmb_format_lookup_table, mm->lookup_pool);
+   }
 
    return 0;
 }
@@ -525,7 +519,6 @@ static int vnet_set_mmb_classify_intfc(vlib_main_t *vm, u32 sw_if_index,
   u32 ti;
 
   /* Assume that we've validated sw_if_index in the API layer */
-
   for (ti = 0; ti < MMB_CLASSIFY_N_TABLES; ti++) {
      if (pct[ti] == ~0)
         continue;

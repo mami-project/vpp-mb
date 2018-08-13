@@ -82,12 +82,7 @@ int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
             (&mct->conn_hash, &pkt_5tuple->kv, pkt_conn_id) == 0);
 }
 
-/**
- * get_conn_timeout_time
- * 
- * return absolute ticks timeout value of conn
- */
-static_always_inline u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t *conn) {
+u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t *conn) {
 
    mmb_main_t *mm = &mmb_main;
 
@@ -427,15 +422,6 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
         pkt_5tuple->pkt_info.is_quoted_packet = 1;
       }
    }
-}
-
-void mmb_print_5tuple(mmb_5tuple_t* pkt_5tuple) {
-   mmb_main_t *mm = &mmb_main;
-
-   vl_print(mm->vlib_main, 
-     "5-tuple %016llx %016llx %016llx %016llx %016llx : %016llx",
-     pkt_5tuple->kv.key[0], pkt_5tuple->kv.key[1], pkt_5tuple->kv.key[2],
-     pkt_5tuple->kv.key[3], pkt_5tuple->kv.key[4], pkt_5tuple->kv.value);
 }
 
 void mmb_conn_hash_init() {

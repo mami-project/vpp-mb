@@ -221,6 +221,13 @@ clib_error_t *mmb_conn_table_init(vlib_main_t *vm);
 void mmb_conn_hash_init();
 
 /**
+ * get_conn_timeout_time
+ * 
+ * return absolute ticks timeout value of conn
+ */
+u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t *conn);
+
+/**
  * return timestamp of next conn table check time 
  *
  */
