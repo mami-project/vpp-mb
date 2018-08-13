@@ -807,7 +807,7 @@ static_always_inline void mmb_ip4_mask_and_key_inline(u8 *mask, u8 *key,
       ip_key->fragment_id = bytes_to_u32(value);
       break;
    case MMB_FIELD_IP4_FLAGS:
-      ip_mask->flags_and_fragment_offset |= 0xc000;
+      ip_mask->flags_and_fragment_offset |= 0xe000;
       ip_key->flags_and_fragment_offset |= (*value << 13);
       break;
    case MMB_FIELD_IP4_FRAG_OFFSET:
@@ -1895,9 +1895,9 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
          break;
 
        case MMB_FIELD_TCP_FLAGS:
-         break; // TODO: translate to bits
+         break;
        case MMB_FIELD_IP4_FLAGS:
-         break; // TODO: translate to bits
+         break;
 
        case MMB_FIELD_IP4_RES:case MMB_FIELD_IP4_DF:case MMB_FIELD_IP4_MF:
        case MMB_FIELD_TCP_CWR:case MMB_FIELD_TCP_ECE:case MMB_FIELD_TCP_URG:
