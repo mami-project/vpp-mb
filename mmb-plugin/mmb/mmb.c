@@ -371,7 +371,7 @@ disable_command_fn(vlib_main_t * vm,
               mm->vnet_main, sw_if_index);
 
    vec_delete(mm->sw_if_indexes, 1, index);
-   mmb_enable_disable(sw_if_index, 0); /* TODO: del related tables */
+   mmb_enable_disable(sw_if_index, 0);
    vlib_cli_output(vm, "mmb disabled on %U\n", format_vnet_sw_if_index_name, 
           mm->vnet_main, sw_if_index);
 
@@ -2009,7 +2009,6 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
                           rule->opts_in_targets=1; break;}
    foreach_mmb_tcp_opts
 #undef _
-       //TODO: other "bit fields" (see above in "matches" part)
        case MMB_FIELD_TCP_OPT:
          rule->opts_in_targets=1;
          break;
@@ -2032,7 +2031,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
           /* first strip target, set type */
           if (reverse) {
              rule->whitelist = 1;
-             /* flip bitmap to 1s XXX: typo in func name !!*/
+             /* flip bitmap to 1s XXX: typo in func name*/
              clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
           }
         } else if (rule->whitelist != reverse) {
@@ -2134,7 +2133,7 @@ end:
 }
 
 clib_error_t *validate_rule(mmb_rule_t *rule) {
-   clib_error_t *error; //TODO: more validation
+   clib_error_t *error; 
 
    rule->l3 = 0;
    rule->l4 = IP_PROTOCOL_RESERVED;

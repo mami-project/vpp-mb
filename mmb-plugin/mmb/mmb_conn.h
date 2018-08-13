@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * connection tables.
+ * connection tables for stateful rules.
  *
  * Author: Korian Edeline
  */
@@ -31,7 +31,7 @@
 /* XXX: add max entries val */
 /**
  *
- * min interval for timeout checking of connections.
+ * min interval for in-node timeout checking of connections.
  */
 #define MMB_CONN_TABLE_TIMEOUT_CHECK_INTERVAL_SEC 5
 

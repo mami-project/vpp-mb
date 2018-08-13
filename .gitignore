@@ -67,7 +67,6 @@ scripts/pings.sh
 scripts/simple_tracebox.py
 scripts/debug/
 scripts/performance/
-scripts/topology/
 mmb-plugin/mmb/NOTES.txt.c
 lib/*
 docs/user-guide.tex
