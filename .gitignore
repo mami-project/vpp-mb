@@ -69,7 +69,6 @@ scripts/debug/
 scripts/performance/
 mmb-plugin/mmb/NOTES.txt.c
 lib/*
-docs/user-guide.tex
 docs/*aux
 docs/*log
 docs/*toc
