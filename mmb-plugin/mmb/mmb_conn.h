@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * connection tables.
+ * connection tables for stateful rules.
  *
  * Author: Korian Edeline
  */
@@ -31,7 +31,7 @@
 /* XXX: add max entries val */
 /**
  *
- * min interval for timeout checking of connections.
+ * min interval for in-node timeout checking of connections.
  */
 #define MMB_CONN_TABLE_TIMEOUT_CHECK_INTERVAL_SEC 5
 
@@ -219,6 +219,13 @@ clib_error_t *mmb_conn_table_init(vlib_main_t *vm);
  *
  */
 void mmb_conn_hash_init();
+
+/**
+ * get_conn_timeout_time
+ * 
+ * return absolute ticks timeout value of conn
+ */
+u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t *conn);
 
 /**
  * return timestamp of next conn table check time 

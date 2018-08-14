@@ -422,6 +422,7 @@ static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 i
                                     - conn->tcp_seq_offset + 0x100000000) 
                                           % 0x100000000);
    } 
+
    if(conn->tcp_ack_offset) {
       if (!dir) { 
          if (!(tcph->flags & TCP_FLAG_SYN))

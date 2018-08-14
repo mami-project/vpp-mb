@@ -31,7 +31,7 @@
 /* Comment out to remove calls to vlib_cli_output() */
 #define MMB_DEBUG
 
-#define MMB_PLUGIN_BUILD_VER "0.3.1"
+#define MMB_PLUGIN_BUILD_VER "0.3.2"
 
 #define foreach_mmb_type \
   _(FIELD)               \
@@ -222,7 +222,7 @@ _(ip6,IP6)
 
 typedef struct {
    u8 *key;
-   u32 pool_index;
+   u32 lookup_index;
    u32 next;
 } mmb_session_t;
 
