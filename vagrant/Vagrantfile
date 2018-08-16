@@ -8,7 +8,7 @@ SCRIPT
 Vagrant.configure(2) do |config|
 
   config.vm.box = "uliege/tracebox"
-  config.vm.box_url = ["http://queen.run.montefiore.ulg.ac.be/~edeline/trace.box"]
+  config.vm.box_url = ["http://queen.run.montefiore.ulg.ac.be/~edeline/trace.box", "https://erg.abdn.ac.uk/~iain/trace.box"]
   
   config.vm.hostname = "tracebox-tutorial"
   config.vm.define "tracebox-tutorial"
