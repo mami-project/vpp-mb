@@ -913,7 +913,8 @@ static void mmb_l4_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
   if (is_match) {     
     vec_foreach(match, rule->matches) {
        if (0);
-#define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b) {\
+#define _(a,b) else if (rule->l4 == IP_PROTOCOL_##b\
+                        && match->condition == MMB_COND_EQ) {\
                  mmb_##a##_mask_and_key_inline(mask, key, offset, match->field, match->value);}
    foreach_mmb_transport_proto
 #undef _
@@ -998,7 +999,8 @@ static void mmb_l3_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
   if (is_match) {     
     vec_foreach(match, rule->matches) {
       if (0);
-#define _(a,b) else if (rule->l3 == ETHERNET_TYPE_##b) {\
+#define _(a,b) else if (rule->l3 == ETHERNET_TYPE_##b\
+                        && match->condition == MMB_COND_EQ) {\
                  mmb_##a##_mask_and_key_inline(mask, key, match->field, match->value);}
   foreach_mmb_network_proto
 #undef _
