@@ -7,8 +7,9 @@ mmb 0.3.2
 
 
 todos:
+   * map sack blocks in shuffle targets
    * handle ip fragmentation
-   * migrate to vpp 18.07
+   * update vpp support to 18.07
    * option to revert changes in icmp quotation (icmp visibility)
    * support for ip6 extension headers
    * use CSIT

@@ -464,7 +464,8 @@ mmb_classify_inline(vlib_main_t * vm,
                    vec_foreach(rule_index, lookup_entry->rule_indexes) {
 
                       rule = rules+*rule_index;
-                      if (rule->opts_in_matches && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
+                      if (rule->opts_in_matches 
+                           && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
                          continue;
 
                       if (rule->stateful == 0) { /* stateless */
