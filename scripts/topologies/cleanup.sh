@@ -8,12 +8,16 @@ do
     sudo kill -9 $(ps -aef | grep -v grep | grep vpp$i | awk '{print $2}')
 done
 
-sudo server/kill.sh
+sudo ip4/server/kill.sh
 
 sudo ip link del dev vpp1out
 sudo ip link del dev vpp6
 sudo ip link del dev vpp8
 sudo ip link del dev vpp19
+sudo ip link del dev vpp1
+sudo ip link del dev outvpp1
+sudo ip link del dev hostvpp1
+sudo ip link del dev vpp1host
 
 sudo ip netns del ns0
 
