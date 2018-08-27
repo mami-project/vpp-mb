@@ -473,10 +473,8 @@ show_tables_command_fn(vlib_main_t * vm,
 
    vlib_cli_output(vm, "%U\n", mmb_format_tables, mm->tables, verbose);
 
-   if (verbose) {
-      vlib_cli_output(vm, "\n");
+   if (verbose) 
       vlib_cli_output(vm, "%U", mmb_format_lookup_table, mm->lookup_pool);
-   }
 
    return 0;
 }
@@ -1795,8 +1793,14 @@ u8 is_fixed_length(u8 field) {
    return 0;
 }
 
-static_always_inline clib_error_t *update_l3(u8 field, u16 *derived_l3) {
- u16 proto = get_field_protocol(field);
+static_always_inline clib_error_t *update_l3(u8 field, u8 *value, 
+                                             u16 *derived_l3) {
+ u16 proto;
+
+ if (field == MMB_FIELD_NET_PROTO) 
+    proto = ((u16) value[0] << 8) + ((u16) value[1]);
+ else
+    proto = get_field_protocol(field);
 
  switch (proto) {
    case ETHERNET_TYPE_IP4:
@@ -1806,9 +1810,11 @@ static_always_inline clib_error_t *update_l3(u8 field, u16 *derived_l3) {
         *derived_l3 = proto;
       else if (*derived_l3 != proto)
         return clib_error_return(0, "Multiple l3 protocols");
+      break;
    default:
      break;
  }
+
  return NULL;
 }
 
@@ -1823,9 +1829,11 @@ static_always_inline clib_error_t *update_l4(u8 field, u8 *derived_l4) {
         *derived_l4 = proto;
       else if (*derived_l4 != proto)
         return clib_error_return(0, "Multiple l4 protocols");
+      break;
    default:
      break;
  }
+
  return NULL;
 }
 
@@ -1865,7 +1873,7 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
      u8 field = match->field, reverse = match->reverse;
      u8 condition = match->condition;
 
-     if ( (error = update_l3(field, &rule->l3))
+     if ( (error = update_l3(field, match->value, &rule->l3))
            || (error = update_l4(field, &rule->l4)) )
        goto end;
 
@@ -1969,7 +1977,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
      u8 field = target->field, reverse = target->reverse;
      u8 keyword = target->keyword, *value = target->value;
 
-     if ( (error = update_l3(field, &rule->l3))
+     if ( (error = update_l3(field, value, &rule->l3))
            || (error = update_l4(field, &rule->l4)) )
        goto end;
 
