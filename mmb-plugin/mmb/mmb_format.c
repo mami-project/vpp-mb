@@ -929,7 +929,7 @@ u8 *mmb_format_lookup_table(u8 *s, va_list *args) {
 u8* mmb_format_tables(u8 *s, va_list *args) {
    mmb_table_t *tables = va_arg(*args, mmb_table_t*);
    int verbose = va_arg(*args, int);
-   uword table_index = 0;   
+   u32 table_index;   
 
    vec_foreach_index(table_index, tables) {
       s = format(s, "[%u]:\t%U%s", table_index, mmb_format_table, 
