@@ -328,7 +328,7 @@ typedef struct {
    u32 *sw_if_indexes;
 
    /* convenience */
-   vlib_main_t * vlib_main;
+   vlib_main_t *vlib_main;
    vnet_main_t *vnet_main;
    mmb_classify_main_t *mmb_classify_main;
    mmb_conn_table_t *mmb_conn_table;

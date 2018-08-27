@@ -470,8 +470,8 @@ show_tables_command_fn(vlib_main_t * vm,
       verbose = 1;
   if (!unformat_is_eof(input))
      return clib_error_return(0, "Syntax error: unexpected additional element");
-  
-   vlib_cli_output(vm, "%U", mmb_format_tables, mm->tables, verbose);  
+
+   vlib_cli_output(vm, "%U\n", mmb_format_tables, mm->tables, verbose);
 
    if (verbose) {
       vlib_cli_output(vm, "\n");
@@ -1257,7 +1257,7 @@ void attach_table_if(u32 table_index, int is_add) {
   for (i=0; i<vec_len(mm->sw_if_indexes); i++) {
      sw_if_index = mm->sw_if_indexes[i];
      vnet_set_mmb_classify_intfc(mm->vlib_main, sw_if_index,
-                                 table_index, ~0, is_add);
+                                 table_index, table_index, is_add);
      vl_print(mm->vlib_main, "table:%u add:%d if%u", table_index,
               is_add, sw_if_index);
   }
@@ -1932,7 +1932,7 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
 
    /* delete interface fields */
    vec_foreach(deletion, deletions) {
-     vlib_cli_output(mmb_main.vlib_main, "deleting %u size:%u\n", *deletion, vec_len(rule->matches));
+     //vlib_cli_output(mmb_main.vlib_main, "deleting %u size:%u\n", *deletion, vec_len(rule->matches));
 
      mmb_match_t *match = &rule->matches[*deletion];
      if (vec_len(rule->matches) == 1 && vec_len(rule->opt_matches) == 0) {
