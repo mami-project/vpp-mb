@@ -367,7 +367,7 @@ mmb_classify_inline(vlib_main_t * vm,
          vnet_classify_entry_t *e0;
          u64 hash0;
          u8 *h0;
-         u32 *matches, *matches_opener, *matches_shuffle;
+         u32 *matches, *matches_stateful;
          mmb_rule_t *rule;
          u32 conn_index, conn_dir;
          u8 tcpo0_flag;
@@ -404,8 +404,7 @@ mmb_classify_inline(vlib_main_t * vm,
          e0 = 0;
          t0 = 0;
          matches = 0;
-         matches_opener = 0;
-         matches_shuffle = 0;
+         matches_stateful = 0;
          tcpo0_flag = 0;
          conn_index = ~0;
          conn_dir = 0;
@@ -435,11 +434,7 @@ mmb_classify_inline(vlib_main_t * vm,
                            || random_drop(mm, rule->drop_rate))
                           next0 = e0->next_index;  
                      } else { 
-                       if (rule->shuffle == 0) { /* stateful */
-                          vec_add1(matches_opener, *rule_index); // TODO: do it after
-                       } else { /* stateful + seed */
-                          vec_add1(matches_shuffle, *rule_index);
-                       }
+                        vec_add1(matches_stateful, *rule_index);
                      }
 
                      rule->match_count++;  
@@ -475,12 +470,8 @@ mmb_classify_inline(vlib_main_t * vm,
                              || random_drop(mm, rule->drop_rate))
                             next0 = e0->next_index;  
                       } else { 
-                         if (rule->shuffle == 0) { /* stateful */
-                            vec_add1(matches_opener, *rule_index);
-                         } else { /* stateful + seed */
-                            vec_add1(matches_shuffle, *rule_index);
-                         }
-                      }
+                        vec_add1(matches_stateful, *rule_index);
+                     }
  
                       rule->match_count++;
                    }
@@ -507,16 +498,14 @@ mmb_classify_inline(vlib_main_t * vm,
                if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
                   next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
                
-            } else if ((vec_len(matches_opener) != 0 || vec_len(matches_shuffle) != 0)
+            } else if (vec_len(matches_stateful) != 0
                         && pkt_5tuple.pkt_info.l4_valid == 1) {
                /* new valid connection matched */
 
-               vec_append(matches_opener, matches_shuffle);
-               mmb_add_conn(mct, &pkt_5tuple, matches_opener, 
-                            matches_shuffle, now_ticks);
+               mmb_add_conn(mct, &pkt_5tuple, matches_stateful, now_ticks);
                conn_index = pkt_5tuple.pkt_info.conn_index;
                
-               vec_append(matches, matches_opener);
+               vec_append(matches, matches_stateful);
                
                if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
                   next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
@@ -543,8 +532,7 @@ mmb_classify_inline(vlib_main_t * vm,
               t->conn_dir = conn_dir;
          }
 
-         vec_free(matches_opener);
-         vec_free(matches_shuffle);
+         vec_free(matches_stateful);
 
          /* Verify speculative enqueue, maybe switch current next frame */
          vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next,

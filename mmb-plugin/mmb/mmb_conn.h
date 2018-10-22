@@ -158,12 +158,10 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8* h0, int is_ip6, mmb_5tuple_t *pkt_5t
  *
  * add a connection to connection hash and pool, set timestamp&rule indices to pool
  *
- * @param matches_stateful contains indexes of all matched stateful openers
- * @param matches_suffle contains indexes of matched stateful openers that require
- *                       random seed.
+ * @param matches_stateful contains indexes of all matched stateful rules
  */
 void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, 
-                  u32 *matches_stateful, u32 *matches_shuffle, u64 now);
+                  u32 *matches_stateful, u64 now);
 
 /**
  * mmb_find_conn

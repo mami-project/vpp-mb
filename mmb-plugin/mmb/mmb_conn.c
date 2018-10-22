@@ -258,13 +258,13 @@ static_always_inline u16 random_bounded_u16(u32 *seed, uword lo, uword hi) {
 }
 
 /**
- * init_conn_shuffle_seed()
+ * init_conn_shuffle()
  *
  * init shuffle mapping offset
  */
-static_always_inline void init_conn_shuffle_seed(mmb_main_t *mm,
-                                                 mmb_conn_t *conn,
-                                                 mmb_rule_t *rule) {
+static_always_inline void init_conn_shuffle(mmb_main_t *mm,
+                                            mmb_conn_t *conn,
+                                            mmb_rule_t *rule) {
    mmb_target_t *target;
 
    vec_foreach(target, rule->shuffle_targets) {
@@ -310,8 +310,64 @@ static_always_inline void init_conn_shuffle_seed(mmb_main_t *mm,
    }   
 }
 
+/**
+ * init_conn_map()
+ *
+ * init shuffle mapping offset
+ */
+static_always_inline void init_conn_map(mmb_main_t *mm,
+                                        mmb_conn_t *conn,
+                                        mmb_rule_t *rule) {
+   mmb_target_t *target;
+
+   vec_foreach(target, rule->map_targets) {
+      switch (target->field) {
+         case MMB_FIELD_TCP_SPORT:
+         case MMB_FIELD_UDP_SPORT:
+            conn->sport = clib_host_to_net_u16((u16) bytes_to_u32(target->value));
+            conn->initial_sport = clib_host_to_net_u16(conn->info.l4.port[0]);
+            break;
+         case MMB_FIELD_TCP_DPORT:
+         case MMB_FIELD_UDP_DPORT:
+            conn->dport = clib_host_to_net_u16((u16) bytes_to_u32(target->value));
+            conn->initial_dport = clib_host_to_net_u16(conn->info.l4.port[1]);
+            break;
+         case MMB_FIELD_IP4_SADDR:
+            conn->saddr.ip4.as_u32 = clib_host_to_net_u32(bytes_to_u32(target->value));
+            conn->initial_saddr.as_u64[0] = conn->info.addr[0].as_u64[0];
+            conn->initial_saddr.as_u64[1] = conn->info.addr[0].as_u64[1];
+            break;
+        case MMB_FIELD_IP4_DADDR:
+            conn->daddr.ip4.as_u32 = clib_host_to_net_u32(bytes_to_u32(target->value));
+            conn->initial_daddr.as_u64[0] = conn->info.addr[1].as_u64[0];
+            conn->initial_daddr.as_u64[1] = conn->info.addr[1].as_u64[1];
+            break;
+         case MMB_FIELD_IP6_SADDR:
+            conn->saddr.as_u64[0] = clib_host_to_net_u64(bytes_to_u64(target->value));
+            conn->saddr.as_u64[1] = clib_host_to_net_u64(bytes_to_u64(target->value+8));
+            conn->initial_saddr.as_u64[0] = conn->info.addr[0].as_u64[0];
+            conn->initial_saddr.as_u64[1] = conn->info.addr[0].as_u64[1];
+            break;
+         case MMB_FIELD_IP6_DADDR:
+            conn->daddr.as_u64[0] = clib_host_to_net_u64(bytes_to_u64(target->value) );
+            conn->daddr.as_u64[1] = clib_host_to_net_u64(bytes_to_u64(target->value+8));
+            conn->initial_daddr.as_u64[0] = conn->info.addr[1].as_u64[0];
+            conn->initial_daddr.as_u64[1] = conn->info.addr[1].as_u64[1];
+            break;
+         case MMB_FIELD_IP4_ID :
+            conn->ip_id = random_u32(&mm->random_seed);
+            break;
+         case MMB_FIELD_IP6_FLOW_LABEL:
+            conn->ip_id = random_u32(&mm->random_seed);
+            break;
+         default:
+            break;
+      }
+   }   
+}
+
 void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
-                  u32 *matches_stateful, u32 *matches_shuffle, u64 now) {
+                  u32 *matches_stateful, u64 now) {
 
    mmb_main_t *mm = &mmb_main;
    mmb_conn_id_t conn_id;
@@ -331,17 +387,11 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    if (pkt_5tuple->pkt_info.tcp_flags_valid) 
       conn->tcp_flags_seen.as_u8[0] = pkt_5tuple->pkt_info.tcp_flags;
 
-   /* init shuffle offset if needed */
-   vec_foreach(match, matches_shuffle) {
-      rule = mm->rules + *match;
-      init_conn_shuffle_seed(mm, conn, rule);
-   }
-
-   /* init mapped fields*/
-   vec_foreach(match, matches) {
+   /* init mapped&shuffle fields */
+   vec_foreach(match, matches_stateful) {
       rule = mm->rules + *match;
       if (rule->shuffle)
-         init_conn_shuffle_seed(mm, conn, rule);
+         init_conn_shuffle(mm, conn, rule);
       if (rule->map)
          init_conn_map(mm, conn, rule);
    }
@@ -414,7 +464,7 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
 
 	     clib_memcpy(&ports, h0 + l4_offset + offsetof(tcp_header_t, src_port),
 		               sizeof(ports));
-	     pkt_5tuple->l4.port[0] = ntohs(ports[0]);
+	     pkt_5tuple->l4.port[0] = ntohs(ports[0]); /* TODO: do not translates ports in conn table */
 	     pkt_5tuple->l4.port[1] = ntohs(ports[1]);
 
 	     pkt_5tuple->pkt_info.tcp_flags = *(u8 *)(h0 + l4_offset + offsetof(tcp_header_t, flags));

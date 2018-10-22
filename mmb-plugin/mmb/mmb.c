@@ -2103,11 +2103,9 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
             error = clib_error_return(0, "map is only valid with add-stateful");
             goto end;
          }
-         if (vec_len(value) != 0) {
-            error = clib_error_return(0, "map does not allow value setting");
-            goto end;
-         }
          if (!(field == MMB_FIELD_TCP_SPORT || field == MMB_FIELD_TCP_DPORT 
+          || field == MMB_FIELD_IP4_SADDR || field == MMB_FIELD_IP4_DADDR
+          || field == MMB_FIELD_IP6_SADDR || field == MMB_FIELD_IP6_DADDR
           || field == MMB_FIELD_UDP_SPORT || field == MMB_FIELD_UDP_DPORT
           || field == MMB_FIELD_IP4_ID || field == MMB_FIELD_IP6_FLOW_LABEL)) {
             error = clib_error_return(0, "invalid field for map target");

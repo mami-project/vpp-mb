@@ -395,9 +395,9 @@ static_always_inline void mmb_map_sack(mmb_tcp_options_t *tcp_options, u8 is_ip6
    //TODO
 }
 
-static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 is_ip6) {
+static_always_inline void mmb_rewrite_stateful(u8 *p, mmb_conn_t *conn, u32 dir, u8 is_ip6) {
 
-  tcp_header_t *tcph;  //TODO rename mmb_rewrite_stateful
+  tcp_header_t *tcph;
 
    if (!is_ip6) {
       ip4_header_t *iph4 = (ip4_header_t*)p;
@@ -501,11 +501,11 @@ u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule,
   u32 conn_dir   = vnet_buffer(b)->unused[1];
   mmb_conn_t *conn = NULL;
 
-  if (rule->shuffle) {
+  if (rule->shuffle || rule->map) {
 
     if (!pool_is_free_index(mct->conn_pool, conn_index)) {/* for safety */
       conn = pool_elt_at_index(mct->conn_pool, conn_index);
-      mmb_map_shuffle(p, conn, conn_dir, is_ip6);
+      mmb_rewrite_stateful(p, conn, conn_dir, is_ip6);
     }
   }
 
