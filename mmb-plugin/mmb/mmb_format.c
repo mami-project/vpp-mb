@@ -370,8 +370,9 @@ uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
      target->keyword=MMB_TARGET_DROP;
    else if (unformat(input, "lb%U", mmb_unformat_fibs, &target->value)) 
      target->keyword=MMB_TARGET_LB; 
-   else if (unformat(input, "map %U", mmb_unformat_field, 
-                      &target->field, &target->opt_kind)) 
+   else if (unformat(input, "map %U %U", mmb_unformat_field, 
+                      &target->field, &target->opt_kind,
+                      mmb_unformat_value, &target->value)) 
      target->keyword=MMB_TARGET_MAP;
    else if (unformat(input, "shuffle %U", mmb_unformat_field, 
                       &target->field, &target->opt_kind)) 
@@ -1053,7 +1054,7 @@ u8 *mmb_format_conn_table(u8 *s, va_list *args) {
            s = format(s, " dport mapped to %u\n", 
                         clib_net_to_host_u16(conn->dport));
 
-        if (conn->saddr) {
+        if (!ip46_address_is_zero(&conn->saddr)) {
            ip46_type_t type;   
 
            if (ip46_address_is_ip4(&conn->saddr))
@@ -1065,7 +1066,7 @@ u8 *mmb_format_conn_table(u8 *s, va_list *args) {
                        format_ip46_address, &conn->saddr, type);
          }
 
-        if (conn->daddr) {
+        if (!ip46_address_is_zero(&conn->daddr)) {
            ip46_type_t type;   
 
            if (ip46_address_is_ip4(&conn->daddr))
