@@ -17,9 +17,11 @@
  * @author Korian Edeline
  */
 
+#include <ctype.h>
+#include <netdb.h>
+
 #include <vppinfra/string.h>
 #include <vlib/vlib.h>
-#include <ctype.h>
 
 #include <mmb/mmb_format.h>
 
@@ -328,6 +330,19 @@ uword mmb_unformat_fibs(unformat_input_t *input, va_list *args) {
    return vec_len(*bytes) > 0;
 }
 
+uword mmb_unformat_perc(unformat_input_t *input, va_list *args) {
+   u8 **bytes = va_arg(*args, u8**);
+   f64 perc;
+
+   if (unformat(input, "%lf", &perc) && perc > 0.0 && perc <= 100.0) {
+      vec_validate(*bytes, 4);
+      (*((u32**)bytes))[0] = (u32) (perc * (MMB_MAX_DROP_RATE_VALUE/100)); /* XXX: not kosher */
+      return 1;
+   }
+
+   return 0;
+}
+
 uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
    mmb_target_t *target = va_arg(*args, mmb_target_t*);
 
@@ -349,6 +364,8 @@ uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
    else if (unformat(input, "add %U", mmb_unformat_field, 
                       &target->field, &target->opt_kind)) 
      target->keyword=MMB_TARGET_ADD;
+   else if (unformat(input, "drop %U", mmb_unformat_perc, &target->value))
+     target->keyword=MMB_TARGET_DROP;
    else if (unformat(input, "drop"))
      target->keyword=MMB_TARGET_DROP;
    else if (unformat(input, "lb%U", mmb_unformat_fibs, &target->value)) 
@@ -503,6 +520,22 @@ static_always_inline u8 *mmb_format_lb(u8 *s, va_list *args) {
    s = format(s, "lb");
    vec_foreach(byte, bytes) {
      s = format(s, " %u", *byte);
+   }
+
+   return s;
+}
+
+static_always_inline u8 *mmb_format_drop(u8 *s, va_list *args) {
+   u8 *drop_value = va_arg(*args, u8*);
+   u32 drop_rate; 
+
+   s = format(s, "drop");
+   if (vec_len(drop_value) == 0)
+      return s;
+
+   drop_rate = ((u32*)drop_value)[0];
+   if (drop_rate != MMB_MAX_DROP_RATE_VALUE) {
+      s = format(s, " %.2f%%", (f64)drop_rate/(MMB_MAX_DROP_RATE_VALUE/100));
    }
 
    return s;
@@ -740,6 +773,10 @@ static_always_inline u8* mmb_format_value(u8 *s, va_list *args) {
     case MMB_FIELD_IP6_DADDR:
       s = format(s, "%U", mmb_format_ip6_address, bytes);
       break;
+    case MMB_FIELD_IP4_PROTO:
+    case MMB_FIELD_IP6_NEXT:
+      s = format(s, "%U", format_ip_protocol, bytes[0]);
+      break;
 
     default: /* 40 chars = 20 bytes = field (var) + cond (4) + [..] */
       vec_foreach_index(index, bytes) {
@@ -770,6 +807,8 @@ u8* mmb_format_target(u8 *s, va_list *args) {
   mmb_target_t *target = va_arg(*args, mmb_target_t*);
   if (target->keyword == MMB_TARGET_LB)
      return format(s, "%U", mmb_format_lb, target->value);
+  if (target->keyword == MMB_TARGET_DROP)
+     return format(s, "%U", mmb_format_drop, target->value);  
 
   return format(s, "%s%U %U %U", (target->reverse) ? "! ":"",
                          mmb_format_keyword, &target->keyword,
@@ -835,13 +874,14 @@ u8* mmb_format_u32_index(u8 *s, va_list *args) {
 u8 *mmb_format_session(u8 *s, va_list *args) {
    mmb_session_t *session = va_arg(*args, mmb_session_t*);
 
-   s = format(s, "lookup index %U\n", mmb_format_u32_index, session->pool_index);
-   s = format(s, "\t%4skey %U", blanks, mmb_format_key, session->key);
+   s = format(s, "lookup index %U\n", mmb_format_u32_index, session->lookup_index);
+   s = format(s, "\t%5skey %U", blanks, mmb_format_key, session->key);
 
    return s;
 }
 
 u8* mmb_format_table(u8 *s, va_list *args) {
+
    mmb_table_t *table = va_arg(*args, mmb_table_t*);
    int verbose = va_arg(*args, int);
 
@@ -855,12 +895,33 @@ u8* mmb_format_table(u8 *s, va_list *args) {
    if (verbose) {
       mmb_session_t *session, *sessions = table->sessions;
       u32 session_index = 0;
+
+      s = format(s, "\tsessions:\n");
       vec_foreach_index(session_index, sessions) {
          session = &sessions[session_index];
-         s = format(s, "\t%u:%2s%U\n", session_index, blanks, 
+         s = format(s, "\t %u:%2s%U\n", session_index, blanks, 
                     mmb_format_session, session);
       }
    }
+
+   return s;
+}
+
+u8 *mmb_format_lookup_table(u8 *s, va_list *args) {
+
+   mmb_lookup_entry_t *lookup_pool = va_arg(*args, mmb_lookup_entry_t*);
+   mmb_lookup_entry_t *lookup_entry;
+   u32 *rule_index, lookup_index;
+
+   pool_foreach_index(lookup_index, lookup_pool, ({
+      s = format(s, "lookup index %d\n", lookup_index);
+
+      lookup_entry = pool_elt_at_index(lookup_pool, lookup_index);
+      vec_foreach(rule_index, lookup_entry->rule_indexes) {
+         s = format(s, "  rule index %d\n", *rule_index);
+      }
+      s = format(s, "\n", *rule_index);
+   }));
 
    return s;
 }
@@ -899,17 +960,39 @@ u8 *mmb_format_timeout_type(u8 *s, va_list *args) {
    return s;
 }
 
+static_always_inline u8 *mmb_format_5tuple(u8 *s, va_list *args) {
+   
+   mmb_5tuple_t *pkt_5tuple = va_arg(*args, mmb_5tuple_t*);
+   ip46_type_t type;   
+
+   if (ip46_address_is_ip4(&pkt_5tuple->addr[0]) 
+        && ip46_address_is_ip4(&pkt_5tuple->addr[1]))
+      type = IP46_TYPE_IP4;
+   else
+      type = IP46_TYPE_IP6;
+
+   s = format(s, "%U:%u -> %U:%u", 
+         format_ip46_address, &pkt_5tuple->addr[0], type,
+         pkt_5tuple->l4.port[0], 
+         format_ip46_address, &pkt_5tuple->addr[1], type,
+         pkt_5tuple->l4.port[1]);
+
+   return s;
+}
+
 u8 *mmb_format_conn_table(u8 *s, va_list *args) {
 
    mmb_conn_table_t *mct = va_arg(*args, mmb_conn_table_t*);
-   int verbose = va_arg(*args, int);
+   int verbose = va_arg(*args, int), count=0;
    
+   mmb_main_t *mm = &mmb_main;
+   f64 cps = mm->vlib_main->clib_time.clocks_per_second;
    mmb_conn_t *conn_pool = mct->conn_pool, *conn;
    u32 *rule_index, conn_index;   
+   u64 now_ticks = clib_cpu_time_now();
 
    if (verbose)
-      s = format(s, "%U\n",
-                 BV(format_bihash), &mct->conn_hash, verbose);
+      s = format(s, "%U\n", BV(format_bihash), &mct->conn_hash, verbose);
 
    s = format(s, "Connections pool");
    if (pool_elts(conn_pool) == 0)
@@ -921,30 +1004,49 @@ u8 *mmb_format_conn_table(u8 *s, va_list *args) {
      conn_index = conn - conn_pool;
      s = format(s, "[%u]: %U\n", conn_index+1, mmb_format_timeout_type, 
                      get_conn_timeout_type(mct, conn));
-     s = format(s, " key\n %016llx %016llx %016llx\n"
-                                " %016llx %016llx %016llx :\n %016llx\n",
-                conn->info.kv.key[0], conn->info.kv.key[1], 
-                conn->info.kv.key[2], conn->info.kv.key[3], 
-                conn->info.kv.key[4], conn->info.kv.key[5], 
-                conn->info.kv.value); /* XXX print addresses */
+     s = format(s, " %U\n", mmb_format_5tuple, &conn->info);
 
-     s = format(s, " rules");
+     s = format(s, " rules:");
      vec_foreach(rule_index, conn->rule_indexes) {
         s = format(s, " %u", *rule_index);
+        if ((count % 20) == 0 && count > 0)
+          s = format(s, "\n%7s", blanks);
+        count++;
      };
-
-     mmb_main_t *mm = &mmb_main; /* XXX rm */
-     int timeout_type = get_conn_timeout_type(mct, conn);
-     u64 timeout_ticks = mct->timeouts_value[timeout_type];
-     timeout_ticks *= mm->vlib_main->clib_time.clocks_per_second;
-     s = format(s, " now %lu last_active %lu expiring %lu\n", clib_cpu_time_now(),
-                conn->last_active_time, timeout_ticks + conn->last_active_time);
-     if (timeout_type > 0)
-        s = format(s, "tcp-flags-seen forward %02x backward %02x\n", 
-                     conn->tcp_flags_seen.as_u8[0], conn->tcp_flags_seen.as_u8[1]);
-
      s = format(s, "\n");
-   }));     
+
+     if (verbose) {
+        int timeout_type = get_conn_timeout_type(mct, conn);
+        f64 expiring_time = (get_conn_timeout_time(mct, conn) - now_ticks) / cps;
+        s = format(s, " expiring in %U\n", format_time_interval, 
+                  "h:m:s", expiring_time);
+        
+        if (timeout_type != MMB_TIMEOUT_UDP_IDLE)
+           s = format(s, " tcp-flags-seen forward %02x backward %02x\n", 
+                       conn->tcp_flags_seen.as_u8[0], conn->tcp_flags_seen.as_u8[1]);
+        
+        if (conn->tcp_seq_offset)
+           s = format(s, " tcp-seq-num shuffled by offset %08llx\n", 
+                       conn->tcp_seq_offset);
+        if (conn->tcp_ack_offset)
+           s = format(s, " tcp-ack-num shuffled by offset %08llx\n", 
+                       conn->tcp_ack_offset);
+        if (conn->sport)
+           s = format(s, " sport mapped to %u\n", 
+                       clib_net_to_host_u16(conn->sport));
+        if (conn->dport)
+           s = format(s, " dport mapped to %u\n", 
+                        clib_net_to_host_u16(conn->dport));
+        if (conn->ip_id)
+           s = format(s, " next ip-id/flow %08llx\n", 
+                        conn->ip_id);
+        if (conn->mapped_sack)
+           s = format(s, " SACK-aware\n");
+
+        s = format(s, "\n");
+     }
+
+   }));
 
    return s;
 }

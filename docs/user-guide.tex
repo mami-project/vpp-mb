@@ -1,0 +1,489 @@
+%%%%%
+%%%%% Based on a design by Alvaro Armenteros and a template by Esa Hyttiä
+%%%%%
+
+\documentclass[a4paper,twoside,11pt]{report}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Template Element Definitions
+% Change these for each deliverable 
+%
+
+\newcommand{\deliverabletitle}{User Guide for mmb 0.3.2}
+\newcommand{\deliverabletitleshort}{mmb 0.3.2}
+
+\newcommand{\deliverableauthorlist}{
+& K.Edeline, J.Iurman \\
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% LATEX MACHINERY BEGINS HERE - NO USER-SERVICEABLE PARTS INSIDE
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Document geometry
+%
+
+\setlength{\textheight}{230mm}
+\setlength{\textwidth}{160mm}
+\setlength{\voffset}{-25mm}
+\setlength{\oddsidemargin}{0mm}
+\setlength{\evensidemargin}{0mm}
+\addtolength{\parskip}{0.33\baselineskip}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Package definitions
+%
+
+\usepackage{helvet}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{color}
+\usepackage{xcolor}
+\usepackage{chngcntr}
+\usepackage{longtable}
+\usepackage{lastpage}
+\usepackage{fancyhdr}
+\usepackage{setspace}
+\usepackage{url}
+\usepackage{amsmath}
+\usepackage{acronym}
+\usepackage{listings}
+\usepackage{balance}
+\usepackage{array}
+\usepackage{hyperref}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Font definitions
+%
+\renewcommand\familydefault{\sfdefault} 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Heading style definitions
+%
+
+\setcounter{secnumdepth}{4}
+
+\makeatletter
+\renewcommand{\chapter}{\@startsection{chapter}{0}{0mm}
+  {\baselineskip}%
+  {\baselineskip}{\clearpage\LARGE\bf\color{black}}}
+\renewcommand{\section}{\@startsection{section}{1}{0mm}
+  {\baselineskip}%
+  {\baselineskip}{\LARGE\color{black}}}%
+\renewcommand{\subsection}{\@startsection{subsection}{2}{0mm}
+  {\baselineskip}%
+  {\baselineskip}{\Large\color{black}}}%
+\renewcommand{\subsubsection}{\@startsection{subsubsection}{3}{0mm}
+  {\baselineskip}%
+  {\baselineskip}{\large\color{black}}}%
+\makeatother
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Table of contents styling
+%
+% Finamore: added dotted lines also for chapters
+% solution found at http://tex.stackexchange.com/questions/62438/how-to-add-leaders-to-table-of-contents-without-tocloft
+\makeatletter
+\renewcommand*\l@chapter[2]{%
+    \ifnum \c@tocdepth >\m@ne
+        \addpenalty{-\@highpenalty}%
+        \vskip 1.0em \@plus\p@
+        \setlength\@tempdima{1.5em}%
+        \begingroup
+        \parindent \z@ \rightskip \@pnumwidth
+        \parfillskip -\@pnumwidth
+        \leavevmode %\bfseries
+        \advance\leftskip\@tempdima
+        \hskip -\leftskip
+        #1\nobreak
+        \xleaders\hbox{$\m@th
+        \mkern \@dotsep mu\hbox{.}\mkern \@dotsep mu$}\hfill%
+        \nobreak\hb@xt@\@pnumwidth{\hss #2}\par
+        \penalty\@highpenalty
+        \endgroup
+    \fi}
+\renewcommand*\l@section{\@dottedtocline{1}{1.5em}{2.3em}}
+\renewcommand*\l@subsection{\@dottedtocline{2}{3.8em}{3.2em}}
+\renewcommand*\l@subsubsection{\@dottedtocline{3}{7.0em}{4.1em}}
+\renewcommand*\l@paragraph{\@dottedtocline{4}{10em}{5em}}
+\renewcommand*\l@subparagraph{\@dottedtocline{5}{12em}{6em}}
+\renewcommand*{\@dotsep}{1}
+\makeatother
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Header and footer definitions
+%
+
+\setlength{\headheight}{52pt}
+\setlength{\footskip}{47pt}
+\renewcommand{\headrulewidth}{0pt}
+\pagestyle{fancyplain}
+
+%\fancyhead[L]{\textsf{\\ D\deliverablenumber ~\deliverabletitleshort}}
+%\fancyhead[R]{\setlength{\unitlength}{1mm}
+%\begin{picture}(0,0)
+%  \put(-70,-4){\includegraphics[width=70mm]{logos/logo.png}}
+%\end{picture}
+%}
+%\fancyfoot[L]{\setlength{\unitlength}{1mm}
+%\begin{picture}(0,0)
+%  \put(0,2){\includegraphics[width=15mm]{logos/logo-short.pdf}}
+%\end{picture}
+%}
+\fancyfoot[C]{\vspace{-10mm}\textsf{\thepage\hspace{0.3em}of \pageref*{LastPage}}}
+%\fancyfoot[R]{\vspace{-10mm}\textsf{Revision \deliverablerevision\hspace{0.3em}of \deliverablerevdate}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Miscellaneous document adjustments go here
+
+% Call the bibilography a references section
+\renewcommand*{\bibname}{References}
+
+% Number figures and tables globally
+\counterwithout{figure}{chapter}
+\counterwithout{table}{chapter}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Define some colors
+
+\definecolor{darkred}{RGB}{128, 0, 0}
+\definecolor{darkgray}{RGB}{95, 95, 95}
+
+\definecolor{architecuregreen}{RGB}{135, 222, 170}
+\definecolor{experimentationblue}{RGB}{128, 179, 255}
+\definecolor{measurementred}{RGB}{255, 128, 128}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Define some useful commands
+ %\EDNOTE{who}{what} - place an editor's note in the document.
+ %\INNOTE{who}{what} - place an inline note in the document
+
+\newcommand{\EDNOTE}[2]{
+  \par\large\centerline{
+  \mbox{
+  \begin{tabular}{ll}
+    \textsf{\textbf{#1}} & 
+    \fbox{
+    \begin{minipage}{0.6\linewidth}
+      \em\color{red} #2
+    \end{minipage}
+    }
+  \end{tabular}
+  }}
+  \par\vspace{4mm}
+}
+
+\newcommand{\INNOTE}[2]{[\textsf{\textbf{#1}}: {\em\color{red} #2}]}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Front page
+%
+\begin{document}
+\thispagestyle{empty}
+\parindent0pt
+
+\newcolumntype{R}[1]{>{\raggedleft}p{#1}}
+
+\vspace{1mm}
+
+\vspace{50mm}
+
+\begin{centering}
+\centerline{\huge\em\bf\color{darkred}\deliverabletitle}
+
+\vspace{2mm}
+\vfill
+\fbox{
+  \begin{minipage}{\linewidth}
+      \large\textsf{
+        \begin{tabular}{lll}
+	  \textbf{Author(s):}
+	  \deliverableauthorlist	
+	\end{tabular}}
+  \end{minipage}
+}
+ 
+ \end{centering}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Table of contents
+%
+\clearpage
+\tableofcontents
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% CONTENT BEGINS HERE - YOU CAN START EDITING NOW
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\chapter{mmb}
+
+mmb (modular middlebox) is a vpp plugin that performs various 
+middlebox behaviors.
+
+\chapter{mmb CLI guide}
+
+\texttt{mmb <command>}\\
+\textbf{SYNTAX :} \texttt{enable|disable|add|add-stateless|add-stateful|del|list|flush|show}
+
+This parameter determines the command applied on the rule list.\\
+Allowed values:
+\begin{itemize} 
+\item \texttt{enable} : enable mmb on a given interface
+\item \texttt{disable} : disable mmb on a given interface
+\item \texttt{add}/\texttt{add-stateless} : add a stateless rule
+\item \texttt{add-stateful} : add a stateful rule
+\item \texttt{del} : remove a rule
+\item \texttt{list} : list the rules
+\item \texttt{show} : display informations about mmb
+\item \texttt{flush} : remove all rules
+\end{itemize}
+
+
+\section{add rules}
+%\texttt{[mod [<field>] [<value>]]|[strip [<field>]]|[drop]} 
+% \texttt{<field> [[<cond>] <value>] [<field> [[<cond>] <value>] ...]}
+\texttt{mmb <add-keyword> <match> [<match> ...] <target> [<target> ...]}
+\begin{itemize}
+
+\item \texttt{<add-keyword>}\\
+   \textbf{SYNTAX :} \texttt{add|add-stateless|add-stateful} 
+
+   The keyword determines if mmb has to keep track of connections that matches
+   a given rule or not. \texttt{add}/\texttt{add-stateless} rules apply their
+   targets at the packet level, each packet has to match the rule in order
+   to apply the targets. \texttt{add-stateful} rules apply their targets at the
+   connection/flow level. The \texttt{<match>} list of a stateful rule is used
+   to add entries to the connection table. Once a connection is added to the table,
+   the \texttt{<target>} list is applied to all packets of the connection, even if 
+   they don't match the rule. Additionally, \texttt{add-stateful} allows for
+   special target \texttt{shuffle}.
+
+\item \texttt{<match>} \\
+   \textbf{SYNTAX :} \texttt{[!]\ <field> [[<cond>] <value>]} 
+
+   This parameter is a constraint that determines the packets on which the 
+   rule will operate. 
+
+   If a \texttt{<match>} is composed of a \texttt{<field>} alone, the constraint
+   is that the packet should contain the field. If it is composed of a 
+   \texttt{<field>} and a \texttt{<value>}, the constraint is that the packet 
+   should contain the field and it should be set to the specified value. If it 
+   is composed of a \texttt{<field>}, a \texttt{<cond>} and a \texttt{<value>},
+   then the constraint is that the packet should contain the field, and the 
+   condition on the value should be true.
+   
+   The !\ operator applied on one constraint performs the logical NOT of 
+   the constraint. Multiple constraints can be inputted for the same rule, the 
+   resulting constraint is the logical AND of all inputted constraints. 
+
+   %The 
+   %\texttt{-r} argument performs the logical NOT of the logical AND of all
+   %constraints (it reverses the matching constraint).
+
+\item \texttt{<target>}  \\
+   \textbf{SYNTAX :} \texttt{mod [...]|strip [...]|add [...]|drop [...]|shuffle [...]} 
+
+   This parameter determines the action(s) to apply on matched packets. 
+   \begin{itemize}
+   \item \texttt{mod <field> <value>} 
+
+      Modify a field on a packet. 
+   %TODO: if the field is omitted, default to matching field
+   % if the value is omitted, default to 0
+   \item \texttt{add <field> <value>} 
+
+      Add a tcp-opt to the packet.
+
+   \item \texttt{strip [!]\ <field>} 
+
+      Strip options from a packet. 
+
+   If the !\ operator is placed after the strip keyword, the following option
+   will be added to the whitelist (the only authorized options), if not it
+   will be added to the blacklist (the forbidden options). 
+
+   The special keyword \texttt{all} can be used in a \texttt{strip} target
+   to strip all options from the matched packet.
+   % if the field is omitted, default to matching option
+   \item \texttt{drop [<rate>]} 
+
+      Drop a packet with optional probability \texttt{<rate>} given in percentage,
+      with a maximal precision of 0.01\%. The default rate is 100\%.
+
+   \item \texttt{shuffle <field>}
+      
+      Perform a bidirectionnal mapping of the given <field> to a randomly chosen value.
+      Valid fields are: \texttt{tcp-seq-num}, \texttt{tcp-ack-num}, \texttt{tcp-sport},
+      \texttt{tcp-dport}, \texttt{udp-sport}, \texttt{udp-dport}, , \texttt{ip-id},
+      \texttt{ip6-flow-label}.
+      
+   \end{itemize}
+
+\end{itemize}
+
+\subsection{\texttt{<cond>}}
+
+A condition is applied on a \texttt{<value>} from a \texttt{<field>} to form
+a constraint. Note that \texttt{>} and \texttt{<} have to be escaped if typed
+from a bash shell.\\ 
+Available conditions: \texttt{==}%, \texttt{!=}, \texttt{<=}, \texttt{>=}, 
+%\texttt{<}, \texttt{>}.
+
+\subsection{\texttt{<field>}}
+
+Available fields:
+   \begin{itemize}
+   \item interfaces: \texttt{in}, \texttt{out}
+
+   \item IPv4 fields: \texttt{ip-ver}, \texttt{ip-ihl},  \texttt{ip-dscp}, 
+     \texttt{ip-ecn}, \texttt{ip-non-ect}\footnote{\label{note-ecn}not followed 
+     by \texttt{<value>}}, \texttt{ip-ect0}\textsuperscript{\ref{note-ecn}},
+     \texttt{ip-ect1}\textsuperscript{\ref{note-ecn}}, 
+     \texttt{ip-ce}\textsuperscript{\ref{note-ecn}}, \texttt{ip-len}, 
+     \texttt{ip-id}, \texttt{ip-flags}, \texttt{ip-res}, \texttt{ip-df}, 
+     \texttt{ip-mf}, \texttt{ip-frag-offset}, \texttt{ip-ttl}, \texttt{ip-proto}, 
+     \texttt{ip-checksum}, \texttt{ip-saddr}\footnote{\label{note-prefix} the \texttt{<value>} 
+     can include a subnet mask, the \texttt{==} condition will become subnet matching}, 
+     \texttt{ip-daddr}\textsuperscript{\ref{note-prefix}}.
+    %TODO(\texttt{ip-opt}).
+
+   \item IPv6 fields: \texttt{ip6-ver}, \texttt{ip6-traffic-class}, 
+      \texttt{ip6-flow-label}, \texttt{ip6-len}, \texttt{ip6-next},  
+      \texttt{ip6-hop-limit}, \texttt{ip6-saddr}\textsuperscript{\ref{note-prefix}}, 
+      \texttt{ip6-daddr}\textsuperscript{\ref{note-prefix}}, \texttt{ip6-payload}.
+
+   \item ICMPv4 fields: \texttt{icmp-type}, \texttt{icmp-code}, \texttt{icmp-checksum}, 
+     \texttt{icmp-payload}.
+
+   \item User Datagram Protocol (UDP) fields: \texttt{udp-sport}, \texttt{udp-dport}, \texttt{udp-len}, 
+     \texttt{udp-checksum}, \texttt{udp-payload}.
+
+   \item Transmission Control Protocol (TCP) fields: \texttt{tcp-sport}, \texttt{tcp-dport}, \texttt{tcp-seq-num}, 
+      \texttt{tcp-ack-num}, \texttt{tcp-offset}, \texttt{tcp-res}, \texttt{tcp-cwr}, 
+      \texttt{tcp-ece}, \texttt{tcp-urg}, \texttt{tcp-ack}, \texttt{tcp-push}, 
+      \texttt{tcp-res}, \texttt{tcp-syn}, \texttt{tcp-fin}, \texttt{tcp-flags}, 
+      \texttt{tcp-win}, \texttt{tcp-checksum}, \texttt{tcp-urg-ptr}, \texttt{tcp-payload}.
+
+   \item TCP options:
+      \texttt{tcp-opt-mss}, \texttt{tcp-opt-wscale}, \texttt{tcp-opt-sackp},
+      \texttt{tcp-opt-sack}, \texttt{tcp-opt-timestamp}, \texttt{tcp-opt-fast-open},
+      \texttt{tcp-opt-fast-open}.
+
+   \item Custom TCP options: \texttt{tcp-opt [<kind>]} \\
+        Replace \texttt{<kind>} with the kind of option in decimal.
+        When employed in a \texttt{<match>} without a \texttt{<kind>}, checks if the 
+        packet contains any option.
+
+   \end{itemize}
+
+\subsection{\texttt{<value>}}
+
+The value of a field is in decimal or in hexadecimal if preceeded by \texttt{x}.
+String value \texttt{ip}, \texttt{tcp}, \texttt{udp} and \texttt{icmp} 
+can be used with fields \texttt{net-proto} or \texttt{ip-proto}.
+
+\subsection{stateful polices}
+
+\section{Remove rules}
+
+ \begin{itemize}
+   \item \texttt{del}\\
+         \textbf{SYNTAX :} \texttt{mmb del <rule-index>}
+
+         Delete rule at given index and associated entries in connections tables.
+   \item \texttt{flush}\\
+         \textbf{SYNTAX :} \texttt{mmb flush}
+
+         Delete all rules and entries in the connection table.
+ \end{itemize}
+
+\section{Display informations}
+
+ \begin{itemize}
+   \item \texttt{list}\\
+         \textbf{SYNTAX :} \texttt{mmb list}
+
+         List all rules.
+   \item \texttt{show tables}\\
+         \textbf{SYNTAX :} \texttt{mmb show tables [verbose]}
+
+         Display informations about classifier tables such as masks, keys,
+         capacity, and more.
+   \item \texttt{show connections}\\
+         \textbf{SYNTAX :} \texttt{mmb show connections [verbose]}
+
+         Display informations about active connections used by stateful rules
+         such as 5-tuples, connection type, expiring time, and more.
+ \end{itemize}
+
+\chapter{Examples}
+
+\texttt{vpp\# mmb add all mod ip-ecn 0} \\
+   ECN bleaching
+
+\texttt{vpp\# mmb add ip-proto udp drop} \\
+   Block UDP
+
+\texttt{vpp\# mmb add ip-proto != tcp drop} \\
+   Block every IP protocol but TCP
+
+\texttt{vpp\# mmb add ip-proto != udp ip-proto != tcp drop} \\
+   Block every IP protocol but TCP and UDP
+
+\texttt{vpp\# mmb add ip-proto udp drop} \\
+\texttt{vpp\# mmb add ip-proto tcp drop} \\
+   Block TCP and UDP
+
+\texttt{vpp\# mmb add tcp-dport 80 mod tcp-dport 443} \\
+   Rewrite TCP port 80 to port 443
+
+\texttt{vpp\# mmb add tcp-opt-mss strip tcp-opt-mss} \\
+   Strip MSS option
+
+\texttt{vpp\# mmb add tcp-opt-mss > 1500 mod tcp-opt-mss 1460} \\
+   If MSS is larger than 1500, set it to 1460
+
+\texttt{vpp\# mmb add tcp-opt strip !\ tcp-opt-mss} \\
+   Strip all options but MSS
+
+\texttt{vpp\# mmb add tcp-opt strip tcp-opt-mss strip tcp-opt-wscale} \\
+   Strip MSS and WScale
+
+\texttt{vpp\# mmb add tcp-opt-timestamp strip all} \\
+   Strip all options if packet contains timestamp option
+
+\texttt{vpp\# mmb add tcp-opt strip !\ tcp-opt-mss strip !\ tcp-opt-wscale} \\
+   Strip all options except mss and wscale if packet contains timestamp option (whitelist)
+
+\texttt{vpp\# mmb add tcp-opt strip tcp-opt-mss strip tcp-opt-wscale} \\
+   Strip all mss and wscale if packet contains timestamp option (blacklist)
+
+\texttt{vpp\# mmb add tcp-opt !\ tcp-opt-mss !\ tcp-opt-wscale  drop} \\
+   Drop all TCP packets with options different than MSS or WScale.
+
+\texttt{vpp\# mmb add !\ tcp-opt-mss !\ tcp-opt-wscale drop} \\
+   Drop all TCP packets that do not contain MSS nor WScale.
+
+\texttt{vpp\# mmb add tcp-opt 22 drop} \\
+   Drop all TCP packets that contain option 22
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% CONTENT ENDS HERE
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\bibliographystyle{abbrv}
+\small
+
+% Bibtex files that contain the references. Use it as follows, omitting the
+% file extension
+%\bibliography{file1,file2,file3}
+\end{document}

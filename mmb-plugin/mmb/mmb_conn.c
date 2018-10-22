@@ -12,7 +12,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * conn table, not to be confused with classifier conn.
+ * connection tables for stateful rules.
  *
  * Author: Korian Edeline
  */
@@ -82,12 +82,7 @@ int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
             (&mct->conn_hash, &pkt_5tuple->kv, pkt_conn_id) == 0);
 }
 
-/**
- * get_conn_timeout_time
- * 
- * return absolute ticks timeout value of conn
- */
-static_always_inline u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t *conn) {
+u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t *conn) {
 
    mmb_main_t *mm = &mmb_main;
 
@@ -149,6 +144,22 @@ int purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
    return 1;
 }
 
+static_always_inline void copy_reverse_5tuple(mmb_5tuple_t *to, mmb_conn_t *from) {
+   to->addr[0] = from->info.addr[1];
+   to->addr[1] = from->info.addr[0];
+   to->l4.port[0] = from->dport ? ntohs(from->dport) : from->info.l4.port[1];
+   to->l4.port[1] = from->sport ? ntohs(from->sport) : from->info.l4.port[0];  
+} 
+
+static_always_inline void copy_forward_5tuple(mmb_5tuple_t *to, mmb_conn_t *from) {
+   to->kv.key[0] = from->info.kv.key[0];
+   to->kv.key[1] = from->info.kv.key[1];
+   to->kv.key[2] = from->info.kv.key[2];
+   to->kv.key[3] = from->info.kv.key[3];
+   to->kv.key[4] = from->info.kv.key[4];
+   to->kv.key[5] = from->info.kv.key[5];
+} 
+
 void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
 
    mmb_conn_t *conn;
@@ -160,19 +171,10 @@ void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
       conn = pool_elt_at_index(mct->conn_pool, *purge_index);
 
       /* purge bihash */
-      conn_key.kv.key[0] = conn->info.kv.key[0];
-      conn_key.kv.key[1] = conn->info.kv.key[1];
-      conn_key.kv.key[2] = conn->info.kv.key[2];
-      conn_key.kv.key[3] = conn->info.kv.key[3];
-      conn_key.kv.key[4] = conn->info.kv.key[4];
-      conn_key.kv.key[5] = conn->info.kv.key[5];
+      copy_forward_5tuple(&conn_key, conn);
       mmb_del_5tuple(mct, &conn_key.kv);
 
-      /* XXX: make an inline function */
-      conn_key.addr[0] = conn->info.addr[1];
-      conn_key.addr[1] = conn->info.addr[0];
-      conn_key.l4.port[0] = conn->dport ? ntohs(conn->dport) : conn->info.l4.port[1];
-      conn_key.l4.port[1] = conn->sport ? ntohs(conn->sport) : conn->info.l4.port[0]; 
+      copy_reverse_5tuple(&conn_key, conn);
       mmb_del_5tuple(mct, &conn_key.kv);
 
       vec_free(conn->rule_indexes);
@@ -308,7 +310,6 @@ static_always_inline void init_conn_shuffle_seed(mmb_main_t *mm,
    }   
 }
 
-
 void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
                   u32 *matches_stateful, u32 *matches_shuffle, u64 now) {
 
@@ -319,21 +320,10 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    mmb_rule_t *rule;
    u32 *match;
 
+   /* init connection state*/
    pool_get(mct->conn_pool, conn);
    memset(conn, 0, sizeof(*conn));
    conn_id.conn_index = conn - mct->conn_pool;
-
-   /* adding forward 5tuple */
-   conn_key.kv.key[0] = pkt_5tuple->kv.key[0];
-   conn_key.kv.key[1] = pkt_5tuple->kv.key[1];
-   conn_key.kv.key[2] = pkt_5tuple->kv.key[2];
-   conn_key.kv.key[3] = pkt_5tuple->kv.key[3];
-   conn_key.kv.key[4] = pkt_5tuple->kv.key[4];
-   conn_key.kv.key[5] = pkt_5tuple->kv.key[5];
-   conn_key.kv.value = conn_id.as_u64; 
-   mmb_add_5tuple(mct, &conn_key.kv);  
-
-   /* init connection state*/
    clib_memcpy(conn, pkt_5tuple, sizeof(pkt_5tuple->kv.key));
    conn->last_active_time = now;
    conn->rule_indexes = vec_dup(matches_stateful);
@@ -347,14 +337,15 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
       init_conn_shuffle_seed(mm, conn, rule);
    }
 
+   /* adding forward 5tuple */
+   copy_forward_5tuple(&conn_key, conn);
+   conn_key.kv.value = conn_id.as_u64; 
+   mmb_add_5tuple(mct, &conn_key.kv);  
+
    /* adding backward 5tuple */
-   conn_key.addr[0] = pkt_5tuple->addr[1];
-   conn_key.addr[1] = pkt_5tuple->addr[0];
-   conn_key.l4.port[0] = conn->dport ? ntohs(conn->dport) : pkt_5tuple->l4.port[1];
-   conn_key.l4.port[1] = conn->sport ? ntohs(conn->sport) : pkt_5tuple->l4.port[0]; 
+   copy_reverse_5tuple(&conn_key, conn);
    conn_id.dir = 1;
    conn_key.kv.value = conn_id.as_u64; 
-   conn_id.dir = 0; /* XXX replace with & */
    mmb_add_5tuple(mct, &conn_key.kv);
 
    /* put conn_index in 5tuple for the classify node */
@@ -431,15 +422,6 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
         pkt_5tuple->pkt_info.is_quoted_packet = 1;
       }
    }
-}
-
-void mmb_print_5tuple(mmb_5tuple_t* pkt_5tuple) {
-   mmb_main_t *mm = &mmb_main;
-
-   vl_print(mm->vlib_main, 
-     "5-tuple %016llx %016llx %016llx %016llx %016llx : %016llx",
-     pkt_5tuple->kv.key[0], pkt_5tuple->kv.key[1], pkt_5tuple->kv.key[2],
-     pkt_5tuple->kv.key[3], pkt_5tuple->kv.key[4], pkt_5tuple->kv.value);
 }
 
 void mmb_conn_hash_init() {

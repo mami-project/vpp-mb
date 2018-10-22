@@ -175,18 +175,18 @@ static void update_lookup_pool(u32 rule_index);
 /**
  * mmb_lookup_pool_add
  *
- * add rule_index at pool_index
- * @param pool_index: ~0 if no entry, or index of entry 
+ * add rule_index at lookup_index
+ * @param lookup_index: ~0 if no entry, or index of entry 
  */
-static_always_inline u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index);
+static_always_inline u32 mmb_lookup_pool_add(u32 rule_index, u32 lookup_index);
 
 /** 
  * mmb_lookup_pool_del
  *
- * remove rule_index from pool_index
+ * remove rule_index from lookup_index
  * @return 1 if entry was also removed, 0 if it was not
  */
-static_always_inline int mmb_lookup_pool_del(u32 rule_index, u32 pool_index);
+static_always_inline int mmb_lookup_pool_del(u32 rule_index, u32 lookup_index);
 
 /**
  * add_to_classifier
@@ -371,7 +371,7 @@ disable_command_fn(vlib_main_t * vm,
               mm->vnet_main, sw_if_index);
 
    vec_delete(mm->sw_if_indexes, 1, index);
-   mmb_enable_disable(sw_if_index, 0); /* TODO: del related tables */
+   mmb_enable_disable(sw_if_index, 0);
    vlib_cli_output(vm, "mmb disabled on %U\n", format_vnet_sw_if_index_name, 
           mm->vnet_main, sw_if_index);
 
@@ -473,16 +473,10 @@ show_tables_command_fn(vlib_main_t * vm,
   
    vlib_cli_output(vm, "%U", mmb_format_tables, mm->tables, verbose);  
 
-   mmb_lookup_entry_t *lookup_entry;
-   u32 *rule_index, pool_index;
-   pool_foreach_index(pool_index, mm->lookup_pool, ({
-      vlib_cli_output(vm, "pool index %d", pool_index);
-
-      lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
-      vec_foreach(rule_index, lookup_entry->rule_indexes) {
-         vlib_cli_output(vm, "  rule index %d", *rule_index);
-      }
-   }));
+   if (verbose) {
+      vlib_cli_output(vm, "\n");
+      vlib_cli_output(vm, "%U", mmb_format_lookup_table, mm->lookup_pool);
+   }
 
    return 0;
 }
@@ -525,7 +519,6 @@ static int vnet_set_mmb_classify_intfc(vlib_main_t *vm, u32 sw_if_index,
   u32 ti;
 
   /* Assume that we've validated sw_if_index in the API layer */
-
   for (ti = 0; ti < MMB_CLASSIFY_N_TABLES; ti++) {
      if (pct[ti] == ~0)
         continue;
@@ -807,7 +800,7 @@ static_always_inline void mmb_ip4_mask_and_key_inline(u8 *mask, u8 *key,
       ip_key->fragment_id = bytes_to_u32(value);
       break;
    case MMB_FIELD_IP4_FLAGS:
-      ip_mask->flags_and_fragment_offset |= 0xc000;
+      ip_mask->flags_and_fragment_offset |= 0xe000;
       ip_key->flags_and_fragment_offset |= (*value << 13);
       break;
    case MMB_FIELD_IP4_FRAG_OFFSET:
@@ -1202,17 +1195,17 @@ static int add_del_session(mmb_table_t *table, mmb_rule_t *rule,
      if (session == NULL) {
 
         mmb_session_t new_session;
-        new_session.pool_index = mmb_lookup_pool_add(rule_index, ~0);
+        new_session.lookup_index = mmb_lookup_pool_add(rule_index, ~0);
         new_session.key = vec_dup(rule->classify_key);
         new_session.next = next_if_match(rule);
 
         vec_add1(table->sessions, new_session);
-        rule->lookup_index = new_session.pool_index;
+        rule->lookup_index = new_session.lookup_index;
         return 1;
      } else {
 
-        rule->lookup_index = session->pool_index;
-        mmb_lookup_pool_add(rule_index, session->pool_index);
+        rule->lookup_index = session->lookup_index;
+        mmb_lookup_pool_add(rule_index, session->lookup_index);
         return 0;
      }
    
@@ -1410,7 +1403,7 @@ static void realloc_table(mmb_table_t *table, u8 is_increase) {
   /* add sessions to new table */
   vec_foreach(session, table->sessions) {
      mmb_add_del_session(table->index, session->key, 
-                         session->next, session->pool_index, 1); 
+                         session->next, session->lookup_index, 1); 
      vl_print(mm->vlib_main, "added session to table %u", 
               table->index);  
   }
@@ -1433,35 +1426,35 @@ static void realloc_table(mmb_table_t *table, u8 is_increase) {
   mmb_classify_del_table(&old_index, 0);
 }
 
-u32 mmb_lookup_pool_add(u32 rule_index, u32 pool_index) {
+u32 mmb_lookup_pool_add(u32 rule_index, u32 lookup_index) {
 
    mmb_main_t *mm = &mmb_main;
    mmb_lookup_entry_t *lookup_entry;
 
-   if (pool_index == ~0) { /* new lookup element */
+   if (lookup_index == ~0) { /* new lookup element */
       pool_get(mm->lookup_pool, lookup_entry);
       vec_add1(lookup_entry->rule_indexes, rule_index);
-      pool_index = lookup_entry - mm->lookup_pool;
+      lookup_index = lookup_entry - mm->lookup_pool;
 
       vl_print(mm->vlib_main, "new entry lookup_index:%u rule_index:%u \n", 
-               pool_index, rule_index);
+               lookup_index, rule_index);
 
    } else {
-      lookup_entry = pool_elt_at_index(mm->lookup_pool, pool_index);
+      lookup_entry = pool_elt_at_index(mm->lookup_pool, lookup_index);
       vec_add1(lookup_entry->rule_indexes, rule_index);
 
       vl_print(mm->vlib_main, "appended lookup_index:%u rule_index:%u \n", 
-               pool_index, rule_index);
+               lookup_index, rule_index);
    }
 
-   return pool_index;
+   return lookup_index;
 }
 
-int mmb_lookup_pool_del(u32 rule_index, u32 pool_index) {
+int mmb_lookup_pool_del(u32 rule_index, u32 lookup_index) {
 
    mmb_main_t *mm = &mmb_main;
    mmb_lookup_entry_t *lookup_entry = 
-      pool_elt_at_index(mm->lookup_pool, pool_index);
+      pool_elt_at_index(mm->lookup_pool, lookup_index);
 
    if (vec_len(lookup_entry->rule_indexes) == 1) {
       vec_free(lookup_entry->rule_indexes);
@@ -1472,7 +1465,7 @@ int mmb_lookup_pool_del(u32 rule_index, u32 pool_index) {
 
    update_lookup_pool(rule_index);
 
-   return pool_is_free_index(mm->lookup_pool, pool_index);
+   return pool_is_free_index(mm->lookup_pool, lookup_index);
 }
 
 int add_to_classifier(mmb_rule_t *rule) {
@@ -1540,7 +1533,7 @@ int add_to_classifier(mmb_rule_t *rule) {
    mmb_session_t *session = find_session(table, rule);
    if (session != NULL) {
       mmb_lookup_entry_t *lookup_entry = pool_elt_at_index(mm->lookup_pool, 
-                                             session->pool_index);
+                                             session->lookup_index);
       /* checking one is enough */
       mmb_rule_t *sample_rule = &mm->rules[lookup_entry->rule_indexes[0]] ;
       if (next_if_match(sample_rule) != next_if_match(rule)) 
@@ -1895,9 +1888,9 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
          break;
 
        case MMB_FIELD_TCP_FLAGS:
-         break; // TODO: translate to bits
+         break;
        case MMB_FIELD_IP4_FLAGS:
-         break; // TODO: translate to bits
+         break;
 
        case MMB_FIELD_IP4_RES:case MMB_FIELD_IP4_DF:case MMB_FIELD_IP4_MF:
        case MMB_FIELD_TCP_CWR:case MMB_FIELD_TCP_ECE:case MMB_FIELD_TCP_URG:
@@ -2009,7 +2002,6 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
                           rule->opts_in_targets=1; break;}
    foreach_mmb_tcp_opts
 #undef _
-       //TODO: other "bit fields" (see above in "matches" part)
        case MMB_FIELD_TCP_OPT:
          rule->opts_in_targets=1;
          break;
@@ -2032,7 +2024,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
           /* first strip target, set type */
           if (reverse) {
              rule->whitelist = 1;
-             /* flip bitmap to 1s XXX: typo in func name !!*/
+             /* flip bitmap to 1s XXX: typo in func name*/
              clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
           }
         } else if (rule->whitelist != reverse) {
@@ -2065,7 +2057,6 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
         /* add transport opt to add-list and register for deletion */
         mmb_transport_option_t opt = to_transport_option(target);
         vec_add1(rule->opt_adds, opt);
-        rule->has_adds = 1;
         vec_insert_elt_first(deletions, &index);
         break;
 
@@ -2075,6 +2066,18 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
            vec_add1(rule->opt_mods, *target);
            vec_insert_elt_first(deletions, &index);
          }
+         break;
+
+      case MMB_TARGET_DROP:
+         if (vec_len(rule->targets) > 1) {
+            error = clib_error_return(0, "drop is a unique target");
+            goto end;
+         }
+         if (vec_len(value) > 0) 
+            rule->drop_rate = ((u32*)value)[0];
+         else
+            rule->drop_rate = MMB_MAX_DROP_RATE_VALUE;
+
          break;
 
       case MMB_TARGET_LB:
@@ -2123,7 +2126,7 @@ end:
 }
 
 clib_error_t *validate_rule(mmb_rule_t *rule) {
-   clib_error_t *error; //TODO: more validation
+   clib_error_t *error; 
 
    rule->l3 = 0;
    rule->l4 = IP_PROTOCOL_RESERVED;

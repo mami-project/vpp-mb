@@ -31,7 +31,7 @@
 /* Comment out to remove calls to vlib_cli_output() */
 #define MMB_DEBUG
 
-#define MMB_PLUGIN_BUILD_VER "0.3"
+#define MMB_PLUGIN_BUILD_VER "0.3.2"
 
 #define foreach_mmb_type \
   _(FIELD)               \
@@ -196,6 +196,7 @@ enum
 #define cond_tomacro(index) index+MMB_0_COND+1
 
 #define MMB_MAX_FIELD_LEN 64
+#define MMB_MAX_DROP_RATE_VALUE 100000
 
 /* cli-name,protocol-name */
 #define foreach_mmb_transport_proto \
@@ -221,7 +222,7 @@ _(ip6,IP6)
 
 typedef struct {
    u8 *key;
-   u32 pool_index;
+   u32 lookup_index;
    u32 next;
 } mmb_session_t;
 
@@ -300,15 +301,18 @@ typedef struct {
   u32 rewrite_match;
   u8 *rewrite_key;
 
+  /* drop rate, unit is 0.001% */
+  u32 drop_rate;
+
   /* flags */
   u8 has_strips:1;
-  u8 has_adds:1; /* unused */
   u8 whitelist:1;
   u8 opts_in_matches:1;
   u8 opts_in_targets:1;
   u8 lb:1;
   u8 stateful:1;
   u8 shuffle:1;
+  u8 unused:1; 
 
 } mmb_rule_t;
 
