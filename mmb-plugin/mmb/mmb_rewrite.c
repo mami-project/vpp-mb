@@ -398,17 +398,56 @@ static_always_inline void mmb_map_sack(mmb_tcp_options_t *tcp_options, u8 is_ip6
 static_always_inline void mmb_rewrite_stateful(u8 *p, mmb_conn_t *conn, u32 dir, u8 is_ip6) {
 
   tcp_header_t *tcph;
+  ip4_header_t *iph4;
+  ip6_header_t *iph6;
 
    if (!is_ip6) {
-      ip4_header_t *iph4 = (ip4_header_t*)p;
+      iph4 = (ip4_header_t*)p;
       tcph = ip4_next_header(iph4);
+
       if(conn->ip_id) 
          conn->ip_id = (conn->ip_id + 1) % 0x00010000;
+
+      if (!ip46_address_is_zero(&conn->saddr)) {
+         if (!dir)
+            iph4->src_address.as_u32 = conn->saddr.ip4.as_u32;
+         else
+            iph4->dst_address.as_u32 = conn->initial_saddr.ip4.as_u32;
+      }
+ 
+      if (!ip46_address_is_zero(&conn->daddr)) {
+         if (!dir)
+            iph4->dst_address.as_u32 = conn->daddr.ip4.as_u32;
+         else
+            iph4->src_address.as_u32 = conn->initial_daddr.ip4.as_u32;
+      }
+
    } else {
-      ip6_header_t *iph6 = (ip6_header_t*)p;
+      iph6 = (ip6_header_t*)p;
       tcph = ip6_next_header(iph6);
+
       if(conn->ip_id)
          conn->ip_id = (conn->ip_id + 1) % 0x00100000;
+
+      if (!ip46_address_is_zero(&conn->saddr)) {
+         if (!dir) {
+            iph6->src_address.as_u64[0] = conn->saddr.as_u64[0];
+            iph6->src_address.as_u64[1] = conn->saddr.as_u64[1];
+         } else {
+            iph6->dst_address.as_u64[0] = conn->initial_saddr.as_u64[0];
+            iph6->dst_address.as_u64[1] = conn->initial_saddr.as_u64[1];
+         }
+      }
+ 
+      if (!ip46_address_is_zero(&conn->daddr)) {
+         if (!dir) {
+            iph6->dst_address.as_u64[0] = conn->daddr.as_u64[0];
+            iph6->dst_address.as_u64[1] = conn->daddr.as_u64[1];
+         } else {
+            iph6->src_address.as_u64[0] = conn->initial_daddr.as_u64[0];
+            iph6->src_address.as_u64[1] = conn->initial_daddr.as_u64[1];
+         }
+      }
    }
 
    if (conn->tcp_seq_offset) {
@@ -423,7 +462,7 @@ static_always_inline void mmb_rewrite_stateful(u8 *p, mmb_conn_t *conn, u32 dir,
                                           % 0x100000000);
    } 
 
-   if(conn->tcp_ack_offset) {
+   if (conn->tcp_ack_offset) {
       if (!dir) { 
          if (!(tcph->flags & TCP_FLAG_SYN))
             tcph->ack_number = clib_host_to_net_u32(
@@ -436,18 +475,19 @@ static_always_inline void mmb_rewrite_stateful(u8 *p, mmb_conn_t *conn, u32 dir,
                                  + conn->tcp_ack_offset) % 0x100000000);
    } 
 
-   if(conn->sport) {
+   if (conn->sport) {
       if (!dir) 
          tcph->src_port = conn->sport;
       else 
          tcph->dst_port = conn->initial_sport;
    }
-   if(conn->dport) {
+
+   if (conn->dport) {
       if (!dir) 
          tcph->dst_port = conn->dport;
       else 
          tcph->src_port = conn->initial_dport;
-   }
+   }  
 }
 
 
