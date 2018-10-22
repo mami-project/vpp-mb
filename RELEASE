@@ -1,11 +1,3 @@
-mmb 0.3.2
-
-   * added support for stateful port mapping, seqnum shuffling
-   * improved CLI mmb show connections
-   * new example topologies
-   * updated docs/
-
-
 todos:
    * map sack blocks in shuffle targets
    * handle ip fragmentation
@@ -15,4 +7,15 @@ todos:
    * use CSIT
    * more tests
    * more operators
+
+mmb 0.3.x
+   * support for SNAT
+
+
+mmb 0.3.2
+
+   * added support for stateful port mapping, seqnum shuffling
+   * improved CLI mmb show connections
+   * new example topologies
+   * updated docs/
 

@@ -370,6 +370,9 @@ uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
      target->keyword=MMB_TARGET_DROP;
    else if (unformat(input, "lb%U", mmb_unformat_fibs, &target->value)) 
      target->keyword=MMB_TARGET_LB; 
+   else if (unformat(input, "map %U", mmb_unformat_field, 
+                      &target->field, &target->opt_kind)) 
+     target->keyword=MMB_TARGET_MAP;
    else if (unformat(input, "shuffle %U", mmb_unformat_field, 
                       &target->field, &target->opt_kind)) 
      target->keyword=MMB_TARGET_SHUFFLE;
@@ -491,6 +494,9 @@ u8* mmb_format_keyword(u8 *s, va_list *args) {
     case MMB_TARGET_SHUFFLE:
        keyword_str =  "shuffle";
        break;
+    case MMB_TARGET_MAP:
+       keyword_str =  "map";
+       break;
     default:
        break;
   }
@@ -605,7 +611,7 @@ u8* mmb_format_rule(u8 *s, va_list *args) {
              mmb_format_ip_protocol, rule->l4, mmb_format_if_sw_index, rule->in, 
              mmb_format_if_sw_index, rule->out);  
 
-  uword index=0;
+  uword index=0, trailing_comma = 0;
   mmb_match_t *matches = vec_dup(rule->matches);
   vec_append(matches, rule->opt_matches);
   vec_foreach_index(index, matches) {
@@ -620,36 +626,44 @@ u8* mmb_format_rule(u8 *s, va_list *args) {
   }
 
   if (rule->has_strips) {    
-   index = rule->whitelist ? clib_bitmap_first_clear(rule->opt_strips) 
+    index = rule->whitelist ? clib_bitmap_first_clear(rule->opt_strips) 
                            : clib_bitmap_first_set(rule->opt_strips);
-   uword (*next_func) (uword *ai, uword i) = rule->whitelist 
+    uword (*next_func) (uword *ai, uword i) = rule->whitelist 
                ? &clib_bitmap_next_clear_corrected
                : &clib_bitmap_next_set;
+    trailing_comma = vec_len(rule->targets)>0;
     while (index != ~0) {
       mmb_target_t strip_target = target_from_strip(rule, index);
-      s=format(s, "%s%U",  (vec_len(rule->targets)>0) ? ", ":"",
+      s=format(s, "%s%U",  (trailing_comma) ? ", ":"",
                   mmb_format_target, &strip_target);
       index = next_func(rule->opt_strips, index+1);
     }    
   }
 
+  trailing_comma = trailing_comma || rule->has_strips;
   vec_foreach_index(index, rule->opt_mods) {
-    s = format(s, "%s%U", (vec_len(rule->targets)>0 
-                            || rule->has_strips) ? ", ":"",
+    s = format(s, "%s%U", (trailing_comma) ? ", ":"",
                          mmb_format_target, &rule->opt_mods[index]);
   }
 
+  trailing_comma = trailing_comma || (vec_len(rule->opt_mods)>0);
   vec_foreach_index(index, rule->opt_adds) {
     mmb_target_t opt_target = target_from_add(rule, index);
     s = format(s, "%s%U", 
-               (rule->has_strips || vec_len(rule->targets)>0 
-                   || vec_len(rule->opt_mods)>0 ) ? ", ":"",
+               (trailing_comma) ? ", ":"",
                 mmb_format_target, &opt_target);
   }
 
+  trailing_comma = trailing_comma || (vec_len(rule->opt_adds)>0);
+  vec_foreach_index(index, rule->map_targets) {
+    s = format(s, "%s%U", (trailing_comma) 
+                          ? ", ":"",
+                         mmb_format_target, &rule->map_targets[index]);
+  }
+
+  trailing_comma = trailing_comma || (vec_len(rule->map_targets)>0);
   vec_foreach_index(index, rule->shuffle_targets) {
-    s = format(s, "%s%U", (vec_len(rule->targets)>0  || vec_len(rule->opt_mods)>0
-                            || rule->has_strips ||  vec_len(rule->opt_adds)>0) 
+    s = format(s, "%s%U", (trailing_comma) 
                           ? ", ":"",
                          mmb_format_target, &rule->shuffle_targets[index]);
   }
@@ -677,9 +691,10 @@ static u8* mmb_format_rule_column(u8 *s, va_list *args) {
   mmb_match_t *matches = vec_dup(rule->matches);
   vec_append(matches, rule->opt_matches);
 
-  /* merge shuffles and opt_mods */
+  /* merge shuffles, maps and opt_mods */
   mmb_target_t *targets = vec_dup(rule->opt_mods);
-  vec_append(targets,rule->shuffle_targets );
+  vec_append(targets, rule->map_targets);
+  vec_append(targets, rule->shuffle_targets);
 
   /* count lines to print */
   uword match_count = vec_len(matches);
@@ -1037,6 +1052,31 @@ u8 *mmb_format_conn_table(u8 *s, va_list *args) {
         if (conn->dport)
            s = format(s, " dport mapped to %u\n", 
                         clib_net_to_host_u16(conn->dport));
+
+        if (conn->saddr) {
+           ip46_type_t type;   
+
+           if (ip46_address_is_ip4(&conn->saddr))
+              type = IP46_TYPE_IP4;
+           else
+              type = IP46_TYPE_IP6;
+
+           s = format(s, " saddr mapped to %U\n", 
+                       format_ip46_address, &conn->saddr, type);
+         }
+
+        if (conn->daddr) {
+           ip46_type_t type;   
+
+           if (ip46_address_is_ip4(&conn->daddr))
+              type = IP46_TYPE_IP4;
+           else
+              type = IP46_TYPE_IP6;
+
+           s = format(s, " daddr mapped to %U\n", 
+                       format_ip46_address, &conn->daddr, type);
+         }
+
         if (conn->ip_id)
            s = format(s, " next ip-id/flow %08llx\n", 
                         conn->ip_id);

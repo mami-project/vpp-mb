@@ -337,12 +337,21 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
       init_conn_shuffle_seed(mm, conn, rule);
    }
 
+   /* init mapped fields*/
+   vec_foreach(match, matches) {
+      rule = mm->rules + *match;
+      if (rule->shuffle)
+         init_conn_shuffle_seed(mm, conn, rule);
+      if (rule->map)
+         init_conn_map(mm, conn, rule);
+   }
+
    /* adding forward 5tuple */
    copy_forward_5tuple(&conn_key, conn);
    conn_key.kv.value = conn_id.as_u64; 
    mmb_add_5tuple(mct, &conn_key.kv);  
 
-   /* adding backward 5tuple */
+   /* adding backward 5tuple */ //TODO:
    copy_reverse_5tuple(&conn_key, conn);
    conn_id.dir = 1;
    conn_key.kv.value = conn_id.as_u64; 

@@ -107,11 +107,15 @@ typedef struct {
   u16 initial_dport;
   u32 ip_id; /* +20 = 26 */
   u8 mapped_sack:1;
-
   u8 unused1:7;/* +1 = 27 */
   u8 unused2; /* +1 = 28 */
   u32 unused3; /* +4 = 32 */
-  u64 unused4[4]; /* +32 = 64 */
+  
+  ip46_address_t saddr;
+  ip46_address_t initial_saddr;
+  ip46_address_t daddr;
+  ip46_address_t initial_daddr; /* +64 = 96 */
+  u64 unused4[4]; /* + 32 = 128 */
 } mmb_conn_t;
 
 typedef struct {
