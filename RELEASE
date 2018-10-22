@@ -9,8 +9,8 @@ todos:
    * more operators
 
 
-mmb 0.3.x
-   * added map target keyword for field mapping with user-chosen value
+mmb 0.3.3
+   * new map target keyword that performs field mapping with user-chosen value
 
 
 mmb 0.3.2
