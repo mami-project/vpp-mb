@@ -8,8 +8,9 @@ todos:
    * more tests
    * more operators
 
+
 mmb 0.3.x
-   * support for SNAT
+   * added map target keyword for field mapping with user-chosen value
 
 
 mmb 0.3.2
