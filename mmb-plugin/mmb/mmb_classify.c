@@ -436,7 +436,7 @@ mmb_classify_inline(vlib_main_t * vm,
                           next0 = e0->next_index;  
                      } else { 
                        if (rule->shuffle == 0) { /* stateful */
-                          vec_add1(matches_opener, *rule_index);
+                          vec_add1(matches_opener, *rule_index); // TODO: do it after
                        } else { /* stateful + seed */
                           vec_add1(matches_shuffle, *rule_index);
                        }
@@ -523,7 +523,7 @@ mmb_classify_inline(vlib_main_t * vm,
             }
          }
 
-         /* pass matches & conn id to next ode */
+         /* pass matches & conn id to next node */
          vnet_buffer(b0)->l2_classify.hash = (u64)matches;
          vnet_buffer(b0)->unused[0] = conn_index;
          vnet_buffer(b0)->unused[1] = conn_dir;

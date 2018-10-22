@@ -397,7 +397,7 @@ static_always_inline void mmb_map_sack(mmb_tcp_options_t *tcp_options, u8 is_ip6
 
 static_always_inline void mmb_map_shuffle(u8 *p, mmb_conn_t *conn, u32 dir, u8 is_ip6) {
 
-  tcp_header_t *tcph;  
+  tcp_header_t *tcph;  //TODO rename mmb_rewrite_stateful
 
    if (!is_ip6) {
       ip4_header_t *iph4 = (ip4_header_t*)p;

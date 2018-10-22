@@ -54,6 +54,7 @@
   _(MODIFY)                \
   _(ADD)                   \
   _(LB)                    \
+  _(MAP)                   \
   _(SHUFFLE)  
 
 /* macro, CLI name, size, fixed len */
@@ -286,6 +287,7 @@ typedef struct {
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
   mmb_target_t           *shuffle_targets;
+  mmb_target_t           *map_targets;
 
   /* mmb_classify */
   u8 *classify_mask;
@@ -312,7 +314,7 @@ typedef struct {
   u8 lb:1;
   u8 stateful:1;
   u8 shuffle:1;
-  u8 unused:1; 
+  u8 map:1; 
 
 } mmb_rule_t;
 
