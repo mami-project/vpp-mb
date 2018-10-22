@@ -262,7 +262,7 @@ Allowed values:
    to add entries to the connection table. Once a connection is added to the table,
    the \texttt{<target>} list is applied to all packets of the connection, even if 
    they don't match the rule. Additionally, \texttt{add-stateful} allows for
-   special target \texttt{shuffle}.
+   special targets \texttt{map} and \texttt{shuffle}.
 
 \item \texttt{<match>} \\
    \textbf{SYNTAX :} \texttt{[!]\ <field> [[<cond>] <value>]} 
@@ -287,7 +287,7 @@ Allowed values:
    %constraints (it reverses the matching constraint).
 
 \item \texttt{<target>}  \\
-   \textbf{SYNTAX :} \texttt{mod [...]|strip [...]|add [...]|drop [...]|shuffle [...]} 
+   \textbf{SYNTAX :} \texttt{mod [...]|strip [...]|add [...]|drop [...]|map [...]|shuffle [...]} 
 
    This parameter determines the action(s) to apply on matched packets. 
    \begin{itemize}
@@ -316,11 +316,19 @@ Allowed values:
       Drop a packet with optional probability \texttt{<rate>} given in percentage,
       with a maximal precision of 0.01\%. The default rate is 100\%.
 
+   \item \texttt{map <field> <value>}
+      
+      Perform a bidirectionnal mapping of the given \texttt{<field>} to a given value.
+      Valid fields are: \texttt{ip-saddr}, \texttt{ip-daddr}, \texttt{ip6-saddr}, 
+      \texttt{ip6-daddr}, \texttt{tcp-sport},
+      \texttt{tcp-dport}, \texttt{udp-sport}, \texttt{udp-dport}, \texttt{ip-id},
+      \texttt{ip6-flow-label}.
+
    \item \texttt{shuffle <field>}
       
-      Perform a bidirectionnal mapping of the given <field> to a randomly chosen value.
+      Perform a bidirectionnal mapping of the given \texttt{<field>} to a random value.
       Valid fields are: \texttt{tcp-seq-num}, \texttt{tcp-ack-num}, \texttt{tcp-sport},
-      \texttt{tcp-dport}, \texttt{udp-sport}, \texttt{udp-dport}, , \texttt{ip-id},
+      \texttt{tcp-dport}, \texttt{udp-sport}, \texttt{udp-dport}, \texttt{ip-id},
       \texttt{ip6-flow-label}.
       
    \end{itemize}
@@ -330,8 +338,10 @@ Allowed values:
 \subsection{\texttt{<cond>}}
 
 A condition is applied on a \texttt{<value>} from a \texttt{<field>} to form
-a constraint. Note that \texttt{>} and \texttt{<} have to be escaped if typed
-from a bash shell.\\ 
+a constraint. 
+%Note that \texttt{>} and \texttt{<} have to be escaped if typed
+%from a bash shell.
+\\ 
 Available conditions: \texttt{==}%, \texttt{!=}, \texttt{<=}, \texttt{>=}, 
 %\texttt{<}, \texttt{>}.
 
