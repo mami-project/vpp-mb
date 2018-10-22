@@ -145,8 +145,8 @@ int purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
 }
 
 static_always_inline void copy_reverse_5tuple(mmb_5tuple_t *to, mmb_conn_t *from) {
-   to->addr[0] = from->info.addr[1];
-   to->addr[1] = from->info.addr[0];
+   to->addr[0] = ip46_address_is_zero(&from->daddr) ? from->daddr : from->info.addr[1];
+   to->addr[1] = ip46_address_is_zero(&from->saddr) ? from->saddr :from->info.addr[0];
    to->l4.port[0] = from->dport ? ntohs(from->dport) : from->info.l4.port[1];
    to->l4.port[1] = from->sport ? ntohs(from->sport) : from->info.l4.port[0];  
 } 
