@@ -6,7 +6,7 @@ todos:
    * support for ip6 extension headers
    * use CSIT
    * more tests
-   * more operators
+   * more operators (<, >, !=)
 
 
 mmb 0.3.3
