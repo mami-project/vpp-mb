@@ -91,3 +91,11 @@ static_always_inline void free_tcp_options(mmb_tcp_options_t *options) {
 
 #endif
 
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

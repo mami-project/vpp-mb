@@ -26,3 +26,11 @@ typedef enum {
 #undef vl_msg_id
 
 #endif /* included_mmb_msg_enum_h */
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

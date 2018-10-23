@@ -45,3 +45,11 @@ u8* mmb_format_key(u8 *s, va_list *args);
 
 #endif /* included_mmb_format_h */
 
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

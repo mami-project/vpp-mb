@@ -258,3 +258,11 @@ inline int get_conn_timeout_type(mmb_conn_table_t *mct, mmb_conn_t *conn) {
 }
 
 #endif
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

@@ -129,6 +129,7 @@ int purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
       mct->currently_handling_connections = 1;
 
    /* remove rule_index from connections */
+   /* *INDENT-OFF* */
    pool_foreach(conn, mct->conn_pool, ({
       timeout_time = get_conn_timeout_time(mct, conn);
 
@@ -137,6 +138,7 @@ int purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
          vec_add1(purge_indexes, conn - mct->conn_pool);
 
    }));  
+   /* *INDENT-ON* */
 
    purge_conn(mct, purge_indexes);
 
@@ -201,6 +203,7 @@ void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index) {
    wait_and_lock_connection_handling(mct);
 
    /* remove rule_index from connections */
+   /* *INDENT-OFF* */
    pool_foreach(conn, mct->conn_pool, ({
 
       index_of_index = vec_find(conn->rule_indexes, rule_index);
@@ -215,6 +218,7 @@ void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index) {
       }
 
    }));
+   /* *INDENT-ON* */
    
    /* decrement rules with index > rule_index */
    update_conn_pool_internal(mct, rule_index);
@@ -236,6 +240,7 @@ void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index) {
    u32 *current_rule_index;   
    mmb_conn_t *conn;
 
+   /* *INDENT-OFF* */
    pool_foreach(conn, mct->conn_pool, ({
 
       vec_foreach(current_rule_index, conn->rule_indexes) {
@@ -243,6 +248,7 @@ void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index) {
             (*current_rule_index)--;
       }
    }));
+   /* *INDENT-ON* */
 }
 
 /**
@@ -507,3 +513,11 @@ clib_error_t *mmb_conn_table_init(vlib_main_t *vm) {
 
    return error;
 }
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */
