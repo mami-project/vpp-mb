@@ -16,44 +16,44 @@ AUTOMAKE_OPTIONS = foreign subdir-objects
 AM_CFLAGS = -Wall -I${top_srcdir} -I${top_builddir}
 AM_LDFLAGS = -module -shared -avoid-version
 AM_LIBTOOLFLAGS = --quiet
-SUFFIXES = .api.h .api .api.json
+#SUFFIXES = .api.h .api .api.json
 API_FILES =
 BUILT_SOURCES =
 vppplugins_LTLIBRARIES =
-vppapitestplugins_LTLIBRARIES =
+#vppapitestplugins_LTLIBRARIES =
 noinst_HEADERS =
-nobase_apiinclude_HEADERS =
+#nobase_apiinclude_HEADERS =
 ACLOCAL_AMFLAGS = -I m4
 
-vppapitestpluginsdir = ${libdir}/vpp_api_test_plugins
+#vppapitestpluginsdir = ${libdir}/vpp_api_test_plugins
 vpppluginsdir = ${libdir}/vpp_plugins
 
 include mmb.am
 
-%.api.h: %.api
-	mkdir -p `dirname $@` ; \
-	$(CC) $(CPPFLAGS) -E -P -C -x c $^ \
-	| vppapigen --input - --output $@ --show-name $@
+#%.api.h: %.api
+#	mkdir -p `dirname $@` ; \
+#	$(CC) $(CPPFLAGS) -E -P -C -x c $^ \
+#	| vppapigen --input - --output $@ --show-name $@
 
-%.api.json: %.api
-	@echo "  JSON APIGEN  " $@ ;				\
-	mkdir -p `dirname $@` ;					\
-	$(CC) $(CPPFLAGS) -E -P -C -x c $^			\
-	| vppapigen --input - --json $@
+#%.api.json: %.api
+#	@echo "  JSON APIGEN  " $@ ;				\
+#	mkdir -p `dirname $@` ;					\
+#	$(CC) $(CPPFLAGS) -E -P -C -x c $^			\
+#	| vppapigen --input - --json $@
 
-apidir = $(prefix)/api/plugins
-apiincludedir = ${includedir}/vpp_plugins
+#apidir = $(prefix)/api/plugins
+#apiincludedir = ${includedir}/vpp_plugins
 
-api_DATA = \
-	$(patsubst %.api,%.api.json,$(API_FILES))
+#api_DATA = \
+#	$(patsubst %.api,%.api.json,$(API_FILES))
 
-BUILT_SOURCES += \
-	$(patsubst %.api,%.api.h,$(API_FILES))
+#BUILT_SOURCES += \
+#	$(patsubst %.api,%.api.h,$(API_FILES))
 
 
 # Remove *.la files
 install-data-hook:
 	@(cd $(vpppluginsdir) && $(RM) $(vppplugins_LTLIBRARIES))
-	@(cd $(vppapitestpluginsdir) && $(RM) $(vppapitestplugins_LTLIBRARIES))
+#	@(cd $(vppapitestpluginsdir) && $(RM) $(vppapitestplugins_LTLIBRARIES))
 
 CLEANFILES = $(BUILT_SOURCES)

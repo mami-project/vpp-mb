@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-vppapitestplugins_LTLIBRARIES += mmb_test_plugin.la
+# vppapitestplugins_LTLIBRARIES += mmb_test_plugin.la
 vppplugins_LTLIBRARIES += mmb_plugin.la
 
 mmb_plugin_la_SOURCES = \
@@ -23,13 +23,13 @@ mmb_plugin_la_SOURCES = \
   mmb/mmb_conn.c     \
   mmb/mmb_plugin.api.h  
 
-API_FILES += mmb/mmb.api
+#API_FILES += mmb/mmb.api
 
-nobase_apiinclude_HEADERS += \
-  mmb/mmb_all_api_h.h        \
-  mmb/mmb_msg_enum.h         \
-  mmb/mmb.api.h           
+#nobase_apiinclude_HEADERS += \
+#  mmb/mmb_all_api_h.h        \
+#  mmb/mmb_msg_enum.h         \
+#  mmb/mmb.api.h           
 
-mmb_test_plugin_la_SOURCES = mmb/mmb_test.c mmb/mmb_plugin.api.h
+#mmb_test_plugin_la_SOURCES = mmb/mmb_test.c mmb/mmb_plugin.api.h
 
 # vi:syntax=automake
