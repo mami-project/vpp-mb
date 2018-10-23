@@ -26,13 +26,14 @@ Still on host machine, navigate to `vagrant/`  and run:
 On the virtual machine, navigate to `vpp-mb/scripts`. This directory contains scripts to create a few (VPP-only) network topologies that can be used to test **mmb**. For example, `topologies/ip4/small.sh` creates a 3 nodes (client - middlebox - server) topology.
 
 ### CLI Commands
+
 All available commands are described in `docs/user-guide.pdf`.
 
 ## Administrative
 
 ### Current status
 
-Latest and future additions are described in RELEASE.
+Latest and future additions are described in RELEASE. Note that VPP post-18.01 is not currently supported.
 
 ### Links
 
