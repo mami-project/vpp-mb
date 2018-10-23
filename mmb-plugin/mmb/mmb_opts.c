@@ -73,3 +73,11 @@ u8 mmb_parse_tcp_options(tcp_header_t *tcph, mmb_tcp_options_t *options) {
 }
 
 
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

@@ -292,6 +292,7 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
   if (rule->has_strips) {
     uword *found_to_strip = clib_bitmap_dup_and(tcp_options->found, rule->opt_strips);
     if (!clib_bitmap_is_zero(found_to_strip)) {
+      /* *INDENT-OFF* */
       clib_bitmap_foreach(i, found_to_strip, mmb_target_strip_option(tcp_options, i));
       opts_modified = 1;
     }
@@ -302,6 +303,7 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
     mmb_target_t *opt_modified = rule->opt_mods+i;
     opts_modified |= mmb_target_modify_option(tcp_options, opt_modified->opt_kind, opt_modified->value);
   }
+  /* *INDENT-ON* */
 
   /* Rewrite tcp options, if needed */
   tcp_header_t *tcph = is_ip6 ? ip6_next_header((ip6_header_t*)p) : ip4_next_header((ip4_header_t*)p);
@@ -803,6 +805,7 @@ mmb_node_ip6_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
   return mmb_node_fn(vm, node, frame, 1, &ip6_mmb_rewrite_node);
 }
 
+/* *INDENT-OFF* */
 VLIB_REGISTER_NODE(ip4_mmb_rewrite_node) =
 {
   .function = mmb_node_ip4_rewrite_fn,
@@ -819,6 +822,7 @@ VLIB_REGISTER_NODE(ip4_mmb_rewrite_node) =
     [MMB_NEXT_LOOP] = "ip4-input",
   }
 };
+/* *INDENT-ON* */
 
 VLIB_NODE_FUNCTION_MULTIARCH(ip4_mmb_rewrite_node, mmb_node_ip4_rewrite_fn);
 
@@ -828,6 +832,7 @@ VNET_FEATURE_INIT (ip4_mmb_rewrite_feature, static) = {
   .runs_before = VNET_FEATURES("ip4-lookup"),//"interface-output"),
 };
 
+/* *INDENT-OFF* */
 VLIB_REGISTER_NODE(ip6_mmb_rewrite_node) =
 {
   .function = mmb_node_ip6_rewrite_fn,
@@ -844,6 +849,7 @@ VLIB_REGISTER_NODE(ip6_mmb_rewrite_node) =
     [MMB_NEXT_LOOP] = "ip6-input",
   }
 };
+/* *INDENT-ON* */
 
 VLIB_NODE_FUNCTION_MULTIARCH(ip6_mmb_rewrite_node, mmb_node_ip6_rewrite_fn);
 
@@ -861,3 +867,11 @@ mmb_rewrite_init (vlib_main_t *vm)
 }
 
 VLIB_INIT_FUNCTION(mmb_rewrite_init);
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

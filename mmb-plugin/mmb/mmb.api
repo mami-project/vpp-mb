@@ -106,3 +106,11 @@ define mmb_table_dump
   //vl_api_mmb_type_rule_t rule;
 };
 
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

@@ -403,3 +403,11 @@ inline u64 bytes_to_u64(u8 *bytes) {
 }
 
 #endif /* __included_mmb_h__ */
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

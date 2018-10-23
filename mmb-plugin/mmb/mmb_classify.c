@@ -562,6 +562,7 @@ ip4_mmb_classify(vlib_main_t * vm,
 }
 
 vlib_node_registration_t ip4_mmb_classify_node;
+/* *INDENT-OFF* */
 VLIB_REGISTER_NODE(ip4_mmb_classify_node) = {
   .function = ip4_mmb_classify,
   .name = "ip4-mmb-classify",
@@ -576,6 +577,7 @@ VLIB_REGISTER_NODE(ip4_mmb_classify_node) = {
     [MMB_CLASSIFY_NEXT_INDEX_DROP] = "error-drop",
   },
 };
+/* *INDENT-ON* */
 
 //VLIB_NODE_FUNCTION_MULTIARCH(ip4_mmb_classify_node, ip4_mmb_classify);
 
@@ -595,6 +597,7 @@ ip6_mmb_classify(vlib_main_t * vm,
 }
 
 vlib_node_registration_t ip6_mmb_classify_node;
+/* *INDENT-OFF* */
 VLIB_REGISTER_NODE(ip6_mmb_classify_node) = {
   .function = ip6_mmb_classify,
   .name = "ip6-mmb-classify",
@@ -609,6 +612,7 @@ VLIB_REGISTER_NODE(ip6_mmb_classify_node) = {
     [MMB_CLASSIFY_NEXT_INDEX_DROP] = "error-drop",
   },
 };
+/* *INDENT-ON* */
 
 //VLIB_NODE_FUNCTION_MULTIARCH(ip6_mmb_classify_node, ip6_mmb_classify);
 
@@ -628,3 +632,11 @@ mmb_classify_init(vlib_main_t *vm) {
 }
 
 VLIB_INIT_FUNCTION(mmb_classify_init);
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

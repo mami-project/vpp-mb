@@ -14,3 +14,11 @@
  */
 /* Include the generated file, see BUILT_SOURCES in Makefile.am */
 #include <mmb/mmb.api.h>
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

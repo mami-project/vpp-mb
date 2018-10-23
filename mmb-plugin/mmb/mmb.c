@@ -1640,6 +1640,7 @@ void update_lookup_pool(u32 rule_index) {
    u32 *current_rule_index;   
    mmb_lookup_entry_t *lookup_entry;
 
+   /* *INDENT-OFF* */
    pool_foreach(lookup_entry, mm->lookup_pool, ({
       vec_foreach(current_rule_index, lookup_entry->rule_indexes) {
 
@@ -1647,6 +1648,7 @@ void update_lookup_pool(u32 rule_index) {
             (*current_rule_index)--;
       }
    }));
+   /* *INDENT-ON* */
 }
 
 static int remove_rule(u32 rule_index) {
@@ -2218,35 +2220,42 @@ void free_rule(mmb_rule_t *rule) {
 /**
  * @brief CLI command to enable the mmb plugin.
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_enable, static) = {
     .path = "mmb enable",
     .short_help = "mmb enable <interface-name> "
                   "(enable the MMB plugin on a given interface)",
     .function = enable_command_fn,
 };
+/* *INDENT-ON* */
 
 /**
  * @brief CLI command to disable the mmb plugin.
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_disable, static) = {
     .path = "mmb disable",
     .short_help = "mmb disable <interface-name> "
                   "(disable the MMB plugin on a given interface)",
     .function = disable_command_fn,
 };
+/* *INDENT-ON* */
 
 /**
  * @brief CLI command to list all rules.
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_list_rules, static) = {
     .path = "mmb list",
     .short_help = "Display all rules",
     .function = list_rules_command_fn,
 };
+/* *INDENT-ON* */
 
 /**
  * @brief CLI command to add a rule.
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
     .path = "mmb add",
     .short_help = "Add a rule: mmb add <field> [[<cond>] <value>] "
@@ -2254,10 +2263,12 @@ VLIB_CLI_COMMAND(sr_content_command_add_rule, static) = {
                   "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
     .function = add_rule_command_fn,
 };
+/* *INDENT-ON* */
 
 /**
  * @brief CLI command to add a stateless rule (same as add, added for completeness).
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_add_stateless_rule, static) = {
     .path = "mmb add-stateless",
     .short_help = "Add a rule (same as mmb add): mmb add-stateless <field> [[<cond>] <value>] "
@@ -2265,10 +2276,12 @@ VLIB_CLI_COMMAND(sr_content_command_add_stateless_rule, static) = {
                   "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
     .function = add_stateless_rule_command_fn,
 };
+/* *INDENT-ON* */
 
 /**
  * @brief CLI command to add a stateful rule.
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_add_stateful_rule, static) = {
     .path = "mmb add-stateful",
     .short_help = "Add a stateful rule: mmb add-stateful <field> [[<cond>] <value>] "
@@ -2276,42 +2289,51 @@ VLIB_CLI_COMMAND(sr_content_command_add_stateful_rule, static) = {
                   "[strip|mod ...]|mod [<field>] <value> [strip|mod ...]|drop>",
     .function = add_stateful_rule_command_fn,
 };
+/* *INDENT-ON* */
 
 /**
  * @brief CLI command to remove a rule.
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_del_rules, static) = {
     .path = "mmb delete",
     .short_help = "Remove a rule: mmb delete <rule-number>",
     .function = del_rule_command_fn,
 };
+/* *INDENT-ON* */
 
 /**
  * @brief CLI command to remove all rules.
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_flush_rule, static) = {
     .path = "mmb flush",
     .short_help = "Remove all rules",
     .function = flush_rules_command_fn,
 };
+/* *INDENT-ON* */
 
 /**
  * @brief CLI command to show classify tables
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_show_tables, static) = {
     .path = "mmb show tables",
     .short_help = "Display tables and sessions details: mmb show tables [verbose]",
     .function = show_tables_command_fn,
 };
+/* *INDENT-ON* */
 
 /**
  * @brief CLI command to show connections tables
  */
+/* *INDENT-OFF* */
 VLIB_CLI_COMMAND(sr_content_command_show_conn, static) = {
     .path = "mmb show connections",
     .short_help = "Display connections details: mmb show connections [verbose]",
     .function = show_conn_command_fn,
 };
+/* *INDENT-ON* */
 
 static void
 vl_api_mmb_table_flush_t_handler(vl_api_mmb_table_flush_t *mp)
@@ -2449,3 +2471,11 @@ static clib_error_t * mmb_init(vlib_main_t *vm) {
 
 VLIB_INIT_FUNCTION (mmb_init);
 
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

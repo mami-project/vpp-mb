@@ -929,6 +929,7 @@ u8 *mmb_format_lookup_table(u8 *s, va_list *args) {
    mmb_lookup_entry_t *lookup_entry;
    u32 *rule_index, lookup_index;
 
+   /* *INDENT-OFF* */
    pool_foreach_index(lookup_index, lookup_pool, ({
       s = format(s, "lookup index %d\n", lookup_index);
 
@@ -938,6 +939,7 @@ u8 *mmb_format_lookup_table(u8 *s, va_list *args) {
       }
       s = format(s, "\n", *rule_index);
    }));
+   /* *INDENT-ON* */
 
    return s;
 }
@@ -1015,6 +1017,7 @@ u8 *mmb_format_conn_table(u8 *s, va_list *args) {
       s = format(s, " is empty");
    s = format(s, "\n");
 
+   /* *INDENT-OFF* */
    pool_foreach(conn, conn_pool,({
 
      conn_index = conn - conn_pool;
@@ -1088,7 +1091,16 @@ u8 *mmb_format_conn_table(u8 *s, va_list *args) {
      }
 
    }));
+   /* *INDENT-ON* */
 
    return s;
 }
 
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

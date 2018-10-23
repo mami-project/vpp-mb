@@ -48,3 +48,11 @@ typedef struct {
 mmb_classify_main_t mmb_classify_main;
 
 #endif /* __included_mmb_classify_h__ */
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */
