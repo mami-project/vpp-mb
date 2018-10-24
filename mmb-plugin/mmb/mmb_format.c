@@ -30,11 +30,40 @@
 
 #define bitmap_size(ai) vec_len(ai)*BITS(uword)
 
+/** Return the next clear bit in a bitmap starting at bit i
+ *    @param ai - pointer to the bitmap
+ *   @param i - first bit position to test
+ *   @returns first clear bit position at or after i
+ *
+ * corrected from vppinfra/bitmap.h
+ **/
+always_inline uword clib_bitmap_next_clear_corrected(uword *ai, uword i);
+
+/**
+ * resize value of fixed length field,
+ *
+ * @return vec_len(value) 
+ */
+static_always_inline int resize_value(u8 field, u8 **value);
+
+/** 
+ * Parse an IP4 address %d.%d.%d.%d[/%d] 
+ * 
+ * (modified from vnet/ip/ip4_format.c)
+ **/
+static uword mmb_unformat_ip4_address (unformat_input_t *input, va_list *args);
+
+/** Parse an IP6 address. 
+ *  
+ * (modified from vnet/ip/ip6_format.c)
+ **/
+static uword mmb_unformat_ip6_address(unformat_input_t *input, va_list *args);
+
 static uword mmb_unformat_field(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_condition(unformat_input_t *input, va_list *args);
 static uword mmb_unformat_value(unformat_input_t *input, va_list *args);
-static uword mmb_unformat_ip4_address (unformat_input_t *input, va_list *args);
 static uword mmb_unformat_fibs(unformat_input_t *input, va_list *args);
+
 static u8* mmb_format_match(u8 *s, va_list *args);
 static u8* mmb_format_target(u8 *s, va_list *args);
 static u8* mmb_format_field(u8 *s, va_list *args);
@@ -59,12 +88,7 @@ void unformat_input_tolower(unformat_input_t *input) {
   str_tolower(input->buffer);
 }
 
-/**
- * resize value of fixed length field,
- *
- * @return vec_len(value) 
- */
-static_always_inline int resize_value(u8 field, u8 **value) {
+int resize_value(u8 field, u8 **value) {
   u8 user_len = vec_len(*value);
   u8 proper_len = lens[field_toindex(field)];
 
@@ -116,11 +140,6 @@ static_always_inline void u64_tobytes(u8 **bytes, u64 value, u8 count) {
     vec_add1(*bytes, value>>(i*8)); 
 }
 
-/** 
- * Parse an IP4 address %d.%d.%d.%d[/%d] 
- * 
- * (modified from vnet/ip/ip4_format.c)
- **/
 uword mmb_unformat_ip4_address(unformat_input_t *input, va_list *args) {
   u8 **result = va_arg(*args, u8**);
   unsigned a[5], i;
@@ -141,12 +160,7 @@ uword mmb_unformat_ip4_address(unformat_input_t *input, va_list *args) {
   return 1;
 }
 
-/** Parse an IP6 address. 
- *  
- * (modified from vnet/ip/ip6_format.c)
- **/
-uword
-mmb_unformat_ip6_address(unformat_input_t *input, va_list *args) {
+uword mmb_unformat_ip6_address(unformat_input_t *input, va_list *args) {
   u8 **bytes = va_arg(*args, u8**);
   u16 hex_quads[8];
   uword hex_quad, n_hex_quads, hex_digit, n_hex_digits;
@@ -583,15 +597,7 @@ static_always_inline mmb_target_t target_from_add(mmb_rule_t *rule,
    return add_target;
 }
 
-/** Return the next clear bit in a bitmap starting at bit i
- *    @param ai - pointer to the bitmap
- *   @param i - first bit position to test
- *   @returns first clear bit position at or after i
- *
- * corrected from vppinfra/bitmap.h
- **/
-always_inline uword
-clib_bitmap_next_clear_corrected(uword *ai, uword i) {
+uword clib_bitmap_next_clear_corrected(uword *ai, uword i) {
   uword i0 = i / BITS (ai[0]);
   uword i1 = i % BITS (ai[0]);
   uword t;
