@@ -483,6 +483,12 @@ can be used with fields \texttt{net-proto} or \texttt{ip-proto}.
 \texttt{vpp\# mmb add tcp-opt 22 drop} \\
    Drop all TCP packets that contain option 22
 
+\texttt{vpp\# mmb add-stateful ip-proto tcp ip-saddr 10.0.0.10/24 accept} \\
+\texttt{vpp\# mmb add ip-proto tcp drop} \\
+   Reflexive ACL that blocks everything but tcp connections initated from 10.0.0.10/24
+
+\texttt{vpp\# mmb add-stateful ip-proto tcp tcp-saddr 10.0.0.10/24 map ip-saddr 30.30.30.30 shuffle tcp-sport} \\
+   Source NAT
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
