@@ -13,7 +13,7 @@
  * limitations under the License.
  *
  * @file
- * @brief MMB Plugin, plugin API / trace / CLI handling.
+ * @brief MMB Plugin, plugin trace / CLI / internals handling.
  * @author Korian Edeline
  */
 
@@ -27,22 +27,6 @@
 #include <mmb/mmb_classify.h>
 #include <mmb/mmb_conn.h>
 
-#include <vlibapi/api.h>
-#include <vlibmemory/api.h>
-
-/* define message IDs */
-#include <mmb/mmb_msg_enum.h>
-
-/* define message structures */
-#define vl_typedefs
-#include <mmb/mmb_all_api_h.h> 
-#undef vl_typedefs
-
-/* define generated endian-swappers */
-#define vl_endianfun
-#include <mmb/mmb_all_api_h.h> 
-#undef vl_endianfun
-
 /* instantiate all the print functions we know about */
 #ifdef MMB_DEBUG
 #  define vl_print(handle, ...) vlib_cli_output (handle, __VA_ARGS__)
@@ -50,16 +34,8 @@
 #  define vl_print(handle, ...) 
 #endif
 #define vl_printfun
-#include <mmb/mmb_all_api_h.h> 
+
 #undef vl_printfun
-
-/* Get the API version number */
-#define vl_api_version(n,v) static u32 api_version=(v);
-#include <mmb/mmb_all_api_h.h>
-#undef vl_api_version
-
-#define REPLY_MSG_ID_BASE mm->msg_id_base
-#include <vlibapi/api_helper_macros.h>
 
 #include <ctype.h>
 
@@ -1949,7 +1925,6 @@ clib_error_t* validate_matches(mmb_rule_t *rule) {
 
    /* delete interface fields */
    vec_foreach(deletion, deletions) {
-     //vlib_cli_output(mmb_main.vlib_main, "deleting %u size:%u\n", *deletion, vec_len(rule->matches));
 
      mmb_match_t *match = &rule->matches[*deletion];
      if (vec_len(rule->matches) == 1 && vec_len(rule->opt_matches) == 0) {
@@ -2360,101 +2335,6 @@ VLIB_CLI_COMMAND(sr_content_command_show_conn, static) = {
 };
 /* *INDENT-ON* */
 
-static void
-vl_api_mmb_table_flush_t_handler(vl_api_mmb_table_flush_t *mp)
-{
-  vl_api_mmb_table_flush_reply_t *rmp;
-  mmb_main_t *mm = &mmb_main;
-  int rv = 0;
-
-  flush();
-
-  REPLY_MACRO(VL_API_MMB_TABLE_FLUSH_REPLY);
-}
-
-static void
-vl_api_mmb_remove_rule_t_handler(vl_api_mmb_remove_rule_t *mp)
-{
-  vl_api_mmb_remove_rule_reply_t *rmp;
-  mmb_main_t *mm = &mmb_main;
-
-  //TODO since it is handling endianess automatically, do I need to use clib_net_to_host here ?
-  int rv = remove_rule(clib_net_to_host_u32(mp->rule_num));
-
-  REPLY_MACRO(VL_API_MMB_REMOVE_RULE_REPLY);
-}
-
-static void
-send_mmb_table_details(u32 rule_num, mmb_rule_t *rule, unix_shared_memory_queue_t *q, u32 context)
-{
-  vl_api_mmb_table_details_t *rmp;
-  mmb_main_t *mm = &mmb_main;
-
-  rmp = vl_msg_api_alloc(sizeof(*rmp));
-  memset (rmp, 0, sizeof(*rmp));
-  rmp->_vl_msg_id = ntohs(VL_API_MMB_TABLE_DETAILS + mm->msg_id_base);
-
-  rmp->context = context;//already in "net" endian (see _dump function below)
-  //TODO since it is handling endianess automatically, do I need to use clib_host_to_net here ?
-  rmp->rule_num = clib_host_to_net_u32(rule_num);
-
-  vl_msg_api_send_shmem(q, (u8*)&rmp);
-}
-
-static void
-vl_api_mmb_table_dump_t_handler(vl_api_mmb_table_dump_t *mp)
-{
-  unix_shared_memory_queue_t *q;
-  mmb_main_t *mm = &mmb_main;
-  mmb_rule_t *rule;
-  u32 i=1;
-
-  q = vl_api_client_index_to_input_queue (mp->client_index);
-  if (q == 0)
-    return;
-
-  vec_foreach(rule, mm->rules)
-    send_mmb_table_details(i++, rule, q, mp->context);
-}
-
-/* List of message types that this plugin understands */
-#define foreach_mmb_plugin_api_msg     \
-  _(MMB_TABLE_FLUSH, mmb_table_flush)  \
-  _(MMB_REMOVE_RULE, mmb_remove_rule)  \
-  _(MMB_TABLE_DUMP, mmb_table_dump)
-
-/**
- * @brief Set up the API message handling tables.
- */
-static clib_error_t *
-mmb_plugin_api_hookup(vlib_main_t *vm) {
-  CLIB_UNUSED(mmb_main_t) * mm = &mmb_main;
-#define _(N,n)                                                  \
-    vl_msg_api_set_handlers((VL_API_##N + mm->msg_id_base),     \
-                           #n,					\
-                           vl_api_##n##_t_handler,              \
-                           vl_noop_handler,                     \
-                           vl_api_##n##_t_endian,               \
-                           vl_api_##n##_t_print,                \
-                           sizeof(vl_api_##n##_t), 1); 
-    foreach_mmb_plugin_api_msg;
-#undef _
-
-    return 0;
-}
-
-#define vl_msg_name_crc_list
-#include <mmb/mmb_all_api_h.h>
-#undef vl_msg_name_crc_list
-
-static void 
-setup_message_id_table(mmb_main_t * mm, api_main_t *am) {
-#define _(id,n,crc) \
-  vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + mm->msg_id_base);
-  foreach_vl_msg_name_crc_mmb;
-#undef _
-}
-
 /**
  * @brief Initialize the mmb plugin.
  */
@@ -2477,17 +2357,6 @@ static clib_error_t * mmb_init(vlib_main_t *vm) {
   if ((error = mmb_conn_table_init(vm)))
     return error;
   mm->mmb_conn_table = &mmb_conn_table;
-
-  name = format(0, "mmb_%08x%c", api_version, 0);
-
-  /* Ask for a correctly-sized block of API message decode slots */
-  mm->msg_id_base = vl_msg_api_get_msg_ids 
-      ((char *) name, VL_MSG_FIRST_AVAILABLE);
-
-  error = mmb_plugin_api_hookup(vm);
-
-  /* Add our API messages to the global name_crc hash table */
-  setup_message_id_table(mm, &api_main);
 
   vec_free(name);
 

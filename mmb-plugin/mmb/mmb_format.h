@@ -18,8 +18,6 @@
 #ifndef __included_mmb_format_h__
 #define __included_mmb_format_h__
 
-#include <vlibapi/api.h>
-
 #include <mmb/mmb.h>
 
 void unformat_input_tolower(unformat_input_t *input);
