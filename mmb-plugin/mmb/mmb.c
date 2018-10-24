@@ -220,6 +220,35 @@ static clib_error_t *mmb_add_rule_command(vlib_main_t *vm, unformat_input_t *inp
 
 static clib_error_t *mmb_add_rule(mmb_rule_t *rule);
 
+/**
+ * realloc_table
+ *
+ * Increase/decrease table size by a factor 
+ * MMB_TABLE_SIZE_INC_RATIO/MMB_TABLE_SIZE_DEC_RATIO.
+ *
+ * @param deleted_index if != ~0, do not add rules[deleted_index] to table
+ *
+ * @note table index will change
+ */
+static void realloc_table(mmb_table_t *table, u8 is_increase);
+
+/**
+ * mmb_match_payload
+ *
+ * header_size: size of header whose payload is written
+ * offset: header offset
+ */
+static_always_inline void mmb_match_payload(u8 *mask, u8 *key, u8 *value,
+                                            int offset, int header_size);
+
+/**
+ * mmb_mask_and_key
+ *
+ * Compute mask, key, skip and match from a rule.
+ * @param is_match
+ */
+static void mmb_mask_and_key(mmb_rule_t *rule, int is_match);
+
 static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule) {
   return rule->opts_in_matches || rule->opts_in_targets;
 }
@@ -599,14 +628,8 @@ static void ip6_header_host_to_net(u8 *header) {
    ip->dst_address.as_u64[1] = clib_host_to_net_u64(ip->dst_address.as_u64[1]); 
 }
 
-/**
- * mmb_match_payload
- *
- * header_size: size of header whose payload is written
- * offset: header offset
- */
-static_always_inline void mmb_match_payload(u8 *mask, u8 *key, u8 *value,
-                                            int offset, int header_size) {
+void mmb_match_payload(u8 *mask, u8 *key, u8 *value,
+                       int offset, int header_size) {
    int byte_count = clib_min(vec_len(value),
                          MMB_CLASSIFY_MAX_MASK_LEN-header_size-offset);
 
@@ -1042,13 +1065,7 @@ static void mmb_l3_mask_and_key(mmb_rule_t *rule, u8 *mask, u8 *key,
    }
 }
 
-/**
- * mmb_mask_and_key
- *
- * Compute mask, key, skip and match from a rule.
- * @param is_match
- */
-static void mmb_mask_and_key(mmb_rule_t *rule, int is_match) {
+void mmb_mask_and_key(mmb_rule_t *rule, int is_match) {
 
   u32 skip = 0, match = 0;
   u8 *mask = 0, *key = 0;
@@ -1371,17 +1388,7 @@ void rechain_table(mmb_table_t *table, int to_table) {
    }
 }
 
-/**
- * realloc_table
- *
- * Increase/decrease table size by a factor 
- * MMB_TABLE_SIZE_INC_RATIO/MMB_TABLE_SIZE_DEC_RATIO.
- *
- * @param deleted_index if != ~0, do not add rules[deleted_index] to table
- *
- * @note table index will change
- */
-static void realloc_table(mmb_table_t *table, u8 is_increase) {
+void realloc_table(mmb_table_t *table, u8 is_increase) {
 
   mmb_main_t *mm = &mmb_main;
   mmb_session_t *session;
