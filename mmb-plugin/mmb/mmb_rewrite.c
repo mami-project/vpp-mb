@@ -73,10 +73,6 @@ static u8 mmb_rewrite_tcp_options(vlib_buffer_t *, mmb_tcp_options_t *);
 static void target_tcp_options(vlib_buffer_t *, u8 *, mmb_rule_t *, 
                                mmb_tcp_options_t *, u8, mmb_conn_t *conn, u32 dir);
 
-/************************
- *   MMB Node format
- ***********************/
-
 static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
 {
   u8 keyword = va_arg(*args, u32);
@@ -150,12 +146,7 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   return s;
 }
 
-/************************
- *  Utility functions
- ***********************/
-
-static_always_inline u8 mmb_memmove(u8 *dst, u8 *from, u8 length)
-{
+static_always_inline u8 mmb_memmove(u8 *dst, u8 *from, u8 length) {
   memmove(dst, from, length);
   return length;
 }
@@ -168,12 +159,7 @@ static_always_inline u16 get_ip_protocol(u8 *p, u8 is_ip6)
   return ((ip4_header_t*)p)->protocol;
 }
 
-/************************
- *      TCP options
- ***********************/
-
-u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts)
-{
+u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts) {
   u8 offset = 0; //writing cursor's position
   u8 shift = 0; //cumulative shift offset to the right (after a specific resize -see below-)
 
@@ -249,10 +235,6 @@ u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts)
 
   return offset;
 }
-
-/**********************************************
- *   Rewrite TCP options (TARGETS) functions
- *********************************************/
 
 static_always_inline u8 mmb_target_add_option(u8 *data, mmb_transport_option_t *option)
 {
@@ -593,10 +575,6 @@ u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule,
 
   return next;
 }
-
-/************************
- *  Node entry function
- ***********************/
 
 static uword
 mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,

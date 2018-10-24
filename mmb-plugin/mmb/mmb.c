@@ -225,6 +225,36 @@ static_always_inline void mmb_match_payload(u8 *mask, u8 *key, u8 *value,
  */
 static void mmb_mask_and_key(mmb_rule_t *rule, int is_match);
 
+/**
+ * add_del_session
+ *
+ *  add/del session from mmb_table_t, update lookup_pool 
+ *
+ *  @return 1 if a session was created/deleted, 
+ *          0 if session already existed/still exist
+ */
+static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, 
+                           mmb_session_t *session,
+                           u32 rule_index, int is_add);
+
+/**
+ * find_table_internal_index
+ *
+ * search table by index
+ * @return internal index of table with given classify index
+ *         ~0 if not found
+ */
+static_always_inline u32 find_table_internal_index(int index);
+
+/**
+ * find_table_internal_index
+ *
+ * search table by mask
+ * @return internal index of table with given mask
+ *         ~0 if not found
+ */
+static_always_inline u32 find_table(mmb_rule_t *rule);
+
 static_always_inline u8 rule_has_tcp_options(mmb_rule_t *rule) {
   return rule->opts_in_matches || rule->opts_in_targets;
 }
@@ -1171,17 +1201,9 @@ static_always_inline mmb_session_t *find_session(mmb_table_t *table,
    return NULL;
 }
 
-/**
- * add_del_session
- *
- *  add/del session from mmb_table_t, update lookup_pool 
- *
- *  @return 1 if a session was created/deleted, 
- *          0 if session already existed/still exist
- */
-static int add_del_session(mmb_table_t *table, mmb_rule_t *rule, 
-                           mmb_session_t *session,
-                           u32 rule_index, int is_add) {
+int add_del_session(mmb_table_t *table, mmb_rule_t *rule, 
+                    mmb_session_t *session,
+                    u32 rule_index, int is_add) {
 
   if (is_add) {
 
@@ -1254,14 +1276,7 @@ void attach_table_if(u32 table_index, int is_add) {
   }
 }
 
-/**
- * find_table_internal_index
- *
- * search table by index
- * @return internal index of table with given classify index
- *         ~0 if not found
- */
-static_always_inline u32 find_table_internal_index(int index) {
+u32 find_table_internal_index(int index) {
    mmb_main_t *mm = &mmb_main;
    mmb_table_t *tables = mm->tables, *table;
    u32 table_index;
@@ -1278,14 +1293,7 @@ static_always_inline u32 find_table_internal_index(int index) {
    return ~0;
 }
 
-/**
- * find_table_internal_index
- *
- * search table by mask
- * @return internal index of table with given mask
- *         ~0 if not found
- */
-static_always_inline u32 find_table(mmb_rule_t *rule) {
+u32 find_table(mmb_rule_t *rule) {
    mmb_main_t *mm = &mmb_main;
    mmb_table_t *tables = mm->tables;
    mmb_table_t *table;
