@@ -2049,6 +2049,9 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
 
         clib_bitmap_set_no_check(rule->opt_strips, target->opt_kind, !rule->whitelist);
         vec_insert_elt_first(deletions, &index);
+         
+        rule->rewrite = 1;
+
         break;
 
      case MMB_TARGET_ADD:
@@ -2070,6 +2073,9 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
         mmb_transport_option_t opt = to_transport_option(target);
         vec_add1(rule->opt_adds, opt);
         vec_insert_elt_first(deletions, &index);
+
+        rule->rewrite = 1;
+
         break;
 
       case MMB_TARGET_MODIFY:
@@ -2078,8 +2084,12 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
            vec_add1(rule->opt_mods, *target);
            vec_insert_elt_first(deletions, &index);
          }
-         break;
+         rule->rewrite = 1;
 
+         break;
+      case MMB_TARGET_ACCEPT:
+         rule->accept = 1;
+         break;
       case MMB_TARGET_DROP:
          if (vec_len(rule->targets) > 1) {
             error = clib_error_return(0, "drop is a unique target");
@@ -2098,6 +2108,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
             goto end;
          }
          rule->lb = 1;
+         rule->rewrite = 1; /*XXX: lb is done in rewrite node */
          break;
 
       case MMB_TARGET_MAP:
@@ -2115,8 +2126,11 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          }
 
          vec_add1(rule->map_targets, *target);
-         vec_insert_elt_first(deletions, &index);      
+         vec_insert_elt_first(deletions, &index);     
+ 
          rule->map = 1;
+         rule->rewrite = 1;
+
          break;
 
       case MMB_TARGET_SHUFFLE:
@@ -2138,9 +2152,13 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
          }
 
          vec_add1(rule->shuffle_targets, *target);
-         vec_insert_elt_first(deletions, &index);      
+         vec_insert_elt_first(deletions, &index);
+      
          rule->shuffle = 1;
+         rule->rewrite = 1;
+
          break;
+
       default:
          break;
      } 

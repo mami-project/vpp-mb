@@ -55,7 +55,8 @@
   _(ADD)                   \
   _(LB)                    \
   _(MAP)                   \
-  _(SHUFFLE)  
+  _(SHUFFLE)               \
+  _(ACCEPT)  
 
 /* macro, CLI name, size, fixed len */
 #define foreach_mmb_field                         \
@@ -314,7 +315,10 @@ typedef struct {
   u8 lb:1;
   u8 stateful:1;
   u8 shuffle:1;
-  u8 map:1; 
+  u8 map:1; /* 8 */
+  u8 accept:1;
+  u8 rewrite:1;
+  u8 unused:6;
 
 } mmb_rule_t;
 

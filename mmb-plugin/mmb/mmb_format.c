@@ -368,6 +368,8 @@ uword mmb_unformat_target(unformat_input_t *input, va_list *args) {
      target->keyword=MMB_TARGET_DROP;
    else if (unformat(input, "drop"))
      target->keyword=MMB_TARGET_DROP;
+   else if (unformat(input, "accept"))
+     target->keyword=MMB_TARGET_ACCEPT;
    else if (unformat(input, "lb%U", mmb_unformat_fibs, &target->value)) 
      target->keyword=MMB_TARGET_LB; 
    else if (unformat(input, "map %U %U", mmb_unformat_field, 
@@ -494,6 +496,9 @@ u8* mmb_format_keyword(u8 *s, va_list *args) {
        break;
     case MMB_TARGET_SHUFFLE:
        keyword_str =  "shuffle";
+       break;
+    case MMB_TARGET_ACCEPT:
+       keyword_str =  "accept";
        break;
     case MMB_TARGET_MAP:
        keyword_str =  "map";
