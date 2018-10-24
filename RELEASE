@@ -1,17 +1,21 @@
 todos:
    * map sack blocks in shuffle targets
    * handle ip fragmentation
-   * update vpp support to 18.07
+   * update vpp support to 18.07 (currently supports up to 18.01)
    * option to revert changes in icmp quotation (icmp visibility)
    * support for ip6 extension headers
    * use CSIT
    * more tests
    * more operators (<, >, !=)
 
+mmb 0.3.4
+   * new accept target keyword for whitelist filtering
+   * dropped all api related code
+   * removing stateful map or shuffle rule now correctly unmap/unshuffle active connections 
+     even when those connections also matched other stateful rules (BUGFIX)
 
 mmb 0.3.3
    * new map target keyword that performs field mapping with user-chosen value
-
 
 mmb 0.3.2
 
