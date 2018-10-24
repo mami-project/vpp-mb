@@ -243,7 +243,7 @@ mmb_classify_inline(vlib_main_t * vm,
 
   mmb_rule_t *rules = mm->rules;
   mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
-  u32 *rule_index; 
+  u32 *rule_index, accept0; 
   f64 now = vlib_time_now(vm);
   u64 now_ticks = clib_cpu_time_now();
    
@@ -408,6 +408,7 @@ mmb_classify_inline(vlib_main_t * vm,
          tcpo0_flag = 0;
          conn_index = ~0;
          conn_dir = 0;
+         accept0 = 0;
 
          mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
 
@@ -426,10 +427,13 @@ mmb_classify_inline(vlib_main_t * vm,
                     rule = rules+*rule_index;
                     if (rule->opts_in_matches && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
                        continue;
+
+                    if (rule->accept)
+                       accept0 = 1;
                                            
                     if (rule->stateful == 0) { /* stateless */
                        vec_add1(matches, *rule_index);
-                       if (rule->drop_rate == 0 
+                       if (rule->drop_rate == 0 || accept0 == 1
                            || rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
                            || random_drop(mm, rule->drop_rate))
                           next0 = e0->next_index;  
@@ -442,13 +446,12 @@ mmb_classify_inline(vlib_main_t * vm,
                  hits++;
              } 
               
-             while (next0 != MMB_CLASSIFY_NEXT_INDEX_DROP) {
-                if (t0->next_table_index != ~0)
+             while (t0->next_table_index != ~0) {//next0 != MMB_CLASSIFY_NEXT_INDEX_DROP) {
+                //if (t0->next_table_index != ~0)
                   t0 = pool_elt_at_index(vcm->tables,
                                           t0->next_table_index);
-                else { 
-                  break;
-                }
+                /*else 
+                  break;*/
 
                 hash0 = vnet_classify_hash_packet(t0, h0);
                 e0 = vnet_classify_find_entry(t0, h0, hash0, now);
@@ -463,15 +466,18 @@ mmb_classify_inline(vlib_main_t * vm,
                            && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
                          continue;
 
+                      if (rule->accept)
+                         accept0 = 1;
+
                       if (rule->stateful == 0) { /* stateless */
                           vec_add1(matches, *rule_index);
-                         if (rule->drop_rate == 0 
+                         if (rule->drop_rate == 0 || accept0 == 1
                              || rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
                              || random_drop(mm, rule->drop_rate))
                             next0 = e0->next_index;  
                       } else { 
                         vec_add1(matches_stateful, *rule_index);
-                     }
+                      }
  
                       rule->match_count++;
                    }
@@ -489,26 +495,30 @@ mmb_classify_inline(vlib_main_t * vm,
                /* found connection, update entry and add rule indexes  */
 
                conn_id.as_u64 = pkt_conn_index.value;
-               conn = pool_elt_at_index(mct->conn_pool, conn_id.conn_index);
-               mmb_track_conn(conn, &pkt_5tuple, conn_id.dir, now_ticks);
-
-               vec_append(matches, conn->rule_indexes);
                conn_index = conn_id.conn_index;
                conn_dir   = conn_id.dir;
-               if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
-                  next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
+
+               conn = pool_elt_at_index(mct->conn_pool, conn_index);
+               mmb_track_conn(conn, &pkt_5tuple, conn_dir, now_ticks);
+
+               vec_append(matches, conn->rule_indexes);
+
+               if ((next0 == MMB_CLASSIFY_NEXT_INDEX_MISS) 
+                     || (next0 == MMB_CLASSIFY_NEXT_INDEX_DROP && conn->accept == 1))
+                 next0 = conn->next;
                
             } else if (vec_len(matches_stateful) != 0
                         && pkt_5tuple.pkt_info.l4_valid == 1) {
                /* new valid connection matched */
 
-               mmb_add_conn(mct, &pkt_5tuple, matches_stateful, now_ticks);
+               conn = mmb_add_conn(mct, &pkt_5tuple, matches_stateful, now_ticks);
                conn_index = pkt_5tuple.pkt_info.conn_index;
                
                vec_append(matches, matches_stateful);
                
-               if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
-                  next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
+               if ((next0 == MMB_CLASSIFY_NEXT_INDEX_MISS) 
+                     || (next0 == MMB_CLASSIFY_NEXT_INDEX_DROP && conn->accept == 1))
+                 next0 = conn->next;
             }
          }
 

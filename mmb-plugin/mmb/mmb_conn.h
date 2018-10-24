@@ -107,8 +107,10 @@ typedef struct {
   u16 initial_dport;
   u32 ip_id; /* +20 = 26 */
   u8 mapped_sack:1;
-  u8 unused1:7;/* +1 = 27 */
-  u8 unused2; /* +1 = 28 */
+  u8 accept:1; /* accept target(s) */
+
+  u8 unused1:6;/* +1 = 27 */
+  u8 next; /* next node if match +1 = 28 */
   u32 unused3; /* +4 = 32 */
   
   ip46_address_t saddr;
@@ -159,8 +161,10 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8* h0, int is_ip6, mmb_5tuple_t *pkt_5t
  * add a connection to connection hash and pool, set timestamp&rule indices to pool
  *
  * @param matches_stateful contains indexes of all matched stateful rules
+ *
+ * @return the connection
  */
-void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, 
+mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, 
                   u32 *matches_stateful, u64 now);
 
 /**
@@ -189,7 +193,8 @@ void update_conn_pool(mmb_conn_table_t *mct, u32 rule_index);
 /**
  * purge_conn_index
  *
- * remove connections that only maps to rule_index
+ * remove rule_index from connections, remove connection it contains
+ * no more rule
  */
 void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index);
 
@@ -211,14 +216,16 @@ int purge_conn_expired(mmb_conn_table_t *mct, u64 now);
 void purge_conn_forced(mmb_conn_table_t *mct);
 
 /**
- *
- *
+ * mmb_conn_table_init
+ * 
+ * initialize connection table
  */
 clib_error_t *mmb_conn_table_init(vlib_main_t *vm);
 
 /**
+ * mmb_conn_hash_init
  *
- *
+ * initalize connection hash table
  */
 void mmb_conn_hash_init();
 

@@ -195,6 +195,98 @@ void wait_and_lock_connection_handling(mmb_conn_table_t *mct) {
    mct->currently_handling_connections = 1;
 }
 
+/**
+ * update_conn_map_shuffle
+ *
+ * update connection map/shufle information when rule is deleted
+ */
+void update_conn_map_shuffle(mmb_conn_t *conn, mmb_target_t *targets) {
+
+   mmb_target_t *target;
+
+   vec_foreach(target, targets) {
+      switch (target->field) {
+         case MMB_FIELD_TCP_SPORT:
+         case MMB_FIELD_UDP_SPORT:
+            conn->sport = 0;
+            conn->initial_sport = 0;
+            break;
+         case MMB_FIELD_TCP_DPORT:
+         case MMB_FIELD_UDP_DPORT:
+            conn->dport = 0;
+            conn->initial_dport = 0;
+            break;
+         case MMB_FIELD_IP4_SADDR:
+            conn->saddr.ip4.as_u32 = 0;
+            conn->initial_saddr.as_u64[0] = 0;
+            conn->initial_saddr.as_u64[1] = 0;
+            break;
+        case MMB_FIELD_IP4_DADDR:
+            conn->daddr.ip4.as_u32 = 0;
+            conn->initial_daddr.as_u64[0] = 0;
+            conn->initial_daddr.as_u64[1] = 0;
+            break;
+         case MMB_FIELD_IP6_SADDR:
+            conn->saddr.as_u64[0] = 0;
+            conn->saddr.as_u64[1] = 0;
+            conn->initial_saddr.as_u64[0] = 0;
+            conn->initial_saddr.as_u64[1] = 0;
+            break;
+         case MMB_FIELD_IP6_DADDR:
+            conn->daddr.as_u64[0] = 0;
+            conn->daddr.as_u64[1] = 0;
+            conn->initial_daddr.as_u64[0] = 0;
+            conn->initial_daddr.as_u64[1] = 0;
+            break;
+         case MMB_FIELD_IP4_ID :
+         case MMB_FIELD_IP6_FLOW_LABEL:
+            conn->ip_id = 0;
+            break;
+         case MMB_FIELD_TCP_SEQ_NUM: 
+            conn->tcp_seq_offset = 0;
+            break;
+         case MMB_FIELD_TCP_ACK_NUM:
+            conn->tcp_ack_offset = 0;
+            break;
+         case MMB_FIELD_TCP_OPT: /* opt_kind is guaranteed to be 5 here */
+            conn->tcp_seq_offset = 0;
+            conn->tcp_ack_offset = 0;
+            conn->mapped_sack = 0;
+            break;
+         default:
+            break;
+      }
+   }
+}
+
+/**
+ * update_conn
+ *
+ * update conn info from remaining rules, after deletion of rule_index
+ */
+static_always_inline void update_conn(mmb_conn_t *conn, u32 rule_index) {
+
+   mmb_main_t *mm = &mmb_main;
+   mmb_rule_t *rule, *deleted = &mm->rules[rule_index];
+   u32 *remaining_rule;
+
+   if (deleted->map)
+      update_conn_map_shuffle(conn, deleted->map_targets);   
+   if (deleted->shuffle)
+      update_conn_map_shuffle(conn, deleted->shuffle_targets);
+
+   /* update accept & target */
+   conn->next = MMB_CLASSIFY_NEXT_INDEX_MISS;
+   vec_foreach(remaining_rule, conn->rule_indexes) {
+      rule = mm->rules + *remaining_rule;
+
+      if (rule->accept)
+         conn->accept = 1;
+      if (rule->rewrite)
+         conn->next = MMB_CLASSIFY_NEXT_INDEX_MATCH;
+   }
+}
+
 void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index) {
 
    mmb_conn_t *conn;
@@ -215,6 +307,7 @@ void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index) {
          vec_free(conn->rule_indexes);
       } else { /* conn still used by other rules */
          vec_delete(conn->rule_indexes, 1, index_of_index);
+         update_conn(conn, rule_index);
       }
 
    }));
@@ -372,7 +465,7 @@ static_always_inline void init_conn_map(mmb_main_t *mm,
    }   
 }
 
-void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
+mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
                   u32 *matches_stateful, u64 now) {
 
    mmb_main_t *mm = &mmb_main;
@@ -393,13 +486,20 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    if (pkt_5tuple->pkt_info.tcp_flags_valid) 
       conn->tcp_flags_seen.as_u8[0] = pkt_5tuple->pkt_info.tcp_flags;
 
-   /* init mapped&shuffle fields */
+   /* init connection from matched rules */
+   conn->next = MMB_CLASSIFY_NEXT_INDEX_MISS;
    vec_foreach(match, matches_stateful) {
       rule = mm->rules + *match;
+
       if (rule->shuffle)
          init_conn_shuffle(mm, conn, rule);
       if (rule->map)
          init_conn_map(mm, conn, rule);
+
+      if (rule->accept)
+         conn->accept = 1;
+      if (rule->rewrite)
+         conn->next = MMB_CLASSIFY_NEXT_INDEX_MATCH;
    }
 
    /* adding forward 5tuple */
@@ -415,13 +515,14 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
 
    /* put conn_index in 5tuple for the classify node */
    pkt_5tuple->pkt_info.conn_index = conn_id.conn_index; 
+
+   return conn;
 }
 
 void mmb_track_conn(mmb_conn_t *conn, mmb_5tuple_t *pkt_5tuple, u8 dir, u64 now) {
 
   conn->last_active_time = now;
   if (pkt_5tuple->pkt_info.tcp_flags_valid) {
-      /* */
       conn->tcp_flags_seen.as_u8[dir] |= pkt_5tuple->pkt_info.tcp_flags;
   }
 }
