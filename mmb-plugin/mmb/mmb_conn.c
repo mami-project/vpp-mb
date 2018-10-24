@@ -53,6 +53,45 @@ static void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index);
  */
 static_always_inline void wait_and_lock_connection_handling(mmb_conn_table_t *mct);
 
+/**
+ * init_conn_map()
+ *
+ * init shuffle mapping offset
+ */
+static_always_inline void init_conn_map(mmb_main_t *mm,
+                                        mmb_conn_t *conn,
+                                        mmb_rule_t *rule);
+
+/**
+ * update_conn_map_shuffle
+ *
+ * update connection map/shufle information when rule is deleted
+ */
+void update_conn_map_shuffle(mmb_conn_t *conn, mmb_target_t *targets);
+
+/**
+ * update_conn
+ *
+ * update conn info from remaining rules, after deletion of rule_index
+ */
+static_always_inline void update_conn(mmb_conn_t *conn, u32 rule_index);
+
+/**
+ * random_bounded_u16()
+ *
+ * @return random u16 in [lo; hi+1]
+ */
+static_always_inline u16 random_bounded_u16(u32 *seed, uword lo, uword hi);
+
+/**
+ * init_conn_shuffle()
+ *
+ * init shuffle mapping offset
+ */
+static_always_inline void init_conn_shuffle(mmb_main_t *mm,
+                                            mmb_conn_t *conn,
+                                            mmb_rule_t *rule);
+
 /** 
  * return index of val in vec, ~0 if vec does not contain val
  */
@@ -195,11 +234,6 @@ void wait_and_lock_connection_handling(mmb_conn_table_t *mct) {
    mct->currently_handling_connections = 1;
 }
 
-/**
- * update_conn_map_shuffle
- *
- * update connection map/shufle information when rule is deleted
- */
 void update_conn_map_shuffle(mmb_conn_t *conn, mmb_target_t *targets) {
 
    mmb_target_t *target;
@@ -259,12 +293,7 @@ void update_conn_map_shuffle(mmb_conn_t *conn, mmb_target_t *targets) {
    }
 }
 
-/**
- * update_conn
- *
- * update conn info from remaining rules, after deletion of rule_index
- */
-static_always_inline void update_conn(mmb_conn_t *conn, u32 rule_index) {
+void update_conn(mmb_conn_t *conn, u32 rule_index) {
 
    mmb_main_t *mm = &mmb_main;
    mmb_rule_t *rule, *deleted = &mm->rules[rule_index];
@@ -344,26 +373,16 @@ void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index) {
    /* *INDENT-ON* */
 }
 
-/**
- * random_bounded_u16()
- *
- * @return random u16 in [lo; hi+1]
- */
-static_always_inline u16 random_bounded_u16(u32 *seed, uword lo, uword hi) {
+u16 random_bounded_u16(u32 *seed, uword lo, uword hi) {
    if (lo == hi)  
       return lo;
 
    return (u16) ((random_u32(seed) % (hi - lo + 1)) + lo);
 }
 
-/**
- * init_conn_shuffle()
- *
- * init shuffle mapping offset
- */
-static_always_inline void init_conn_shuffle(mmb_main_t *mm,
-                                            mmb_conn_t *conn,
-                                            mmb_rule_t *rule) {
+void init_conn_shuffle(mmb_main_t *mm,
+                       mmb_conn_t *conn,
+                       mmb_rule_t *rule) {
    mmb_target_t *target;
 
    vec_foreach(target, rule->shuffle_targets) {
@@ -409,14 +428,9 @@ static_always_inline void init_conn_shuffle(mmb_main_t *mm,
    }   
 }
 
-/**
- * init_conn_map()
- *
- * init shuffle mapping offset
- */
-static_always_inline void init_conn_map(mmb_main_t *mm,
-                                        mmb_conn_t *conn,
-                                        mmb_rule_t *rule) {
+void init_conn_map(mmb_main_t *mm,
+                   mmb_conn_t *conn,
+                   mmb_rule_t *rule) {
    mmb_target_t *target;
 
    vec_foreach(target, rule->map_targets) {
