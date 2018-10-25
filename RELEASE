@@ -15,7 +15,7 @@ todos:
 mmb 0.3.4
    * new accept target keyword for whitelist filtering
    * dropped all api related code
-   * removing stateful map or shuffle rule now correctly unmap/unshuffle active connections 
+   * removing stateful map or shuffle rule now correctly unmap/unshuffle active connections
      even when those connections also matched other stateful rules (BUGFIX)
 
 mmb 0.3.3
