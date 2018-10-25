@@ -283,11 +283,13 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
     if (!clib_bitmap_is_zero(found_to_strip)) {
       /* *INDENT-OFF* */
       clib_bitmap_foreach(i, found_to_strip, mmb_target_strip_option(tcp_options, i));
+      /* *INDENT-ON* */
       opts_modified = 1;
     }
   }
 
   /* MODIFY tcp options, if any */
+  /* *INDENT-OFF* */
   vec_foreach_index(i, rule->opt_mods) {
     mmb_target_t *opt_modified = rule->opt_mods+i;
     opts_modified |= mmb_target_modify_option(tcp_options, opt_modified->opt_kind, opt_modified->value);
@@ -808,7 +810,6 @@ VLIB_REGISTER_NODE(ip4_mmb_rewrite_node) =
     [MMB_NEXT_LOOP] = "ip4-input",
   }
 };
-/* *INDENT-ON* */
 
 VLIB_NODE_FUNCTION_MULTIARCH(ip4_mmb_rewrite_node, mmb_node_ip4_rewrite_fn);
 
@@ -818,7 +819,6 @@ VNET_FEATURE_INIT (ip4_mmb_rewrite_feature, static) = {
   .runs_before = VNET_FEATURES("ip4-lookup"),
 };
 
-/* *INDENT-OFF* */
 VLIB_REGISTER_NODE(ip6_mmb_rewrite_node) =
 {
   .function = mmb_node_ip6_rewrite_fn,
@@ -835,7 +835,6 @@ VLIB_REGISTER_NODE(ip6_mmb_rewrite_node) =
     [MMB_NEXT_LOOP] = "ip6-input",
   }
 };
-/* *INDENT-ON* */
 
 VLIB_NODE_FUNCTION_MULTIARCH(ip6_mmb_rewrite_node, mmb_node_ip6_rewrite_fn);
 
@@ -844,6 +843,7 @@ VNET_FEATURE_INIT (ip6_mmb_rewrite_feature, static) = {
   .node_name = "ip6-mmb-rewrite",
   .runs_before = VNET_FEATURES("ip6-lookup"), 
 };
+/* *INDENT-ON* */
 
 static clib_error_t *
 mmb_rewrite_init (vlib_main_t *vm)
