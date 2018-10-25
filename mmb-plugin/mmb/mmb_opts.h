@@ -46,17 +46,17 @@ _(MMB_FIELD_IP6_EH_EXP1     , "ExpTesting1", 253) /* not in CLI */         \
 _(MMB_FIELD_IP6_EH_EXP2     , "ExpTesting2", 254) /* not in CLI */
 
 typedef struct {
-  u8 is_stripped:1; // flag to tell if this option has been stripped
-  u8 offset;        // real offset in the pkt data
-  u8 data_length;   // length of data
-  u8 *new_value;    // new value if modified
+  u8 is_stripped:1; /* flag to tell if this option has been stripped */
+  u8 offset;        /* real offset in the pkt data */
+  u8 data_length;   /* length of data */
+  u8 *new_value;    /* new value if modified */
 } mmb_tcp_option_t;
 
 typedef struct {
-  uword *found;             // bitmap 255 bits (options 0-254)
-  u8 *idx;                  // parsed vector's position of an option
-  mmb_tcp_option_t *parsed; // parsed options vector (in parsing order)
-  u8 *data;                 // pointer to the pkt data
+  uword *found;             /* bitmap 255 bits (options 0-254) */
+  u8 *idx;                  /* parsed vector's position of an option */
+  mmb_tcp_option_t *parsed; /* parsed options vector (in parsing order) */
+  u8 *data;                 /* pointer to the pkt data */
 } mmb_tcp_options_t;
 
 u8 mmb_parse_tcp_options(tcp_header_t *, mmb_tcp_options_t *);
@@ -73,17 +73,16 @@ static_always_inline u8 tcp_option_exists(mmb_tcp_options_t *options, u8 kind) {
 
 static_always_inline u8 mmb_padding_tcp_options(u8 *data, u8 offset) {
 
-  // Terminate TCP options
+  /* Terminate TCP options */
   if (offset % 4)
     data[offset++] = TCP_OPTION_EOL;
 
-  // Padding to reach a u32 boundary
+  /* Padding to reach a u32 boundary */
   while(offset % 4)
     data[offset++] = TCP_OPTION_NOOP;
 
   return offset;
-  //TODO is this the right way vpp uses ? 
-  //From my understanding, NOOPs should fill extra bits to align options on boundaries (not necessarily at the end)...
+  // TODO: is this the right way to go ? 
 }
 
 static_always_inline void free_tcp_options(mmb_tcp_options_t *options) {

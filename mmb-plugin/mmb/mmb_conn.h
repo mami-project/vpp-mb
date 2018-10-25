@@ -28,7 +28,7 @@
 #include <vppinfra/bihash_48_8.h>
 #include <vppinfra/error.h>
 
-/* XXX: add max entries val */
+// TODO: add max entries macro
 /**
  *
  * min interval for in-node timeout checking of connections.
@@ -135,7 +135,7 @@ typedef struct {
   mmb_conn_t *conn_pool;   /* connection pool */
 
   int conn_hash_is_initialized;   /* bihash for connections index lookup */
-  clib_bihash_48_8_t conn_hash; /* XXX replace with bihash_40_8 */
+  clib_bihash_48_8_t conn_hash; // TODO: replace with bihash_40_8 
 
   /* indicates that the connection checking is in progress */
   u32 currently_handling_connections;
@@ -232,13 +232,13 @@ void mmb_conn_hash_init();
 /**
  * get_conn_timeout_time
  * 
- * return absolute ticks timeout value of conn
+ * @return absolute ticks timeout value of conn
  */
 u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t *conn);
 
 /**
- * return timestamp of next conn table check time 
  *
+ * @return timestamp of next conn table check time 
  */
 inline u64 get_conn_table_check_time(vlib_main_t *vm, u64 last_check) {
    return last_check +

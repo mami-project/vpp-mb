@@ -350,7 +350,8 @@ uword mmb_unformat_perc(unformat_input_t *input, va_list *args) {
 
    if (unformat(input, "%lf", &perc) && perc > 0.0 && perc <= 100.0) {
       vec_validate(*bytes, 4);
-      (*((u32**)bytes))[0] = (u32) (perc * (MMB_MAX_DROP_RATE_VALUE/100)); /* XXX: not kosher */
+      // TODO: not kosher
+      (*((u32**)bytes))[0] = (u32) (perc * (MMB_MAX_DROP_RATE_VALUE/100)); 
       return 1;
    }
 
@@ -467,7 +468,7 @@ u8* mmb_format_field(u8 *s, va_list *args) {
    if (!is_macro_mmb_field(field))
      ; 
    else if (field == MMB_FIELD_TCP_OPT && kind) {
-     if (0);//TODO: print kind 0 in strip
+     if (0); // TODO: print kind 0 in strip
 #define _(a,b,c) else if (kind == c) s = format(s, "%s %s", fields[field_index], #b);
    foreach_mmb_tcp_opts
 #undef _
