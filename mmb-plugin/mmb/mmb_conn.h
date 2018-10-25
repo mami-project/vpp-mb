@@ -80,9 +80,9 @@ typedef union {
  */
 typedef union {
   struct {
-    ip46_address_t addr[2]; // 32
-    mmb_conn_l4_key_t l4; // 8
-    u64 unused; // 8
+    ip46_address_t addr[2]; /* 32 */
+    mmb_conn_l4_key_t l4; /* 8 */
+    u64 unused; /* 8 */
     /* This field should align with u64 value in bihash_48_8 keyvalue struct */
     mmb_packet_info_t pkt_info;
   };
