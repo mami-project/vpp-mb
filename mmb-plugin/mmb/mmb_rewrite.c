@@ -118,7 +118,10 @@ mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * no
   }
 }
 
-/* packet trace format function */
+/**
+ *
+ * packet trace format function 
+ **/
 static u8 * format_mmb_trace (u8 * s, va_list * args)
 {
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
@@ -163,8 +166,9 @@ static_always_inline u16 get_ip_protocol(u8 *p, u8 is_ip6)
 }
 
 u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts) {
-  u8 offset = 0; //writing cursor's position
-  u8 shift = 0; //cumulative shift offset to the right (after a specific resize -see below-)
+  u8 offset = 0; /* writing cursor's position */
+  /* cumulative shift offset to the right (after a specific resize -see below-) */
+  u8 shift = 0; 
 
   u8 *data = opts->data;
 
@@ -213,8 +217,8 @@ u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts) {
           {
             /* Shift of *needed* bytes to the right */
             shift += (offset_after_modify - overlap_offset);
-            //size_t len = b->current_length - (b->current_data + sizeof(ip4_header_t) + sizeof(tcp_header_t)) - shift;
-            memmove(&data[offset_after_modify], &data[overlap_offset], /*len*/100); //TODO crash when using len
+            // TODO: crash when using len
+            memmove(&data[offset_after_modify], &data[overlap_offset], /*len*/100); 
           }
 
           offset += mmb_memmove(&data[offset], &data[opt->offset], 1);
@@ -328,10 +332,11 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
       iph->length = clib_host_to_net_u16(new_ip_len);
     }
 
-    // It looks like just incrementing the buffer length is enough since we can assume it is very large
+    /* It looks like just incrementing the buffer length is 
+      enough since we can assume it is very large */
     b->current_length = b->current_length + new_opts_len-old_opts_len;
 
-    //TODO take care of IPv4 fragmentation (if any)
+    // TODO: take care of IPv4 fragmentation (if any)
   }
 }
 
@@ -361,7 +366,7 @@ static_always_inline void udp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
   else
     udph->checksum = ip4_tcp_udp_compute_checksum(vm, b, (ip4_header_t*)p);
 
-  // RFC 7011 section 10.3.2 
+  /* RFC 7011 section 10.3.2 */
   if (udph->checksum == 0)
     udph->checksum = 0xffff;
 }
@@ -379,7 +384,7 @@ static_always_inline void tcp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
 
 static_always_inline void mmb_map_sack(mmb_tcp_options_t *tcp_options, u8 is_ip6,
                                        mmb_conn_t *conn, u32 dir) {
-   //TODO
+   // TODO: loop on sack blocks and map em
 }
 
 static_always_inline void mmb_rewrite_stateful(u8 *p, mmb_conn_t *conn, u32 dir, u8 is_ip6) {
@@ -644,17 +649,17 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       /* get IP headers as raw data */
       p0 = vlib_buffer_get_current(b0);
-      p1 = vlib_buffer_get_current(b1);  
+      p1 = vlib_buffer_get_current(b1);
 
       /* get matched rules & rewrite */
       mmb_rule_t *ri0, *ri1;
-      u32 *rule_index0, *rule_index1; 
+      u32 *rule_index0, *rule_index1;
       u32 *rule_indexes0 = (u32 *)vnet_buffer(b0)->l2_classify.hash;
-      u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;   /*XXX vec_free */
+      u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;
 
       vec_foreach(rule_index0, rule_indexes0) { 
-         ri0 = rules+*rule_index0; /** XXX preload? **/
-         if (ri0->opts_in_targets) {// && !tcpo0) {
+         ri0 = rules+*rule_index0; // TODO: prefetch ?
+         if (ri0->opts_in_targets) { // TODO: && !tcpo0 instead of re-parsing
              if (is_ip6)
                tcpo0 = mmb_parse_tcp_options(ip6_next_header((ip6_header_t*)p0), &tcp_options0);
              else
@@ -666,7 +671,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       vec_foreach(rule_index1, rule_indexes1) { 
          ri1 = rules+*rule_index1;
-         if (ri1->opts_in_targets) { //  && !tcpo1) {
+         if (ri1->opts_in_targets) { // TODO: && !tcpo1 instead of re-parsing
              if (is_ip6)
                tcpo1 = mmb_parse_tcp_options(ip6_next_header((ip6_header_t*)p1), &tcp_options1);
              else
@@ -730,7 +735,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
       vec_foreach(rule_index0, rule_indexes0) { 
          ri0 = rules+*rule_index0;
-         if (ri0->opts_in_targets) { // && !tcpo0) {
+         if (ri0->opts_in_targets) { // TODO: && !tcpo0 instead of re-parsing
              if (is_ip6)
                tcpo0 = mmb_parse_tcp_options(ip6_next_header((ip6_header_t*)p0), &tcp_options0);
              else
@@ -799,7 +804,7 @@ VLIB_REGISTER_NODE(ip4_mmb_rewrite_node) =
 
   .n_next_nodes = MMB_N_NEXT,
   .next_nodes = {
-    [MMB_NEXT_FORWARD] = "ip4-lookup",//"interface-output",
+    [MMB_NEXT_FORWARD] = "ip4-lookup",
     [MMB_NEXT_LOOP] = "ip4-input",
   }
 };
@@ -808,9 +813,9 @@ VLIB_REGISTER_NODE(ip4_mmb_rewrite_node) =
 VLIB_NODE_FUNCTION_MULTIARCH(ip4_mmb_rewrite_node, mmb_node_ip4_rewrite_fn);
 
 VNET_FEATURE_INIT (ip4_mmb_rewrite_feature, static) = {
-  .arc_name = "ip4-unicast",//"ip4-output",
+  .arc_name = "ip4-unicast",
   .node_name = "ip4-mmb-rewrite",
-  .runs_before = VNET_FEATURES("ip4-lookup"),//"interface-output"),
+  .runs_before = VNET_FEATURES("ip4-lookup"),
 };
 
 /* *INDENT-OFF* */

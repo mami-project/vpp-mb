@@ -522,10 +522,10 @@ mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    conn_key.kv.value = conn_id.as_u64; 
    mmb_add_5tuple(mct, &conn_key.kv);  
 
-   /* adding backward 5tuple */ //TODO:
+   /* adding backward 5tuple */ 
    copy_reverse_5tuple(&conn_key, conn);
-   conn_id.dir = 1;
-   conn_key.kv.value = conn_id.as_u64; 
+   conn_id.dir = 1; 
+   conn_key.kv.value = conn_id.as_u64; // TODO: replace with bitwise operation
    mmb_add_5tuple(mct, &conn_key.kv);
 
    /* put conn_index in 5tuple for the classify node */
@@ -554,7 +554,7 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
    u16 proto;
 
    pkt_5tuple->kv.key[4] = 0;
-   pkt_5tuple->kv.key[5] = 0; /*XXX 48_8*/
+   pkt_5tuple->kv.key[5] = 0; // TODO: drop when going from 40_8 to 48_8
    pkt_5tuple->kv.value = 0;
 
    if (is_ip6) {
@@ -563,7 +563,7 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
       proto = *(u8 *) (h0 + offsetof(ip6_header_t, protocol));
 
       l4_offset = sizeof(ip6_header_t);
-      /* XXX skip extension headers */
+      // TODO: skip extension headers 
    } else { /* ip4 */
       pkt_5tuple->kv.key[0] = 0;
       pkt_5tuple->kv.key[1] = 0;
@@ -576,7 +576,7 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
       proto = *(u8 *)(h0 + offsetof(ip4_header_t,protocol));
       l4_offset = sizeof(ip4_header_t);
 
-      /** XXX handle nonfirst fragments here */
+      // TODO: handle nonfirst fragments here 
    }
 
    pkt_5tuple->l4.proto = proto;
@@ -586,15 +586,16 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
 
 	     clib_memcpy(&ports, h0 + l4_offset + offsetof(tcp_header_t, src_port),
 		               sizeof(ports));
-	     pkt_5tuple->l4.port[0] = ntohs(ports[0]); /* TODO: do not translates ports in conn table */
+        // TODO: do not translates ports in conn table 
+	     pkt_5tuple->l4.port[0] = ntohs(ports[0]); 
 	     pkt_5tuple->l4.port[1] = ntohs(ports[1]);
 
 	     pkt_5tuple->pkt_info.tcp_flags = *(u8 *)(h0 + l4_offset + offsetof(tcp_header_t, flags));
 	     pkt_5tuple->pkt_info.tcp_flags_valid = (proto == IPPROTO_TCP);
         pkt_5tuple->pkt_info.l4_valid = 1;
 	   } else if ((proto == IP_PROTOCOL_ICMP) || (proto == IP_PROTOCOL_ICMP6)) {
-         
-        /** XXX match quoted packet here */
+        
+        // TODO: match icmp quoted packet here 
         pkt_5tuple->l4.port[0] =
            *(u8 *) (h0 + l4_offset + offsetof(icmp46_header_t, type));
         pkt_5tuple->l4.port[1] =

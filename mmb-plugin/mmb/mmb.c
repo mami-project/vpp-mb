@@ -274,10 +274,8 @@ static_always_inline void update_flags(mmb_main_t *mm, mmb_rule_t *rules) {
    mm->opts_in_rules = 0;
 } 
 
-/*
- * return 1 if masks are equals
- */
 static_always_inline int mask_equal(u8 *a, u8 *b) {
+   /* return 1 if masks are equals */
    if (vec_len(a) != vec_len(b))
       return 0;
 
@@ -788,7 +786,7 @@ static_always_inline void mmb_tcp_mask_and_key_inline(u8 *mask, u8 *key, int off
          tcp_key->urgent_pointer = bytes_to_u32(value);
          break;
       case MMB_FIELD_TCP_PAYLOAD: 
-         /* XXX: add 10 tables, 1 offset per option line ? */
+         // TODO: add 10 tables, 1 offset per option line ? 
          mmb_match_payload(mask, key, value, offset, sizeof(tcp_header_t));
          break;
       default:
@@ -1124,7 +1122,7 @@ void mmb_mask_and_key(mmb_rule_t *rule, int is_match) {
 
 static_always_inline void mmb_compute_mask(mmb_rule_t *rule) {
    mmb_mask_and_key(rule, 1);
-   if (!is_drop(rule)) { /* XXX tcp opts */
+   if (!is_drop(rule)) { // TODO: investigate pre-built masks for tcp opts
       mmb_mask_and_key(rule, 0);
    }
 }
@@ -1139,7 +1137,7 @@ mmb_classify_add_table(u8 *mask, u32 skip, u32 match,
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
 
   u32 nbuckets = max_entries+1;
-  u32 memory_size = nbuckets << 14; /* ??? */
+  u32 memory_size = nbuckets << 14;
   u32 miss_next_index = IP_LOOKUP_NEXT_REWRITE;
   u32 current_data_flag = 0;
   int current_data_offset = 0;
@@ -2026,7 +2024,8 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
           /* first strip target, set type */
           if (reverse) {
              rule->whitelist = 1;
-             /* flip bitmap to 1s XXX: typo in func name*/
+             /* flip bitmap to 1s */
+             // TODO: typo in func name, patch submitted
              clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
           }
         } else if (rule->whitelist != reverse) {
@@ -2098,7 +2097,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
             goto end;
          }
          rule->lb = 1;
-         rule->rewrite = 1; /*XXX: lb is done in rewrite node */
+         rule->rewrite = 1; /* lb is done in rewrite node */
          break;
 
       case MMB_TARGET_MAP:

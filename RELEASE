@@ -7,6 +7,10 @@ todos:
    * use CSIT
    * more tests
    * more operators (<, >, !=)
+   * replace bihash_48_8 with bihash_40_8
+   * rewrite option parsing (?)
+   * investigate pre-built masks for options/EH matching/rewrite
+   * inevstigate additional slow path node for non-mask-based operations
 
 mmb 0.3.4
    * new accept target keyword for whitelist filtering

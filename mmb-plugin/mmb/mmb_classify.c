@@ -57,13 +57,6 @@ static u8 *format_mmb_classify_trace(u8 * s, va_list * args)
   if (vec_len(t->rule_indexes) == 0) 
      s = format(s, "\tno match: sw_if_index %d next %d\n  ",
                  t->sw_if_index, t->next_index);
- // else
- //    s = format(s, "\t\n%U", format_hex_bytes, t->packet_data, sizeof(t->packet_data));
-
- /*s = format(s, "\n5-tuple\n %016llx %016llx\n %016llx\n %016llx %016llx\n %016llx : %016llx",
-  t->packet_5tuple.kv.key[0], t->packet_5tuple.kv.key[1], 
-  t->packet_5tuple.kv.key[2], t->packet_5tuple.kv.key[3], 
-  t->packet_5tuple.kv.key[4], t->packet_5tuple.kv.key[5], t->packet_5tuple.kv.value);*/
 
   if (t->conn_index != ~0) 
     s = format(s, "conn id: %u dir:%u\n", t->conn_index, t->conn_dir);
@@ -72,8 +65,8 @@ static u8 *format_mmb_classify_trace(u8 * s, va_list * args)
 }
 
 #define foreach_mmb_classify_error                 \
-_(MISS, "Flow classify misses")                     \
-_(HIT, "Flow classify hits")                        \
+_(MISS, "Flow classify misses")                    \
+_(HIT, "Flow classify hits")                       \
 _(DROP, "Flow classify action drop")
 
 typedef enum {
@@ -163,7 +156,7 @@ static_always_inline u64 n_bytes_to_u64(u8 *data, u8 length) {
 
 static inline int mmb_match_opt(mmb_match_t *match, mmb_tcp_options_t *options) {
    
-  //TODO replace opt_kind=0 by opt_kind=ALL (to distinguish option 0 and this case) 
+  // TODO: replace opt_kind=0 by opt_kind=ALL (to distinguish option 0 and this case) 
   if (match->opt_kind == 0 || match->opt_kind == MMB_FIELD_TCP_OPT_ALL) {
     /* do we have any TCP option in this packet */
     if (!mmb_true_condition(vec_len(options->parsed) > 0, 
@@ -588,8 +581,6 @@ VLIB_REGISTER_NODE(ip4_mmb_classify_node) = {
 };
 /* *INDENT-ON* */
 
-//VLIB_NODE_FUNCTION_MULTIARCH(ip4_mmb_classify_node, ip4_mmb_classify);
-
 VNET_FEATURE_INIT(ip4_mmb_classify_feature, static) =
 {
   .arc_name = "ip4-unicast",
@@ -622,8 +613,6 @@ VLIB_REGISTER_NODE(ip6_mmb_classify_node) = {
   },
 };
 /* *INDENT-ON* */
-
-//VLIB_NODE_FUNCTION_MULTIARCH(ip6_mmb_classify_node, ip6_mmb_classify);
 
 VNET_FEATURE_INIT(ip6_mmb_classify_feature, static) =
 {
