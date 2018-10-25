@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Cisco and/or its affiliates.
+ * Copyright (c) 2018 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -13,7 +13,9 @@
  * limitations under the License.
  *
  *
- * Author: Korian Edeline
+ * @file mmb.h
+ * @brief mmb Plugin, plugin trace / CLI / internals handling headers&macros.
+ * @author Korian Edeline
  */
 
 #ifndef __included_mmb_h__
