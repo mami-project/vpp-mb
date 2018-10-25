@@ -529,7 +529,7 @@ mmb_classify_inline(vlib_main_t * vm,
               /*clib_memcpy(&t->packet_5tuple, &pkt_5tuple,
 		                    sizeof(pkt_5tuple));
               clib_memcpy(t->packet_data, h0,
-		                    sizeof(t->packet_data)); *//* offsetof */
+		                    sizeof(t->packet_data)); */ /* offsetof */
               t->conn_index = conn_index;
               t->conn_dir = conn_dir;
          }
