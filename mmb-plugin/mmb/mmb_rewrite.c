@@ -490,6 +490,9 @@ u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule,
                vlib_buffer_t *b, u8 *p, 
                u32 next, u8 tcpo, mmb_tcp_options_t *tcp_options, u8 is_ip6) {
 
+   if (rule->accept)
+      return next;
+
   /* lb */
   if (rule->lb) {
     static u32 seed = 0;

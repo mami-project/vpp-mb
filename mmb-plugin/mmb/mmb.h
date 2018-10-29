@@ -215,6 +215,10 @@ _(ip6,IP6)
 
 #define is_drop(rule)\
      (vec_len(rule->targets) == 1 && rule->targets[0].keyword == MMB_TARGET_DROP)
+
+#define is_accept(rule)\
+     (rule->accept == 1)
+
 #define next_if_match(rule)\
     (is_drop(rule)\
      ? MMB_CLASSIFY_NEXT_INDEX_DROP : MMB_CLASSIFY_NEXT_INDEX_MATCH)

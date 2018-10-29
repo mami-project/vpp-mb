@@ -238,7 +238,7 @@ mmb_classify_inline(vlib_main_t * vm,
 
   mmb_rule_t *rules = mm->rules;
   mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
-  u32 *rule_index, accept0; 
+  u32 *rule_index, accept0, drop0; 
   f64 now = vlib_time_now(vm);
   u64 now_ticks = clib_cpu_time_now();
    
@@ -404,6 +404,7 @@ mmb_classify_inline(vlib_main_t * vm,
          conn_index = ~0;
          conn_dir = 0;
          accept0 = 0;
+         drop0 = 0;
 
          mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
 
@@ -420,18 +421,22 @@ mmb_classify_inline(vlib_main_t * vm,
                  vec_foreach(rule_index, lookup_entry->rule_indexes) {
 
                     rule = rules+*rule_index;
-                    if (rule->opts_in_matches && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
+                    if (rule->opts_in_matches 
+                        && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
                        continue;
-
-                    if (rule->accept)
-                       accept0 = 1;
                                            
                     if (rule->stateful == 0) { /* stateless */
+
                        vec_add1(matches, *rule_index);
-                       if (rule->drop_rate == 0 || accept0 == 1
-                           || rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
-                           || random_drop(mm, rule->drop_rate))
-                          next0 = e0->next_index;  
+
+                       if (rule->accept == 0 && rule->drop_rate == 0)
+                          next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;  
+                       else if (rule->accept == 1)
+                          accept0 = 1;
+                       else if (rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
+                              || random_drop(mm, rule->drop_rate))
+                          drop0 = 1;
+
                      } else { 
                         vec_add1(matches_stateful, *rule_index);
                      }
@@ -458,15 +463,20 @@ mmb_classify_inline(vlib_main_t * vm,
                            && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
                          continue;
 
-                      if (rule->accept)
-                         accept0 = 1;
+
 
                       if (rule->stateful == 0) { /* stateless */
-                          vec_add1(matches, *rule_index);
-                         if (rule->drop_rate == 0 || accept0 == 1
-                             || rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
-                             || random_drop(mm, rule->drop_rate))
-                            next0 = e0->next_index;  
+
+                         vec_add1(matches, *rule_index);
+
+                         if (rule->accept == 0 && rule->drop_rate == 0)
+                            next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;  
+                         else if (rule->accept == 1)
+                           accept0 = 1;
+                         else if (rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
+                              || random_drop(mm, rule->drop_rate))
+                           drop0 = 1;
+                         
                       } else { 
                         vec_add1(matches_stateful, *rule_index);
                       }
@@ -495,9 +505,10 @@ mmb_classify_inline(vlib_main_t * vm,
 
                vec_append(matches, conn->rule_indexes);
 
-               if ((next0 == MMB_CLASSIFY_NEXT_INDEX_MISS) 
-                     || (next0 == MMB_CLASSIFY_NEXT_INDEX_DROP && conn->accept == 1))
-                 next0 = conn->next;
+               if (conn->accept == 0)
+                  next0 = conn->next;
+               else
+                  accept0 = 1;
                
             } else if (vec_len(matches_stateful) != 0
                         && pkt_5tuple.pkt_info.l4_valid == 1) {
@@ -508,11 +519,16 @@ mmb_classify_inline(vlib_main_t * vm,
                
                vec_append(matches, matches_stateful);
                
-               if ((next0 == MMB_CLASSIFY_NEXT_INDEX_MISS) 
-                     || (next0 == MMB_CLASSIFY_NEXT_INDEX_DROP && conn->accept == 1))
-                 next0 = conn->next;
+               if (conn->accept == 0)
+                  next0 = conn->next;
+               else
+                  accept0 = 1;
             }
          }
+
+         /* summarize stateless drop&accept targets */
+         if (drop0 == 1 && accept0 == 0)
+            next0 = MMB_CLASSIFY_NEXT_INDEX_DROP;
 
          /* pass matches & conn id to next node */
          vnet_buffer(b0)->l2_classify.hash = (u64)matches;
