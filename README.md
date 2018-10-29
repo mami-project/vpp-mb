@@ -41,7 +41,7 @@ All available commands are described in `docs/user-guide.pdf`.
 
 ### Current status
 
-Latest and future additions are described in RELEASE. Note that VPP post-18.01 is not currently supported.
+Latest and future additions are described in RELEASE. Supports VPP 18.10.
 
 ### Links
 
