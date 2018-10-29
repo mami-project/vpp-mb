@@ -2076,6 +2076,10 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
 
          break;
       case MMB_TARGET_ACCEPT:
+         if (vec_len(rule->targets) > 1) {
+            error = clib_error_return(0, "accept is a unique target");
+            goto end;
+         }
          rule->accept = 1;
          break;
       case MMB_TARGET_DROP:
