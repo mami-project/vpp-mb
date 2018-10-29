@@ -1,7 +1,6 @@
 todos:
    * map sack blocks in shuffle targets
    * handle ip fragmentation
-   * update vpp support to 18.07 (currently supports up to 18.01)
    * option to revert changes in icmp quotation (icmp visibility)
    * support for ip6 extension headers
    * use CSIT
@@ -11,6 +10,10 @@ todos:
    * rewrite option parsing (?)
    * investigate pre-built masks for options/EH matching/rewrite
    * inevstigate additional slow path node for non-mask-based operations
+   * verify next node when matching accept, drop and mod
+
+mmb 0.x.x
+   * updated vpp support to 18.07
 
 mmb 0.3.4
    * new accept target keyword for whitelist filtering
