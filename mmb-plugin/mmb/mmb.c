@@ -2025,8 +2025,7 @@ clib_error_t *validate_targets(mmb_rule_t *rule) {
           if (reverse) {
              rule->whitelist = 1;
              /* flip bitmap to 1s */
-             // TODO: typo in func name, patch submitted
-             clfib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
+             clib_bitmap_set_region(rule->opt_strips, 0, 1, 255);
           }
         } else if (rule->whitelist != reverse) {
           error = clib_error_return(0, "inconsistent use of ! in strip");

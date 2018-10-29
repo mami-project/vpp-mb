@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Install VPP (Ubuntu 16.04 Xenial)
-echo "deb [trusted=yes] https://nexus.fd.io/content/repositories/fd.io.stable.1807.ubuntu.xenial.main/ ./" | tee /etc/apt/sources.list.d/99fd.io.list
+echo "deb [trusted=yes] https://nexus.fd.io/content/repositories/fd.io.stable.1810.ubuntu.xenial.main/ ./" | tee /etc/apt/sources.list.d/99fd.io.list
 apt-get update
 apt-get install -y vpp vpp-lib vpp-dev vpp-plugins vpp-api-python python-cffi autoconf libtool ethtool #traceroute python-scapy
 
