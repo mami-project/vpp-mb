@@ -364,7 +364,7 @@ extern const char* conditions[];
 
 /**
  * get_field_protocol
- * 
+ *
  * @return protocol related to given field
  */
 u16 get_field_protocol(u8 field);
@@ -378,7 +378,7 @@ u8 is_fixed_length(u8 field);
 
 /**
  * bytes_to_u32
- * 
+ *
  * converts byte vector to a u32
  */
 inline u32 bytes_to_u32(u8 *bytes) {

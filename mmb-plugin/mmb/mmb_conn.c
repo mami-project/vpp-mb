@@ -25,7 +25,7 @@
 #ifdef MMB_DEBUG
 #  define vl_print(handle, ...) vlib_cli_output (handle, __VA_ARGS__)
 #else
-#  define vl_print(handle, ...) 
+#  define vl_print(handle, ...)
 #endif
 
 #define UDP_SESSION_IDLE_TIMEOUT_SEC 600
@@ -49,7 +49,7 @@ static void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes);
  */
 static void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index);
 
-/** 
+/**
  * wait for connection handling lock to be available
  */
 static_always_inline void wait_and_lock_connection_handling(mmb_conn_table_t *mct);
@@ -93,7 +93,7 @@ static_always_inline void init_conn_shuffle(mmb_main_t *mm,
                                             mmb_conn_t *conn,
                                             mmb_rule_t *rule);
 
-/** 
+/**
  * return index of val in vec, ~0 if vec does not contain val
  */
 static_always_inline u32 vec_find(u32 *vec, u32 val) {
@@ -117,8 +117,8 @@ static_always_inline int mmb_add_5tuple(mmb_conn_table_t *mct, clib_bihash_kv_48
 }
 
 int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
-		            clib_bihash_kv_48_8_t *pkt_conn_id) { 
-  return (BV(clib_bihash_search) 
+		            clib_bihash_kv_48_8_t *pkt_conn_id) {
+  return (BV(clib_bihash_search)
             (&mct->conn_hash, &pkt_5tuple->kv, pkt_conn_id) == 0);
 }
 
@@ -163,7 +163,7 @@ int purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
    u64 timeout_time;
 
    /* connetions are already being checked, aborting */
-   if (mct->currently_handling_connections) 
+   if (mct->currently_handling_connections)
       return 0;
    else
       mct->currently_handling_connections = 1;
@@ -174,10 +174,10 @@ int purge_conn_expired(mmb_conn_table_t *mct, u64 now) {
       timeout_time = get_conn_timeout_time(mct, conn);
 
       /* timeout */
-      if (now > timeout_time) 
+      if (now > timeout_time)
          vec_add1(purge_indexes, conn - mct->conn_pool);
 
-   }));  
+   }));
    /* *INDENT-ON* */
 
    purge_conn(mct, purge_indexes);
@@ -190,8 +190,8 @@ static_always_inline void copy_reverse_5tuple(mmb_5tuple_t *to, mmb_conn_t *from
    to->addr[0] = (!ip46_address_is_zero(&from->daddr)) ? from->daddr : from->info.addr[1];
    to->addr[1] = (!ip46_address_is_zero(&from->saddr)) ? from->saddr :from->info.addr[0];
    to->l4.port[0] = from->dport ? ntohs(from->dport) : from->info.l4.port[1];
-   to->l4.port[1] = from->sport ? ntohs(from->sport) : from->info.l4.port[0];  
-} 
+   to->l4.port[1] = from->sport ? ntohs(from->sport) : from->info.l4.port[0];
+}
 
 static_always_inline void copy_forward_5tuple(mmb_5tuple_t *to, mmb_conn_t *from) {
    to->kv.key[0] = from->info.kv.key[0];
@@ -200,7 +200,7 @@ static_always_inline void copy_forward_5tuple(mmb_5tuple_t *to, mmb_conn_t *from
    to->kv.key[3] = from->info.kv.key[3];
    to->kv.key[4] = from->info.kv.key[4];
    to->kv.key[5] = from->info.kv.key[5];
-} 
+}
 
 void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
 
@@ -228,7 +228,7 @@ void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
 void wait_and_lock_connection_handling(mmb_conn_table_t *mct) {
 
    mmb_main_t *mm = &mmb_main;
-   
+
    while (mct->currently_handling_connections) {
       vlib_process_suspend(mm->vlib_main, 0.0001);
    }
@@ -277,7 +277,7 @@ void update_conn_map_shuffle(mmb_conn_t *conn, mmb_target_t *targets) {
          case MMB_FIELD_IP6_FLOW_LABEL:
             conn->ip_id = 0;
             break;
-         case MMB_FIELD_TCP_SEQ_NUM: 
+         case MMB_FIELD_TCP_SEQ_NUM:
             conn->tcp_seq_offset = 0;
             break;
          case MMB_FIELD_TCP_ACK_NUM:
@@ -301,7 +301,7 @@ void update_conn(mmb_conn_t *conn, u32 rule_index) {
    u32 *remaining_rule;
 
    if (deleted->map)
-      update_conn_map_shuffle(conn, deleted->map_targets);   
+      update_conn_map_shuffle(conn, deleted->map_targets);
    if (deleted->shuffle)
       update_conn_map_shuffle(conn, deleted->shuffle_targets);
 
@@ -320,7 +320,7 @@ void update_conn(mmb_conn_t *conn, u32 rule_index) {
 void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index) {
 
    mmb_conn_t *conn;
-   u32 *purge_indexes = 0, index_of_index;   
+   u32 *purge_indexes = 0, index_of_index;
 
    wait_and_lock_connection_handling(mct);
 
@@ -342,7 +342,7 @@ void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index) {
 
    }));
    /* *INDENT-ON* */
-   
+
    /* decrement rules with index > rule_index */
    update_conn_pool_internal(mct, rule_index);
 
@@ -360,14 +360,14 @@ void update_conn_pool(mmb_conn_table_t *mct, u32 rule_index) {
 
 void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index) {
 
-   u32 *current_rule_index;   
+   u32 *current_rule_index;
    mmb_conn_t *conn;
 
    /* *INDENT-OFF* */
    pool_foreach(conn, mct->conn_pool, ({
 
       vec_foreach(current_rule_index, conn->rule_indexes) {
-         if (*current_rule_index > rule_index) 
+         if (*current_rule_index > rule_index)
             (*current_rule_index)--;
       }
    }));
@@ -375,7 +375,7 @@ void update_conn_pool_internal(mmb_conn_table_t *mct, u32 rule_index) {
 }
 
 u16 random_bounded_u16(u32 *seed, uword lo, uword hi) {
-   if (lo == hi)  
+   if (lo == hi)
       return lo;
 
    return (u16) ((random_u32(seed) % (hi - lo + 1)) + lo);
@@ -388,7 +388,7 @@ void init_conn_shuffle(mmb_main_t *mm,
 
    vec_foreach(target, rule->shuffle_targets) {
       switch (target->field) {
-         case MMB_FIELD_TCP_SEQ_NUM: 
+         case MMB_FIELD_TCP_SEQ_NUM:
             if (!conn->tcp_seq_offset)
                conn->tcp_seq_offset = random_u32(&mm->random_seed);
             break;
@@ -399,14 +399,14 @@ void init_conn_shuffle(mmb_main_t *mm,
          case MMB_FIELD_TCP_SPORT:
          case MMB_FIELD_UDP_SPORT:
             conn->sport = clib_host_to_net_u16(
-                            (u16) random_bounded_u16(&mm->random_seed, 
+                            (u16) random_bounded_u16(&mm->random_seed,
                                MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1));
             conn->initial_sport = clib_host_to_net_u16(conn->info.l4.port[0]);
             break;
          case MMB_FIELD_TCP_DPORT:
          case MMB_FIELD_UDP_DPORT:
             conn->dport = clib_host_to_net_u16(
-                            (u16) random_bounded_u16(&mm->random_seed, 
+                            (u16) random_bounded_u16(&mm->random_seed,
                                MMB_MIN_SHUFFLE_PORT, MMB_MAX_SHUFFLE_PORT-1));
             conn->initial_dport = clib_host_to_net_u16(conn->info.l4.port[1]);
             break;
@@ -426,7 +426,7 @@ void init_conn_shuffle(mmb_main_t *mm,
          default:
             break;
       }
-   }   
+   }
 }
 
 void init_conn_map(mmb_main_t *mm,
@@ -477,10 +477,10 @@ void init_conn_map(mmb_main_t *mm,
          default:
             break;
       }
-   }   
+   }
 }
 
-mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
+mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
                   u32 *matches_stateful, u64 now) {
 
    mmb_main_t *mm = &mmb_main;
@@ -498,7 +498,7 @@ mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    conn->last_active_time = now;
    conn->rule_indexes = vec_dup(matches_stateful);
    conn->tcp_flags_seen.as_u16 = 0;
-   if (pkt_5tuple->pkt_info.tcp_flags_valid) 
+   if (pkt_5tuple->pkt_info.tcp_flags_valid)
       conn->tcp_flags_seen.as_u8[0] = pkt_5tuple->pkt_info.tcp_flags;
 
    /* init connection from matched rules */
@@ -519,17 +519,17 @@ mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
 
    /* adding forward 5tuple */
    copy_forward_5tuple(&conn_key, conn);
-   conn_key.kv.value = conn_id.as_u64; 
-   mmb_add_5tuple(mct, &conn_key.kv);  
+   conn_key.kv.value = conn_id.as_u64;
+   mmb_add_5tuple(mct, &conn_key.kv);
 
-   /* adding backward 5tuple */ 
+   /* adding backward 5tuple */
    copy_reverse_5tuple(&conn_key, conn);
-   conn_id.dir = 1; 
+   conn_id.dir = 1;
    conn_key.kv.value = conn_id.as_u64; // TODO: replace with bitwise operation
    mmb_add_5tuple(mct, &conn_key.kv);
 
    /* put conn_index in 5tuple for the classify node */
-   pkt_5tuple->pkt_info.conn_index = conn_id.conn_index; 
+   pkt_5tuple->pkt_info.conn_index = conn_id.conn_index;
 
    return conn;
 }
@@ -563,7 +563,7 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
       proto = *(u8 *) (h0 + offsetof(ip6_header_t, protocol));
 
       l4_offset = sizeof(ip6_header_t);
-      // TODO: skip extension headers 
+      // TODO: skip extension headers
    } else { /* ip4 */
       pkt_5tuple->kv.key[0] = 0;
       pkt_5tuple->kv.key[1] = 0;
@@ -576,7 +576,7 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
       proto = *(u8 *)(h0 + offsetof(ip4_header_t,protocol));
       l4_offset = sizeof(ip4_header_t);
 
-      // TODO: handle nonfirst fragments here 
+      // TODO: handle nonfirst fragments here
    }
 
    pkt_5tuple->l4.proto = proto;
@@ -586,16 +586,16 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
 
 	     clib_memcpy(&ports, h0 + l4_offset + offsetof(tcp_header_t, src_port),
 		               sizeof(ports));
-        // TODO: do not translates ports in conn table 
-	     pkt_5tuple->l4.port[0] = ntohs(ports[0]); 
+        // TODO: do not translates ports in conn table
+	     pkt_5tuple->l4.port[0] = ntohs(ports[0]);
 	     pkt_5tuple->l4.port[1] = ntohs(ports[1]);
 
 	     pkt_5tuple->pkt_info.tcp_flags = *(u8 *)(h0 + l4_offset + offsetof(tcp_header_t, flags));
 	     pkt_5tuple->pkt_info.tcp_flags_valid = (proto == IPPROTO_TCP);
         pkt_5tuple->pkt_info.l4_valid = 1;
 	   } else if ((proto == IP_PROTOCOL_ICMP) || (proto == IP_PROTOCOL_ICMP6)) {
-        
-        // TODO: match icmp quoted packet here 
+
+        // TODO: match icmp quoted packet here
         pkt_5tuple->l4.port[0] =
            *(u8 *) (h0 + l4_offset + offsetof(icmp46_header_t, type));
         pkt_5tuple->l4.port[1] =
@@ -611,7 +611,7 @@ void mmb_conn_hash_init() {
 
    if (!mct->conn_hash_is_initialized) {
       BV (clib_bihash_init) (&mct->conn_hash, "MMB plugin conn lookup",
-                             MMB_CONN_TABLE_DEFAULT_HASH_NUM_BUCKETS, 
+                             MMB_CONN_TABLE_DEFAULT_HASH_NUM_BUCKETS,
                              MMB_CONN_TABLE_DEFAULT_HASH_MEMORY_SIZE);
       mct->conn_hash_is_initialized = 1;
    }
@@ -619,7 +619,7 @@ void mmb_conn_hash_init() {
 }
 
 clib_error_t *mmb_conn_table_init(vlib_main_t *vm) {
-   
+
    clib_error_t *error = 0;
    mmb_conn_table_t *mct = &mmb_conn_table;
    memset (mct, 0, sizeof (mmb_conn_table_t));

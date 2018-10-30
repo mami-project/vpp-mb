@@ -82,7 +82,7 @@ static_always_inline u8 mmb_padding_tcp_options(u8 *data, u8 offset) {
     data[offset++] = TCP_OPTION_NOOP;
 
   return offset;
-  // TODO: is this the right way to go ? 
+  // TODO: is this the right way to go ?
 }
 
 static_always_inline void free_tcp_options(mmb_tcp_options_t *options) {
