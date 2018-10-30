@@ -1,11 +1,11 @@
 Compile an external VPP plugin separately of VPP
 --
 
-autoreconf -fis  
+autoreconf -fis
 
-./configure  
+./configure
 
-make  
+make
 
-sudo make install  
+sudo make install
 

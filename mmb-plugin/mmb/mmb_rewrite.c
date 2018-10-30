@@ -73,7 +73,7 @@ typedef struct {
 } mmb_trace_t;
 
 static u8 mmb_rewrite_tcp_options(vlib_buffer_t *, mmb_tcp_options_t *);
-static void target_tcp_options(vlib_buffer_t *, u8 *, mmb_rule_t *, 
+static void target_tcp_options(vlib_buffer_t *, u8 *, mmb_rule_t *,
                                mmb_tcp_options_t *, u8, mmb_conn_t *conn, u32 dir);
 
 static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
@@ -93,7 +93,7 @@ static_always_inline u8* mmb_format_next_node(u8* s, va_list *args)
   return format(s, "%s", keyword_str);
 }
 
-static_always_inline void 
+static_always_inline void
 mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * node,
                     u8 *p, u32 next, u32 sw_if_index, u8 is_ip6) {
 
@@ -120,7 +120,7 @@ mmb_trace_ip_packet(vlib_main_t * vm, vlib_buffer_t *b, vlib_node_runtime_t * no
 
 /**
  *
- * packet trace format function 
+ * packet trace format function
  **/
 static u8 * format_mmb_trace (u8 * s, va_list * args)
 {
@@ -131,7 +131,7 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
   u32 *rule_index;
 
   vec_foreach(rule_index, t->rule_indexes) {
-    s = format(s, "pkt matched rule %u, target %U\n  ",           
+    s = format(s, "pkt matched rule %u, target %U\n  ",
                   *rule_index,
                   mmb_format_next_node, t->next);
   }
@@ -143,7 +143,7 @@ static u8 * format_mmb_trace (u8 * s, va_list * args)
                 format_ip_protocol, t->proto);
 
   if (ip46_address_is_ip4(&t->src_address))
-    s = format(s, "  mmb: %U", 
+    s = format(s, "  mmb: %U",
                   format_ip4_header, t->ip4h, sizeof(ip4_header_t));
   else
     s = format(s, "  mmb: %U",
@@ -168,7 +168,7 @@ static_always_inline u16 get_ip_protocol(u8 *p, u8 is_ip6)
 u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts) {
   u8 offset = 0; /* writing cursor's position */
   /* cumulative shift offset to the right (after a specific resize -see below-) */
-  u8 shift = 0; 
+  u8 shift = 0;
 
   u8 *data = opts->data;
 
@@ -188,7 +188,7 @@ u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts) {
       u8 new_opt_len = new_data_length + 2;
 
       if (old_data_length == new_data_length)
-      {  
+      {
         offset += mmb_memmove(&data[offset], &data[opt->offset+shift], 2);
         offset += mmb_memmove(&data[offset], opt->new_value, new_data_length);
       }
@@ -212,13 +212,13 @@ u8 mmb_rewrite_tcp_options(vlib_buffer_t *b, mmb_tcp_options_t *opts) {
 
           u8 offset_after_modify = offset + 2 + new_data_length;
           u8 overlap_offset = next_opt->offset + shift;
-          
+
           if (offset_after_modify > overlap_offset)
           {
             /* Shift of *needed* bytes to the right */
             shift += (offset_after_modify - overlap_offset);
             // TODO: crash when using len
-            memmove(&data[offset_after_modify], &data[overlap_offset], /*len*/100); 
+            memmove(&data[offset_after_modify], &data[overlap_offset], /*len*/100);
           }
 
           offset += mmb_memmove(&data[offset], &data[opt->offset], 1);
@@ -254,7 +254,7 @@ static_always_inline u8 mmb_target_add_option(u8 *data, mmb_transport_option_t *
   return opt_len;
 }
 
-static_always_inline u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options, 
+static_always_inline u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options,
                                                  u8 kind, u8 *new_value) {
   if (tcp_option_exists(tcp_options, kind)) {
     tcp_options->parsed[tcp_options->idx[kind]].new_value = new_value;
@@ -264,13 +264,13 @@ static_always_inline u8 mmb_target_modify_option(mmb_tcp_options_t *tcp_options,
   return 0;
 }
 
-static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options, 
+static_always_inline void mmb_target_strip_option(mmb_tcp_options_t *tcp_options,
                                                   u8 kind) {
   u8 idx = tcp_options->idx[kind];
   tcp_options->parsed[idx].is_stripped = 1;
 }
 
-void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule, 
+void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
                         mmb_tcp_options_t *tcp_options, u8 is_ip6,
                         mmb_conn_t *conn, u32 dir) {
 
@@ -319,11 +319,11 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
     /* can't overflow 40 bytes otherwise data_offset becomes crap */
     if (new_opts_len > 40)
       new_opts_len = 40;
-    
+
     /* update length fields */
-    tcph->data_offset_and_reserved = (tcph->data_offset_and_reserved & 0xf) 
+    tcph->data_offset_and_reserved = (tcph->data_offset_and_reserved & 0xf)
                                   | (((new_opts_len + sizeof(tcp_header_t)) >> 2) << 4);
-    
+
     if (is_ip6) {
       ip6_header_t *iph = (ip6_header_t*)p;
       u16 new_ip_len = clib_net_to_host_u16(iph->payload_length)+new_opts_len-old_opts_len;
@@ -334,7 +334,7 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
       iph->length = clib_host_to_net_u16(new_ip_len);
     }
 
-    /* It looks like just incrementing the buffer length is 
+    /* It looks like just incrementing the buffer length is
       enough since we can assume it is very large */
     b->current_length = b->current_length + new_opts_len-old_opts_len;
 
@@ -342,7 +342,7 @@ void target_tcp_options(vlib_buffer_t *b, u8 *p, mmb_rule_t *rule,
   }
 }
 
-static_always_inline void icmp_checksum(vlib_main_t *vm, vlib_buffer_t *b, 
+static_always_inline void icmp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
                                         u8 *p, icmp46_header_t *icmph, u8 is_ip6) {
 
   icmph->checksum = 0;
@@ -357,7 +357,7 @@ static_always_inline void icmp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
   }
 }
 
-static_always_inline void udp_checksum(vlib_main_t *vm, vlib_buffer_t *b, 
+static_always_inline void udp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
                                        u8 *p, udp_header_t *udph, u8 is_ip6)
 {
   int bogus_lengthp;
@@ -373,7 +373,7 @@ static_always_inline void udp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
     udph->checksum = 0xffff;
 }
 
-static_always_inline void tcp_checksum(vlib_main_t *vm, vlib_buffer_t *b, 
+static_always_inline void tcp_checksum(vlib_main_t *vm, vlib_buffer_t *b,
                                        u8 *p, tcp_header_t *tcph, u8 is_ip6) {
   int bogus_lengthp;
   tcph->checksum = 0;
@@ -399,7 +399,7 @@ static_always_inline void mmb_rewrite_stateful(u8 *p, mmb_conn_t *conn, u32 dir,
       iph4 = (ip4_header_t*)p;
       tcph = ip4_next_header(iph4);
 
-      if(conn->ip_id) 
+      if(conn->ip_id)
          conn->ip_id = (conn->ip_id + 1) % 0x00010000;
 
       if (!ip46_address_is_zero(&conn->saddr)) {
@@ -408,7 +408,7 @@ static_always_inline void mmb_rewrite_stateful(u8 *p, mmb_conn_t *conn, u32 dir,
          else
             iph4->dst_address.as_u32 = conn->initial_saddr.ip4.as_u32;
       }
- 
+
       if (!ip46_address_is_zero(&conn->daddr)) {
          if (!dir)
             iph4->dst_address.as_u32 = conn->daddr.ip4.as_u32;
@@ -432,7 +432,7 @@ static_always_inline void mmb_rewrite_stateful(u8 *p, mmb_conn_t *conn, u32 dir,
             iph6->dst_address.as_u64[1] = conn->initial_saddr.as_u64[1];
          }
       }
- 
+
       if (!ip46_address_is_zero(&conn->daddr)) {
          if (!dir) {
             iph6->dst_address.as_u64[0] = conn->daddr.as_u64[0];
@@ -445,49 +445,49 @@ static_always_inline void mmb_rewrite_stateful(u8 *p, mmb_conn_t *conn, u32 dir,
    }
 
    if (conn->tcp_seq_offset) {
-      if (!dir) 
+      if (!dir)
          tcph->seq_number = clib_host_to_net_u32(
                               (clib_net_to_host_u32(tcph->seq_number)
                                  + conn->tcp_seq_offset) % 0x100000000);
       else
          tcph->ack_number =  clib_host_to_net_u32(
-                                 (clib_net_to_host_u32(tcph->ack_number) 
-                                    - conn->tcp_seq_offset + 0x100000000) 
+                                 (clib_net_to_host_u32(tcph->ack_number)
+                                    - conn->tcp_seq_offset + 0x100000000)
                                           % 0x100000000);
-   } 
+   }
 
    if (conn->tcp_ack_offset) {
-      if (!dir) { 
+      if (!dir) {
          if (!(tcph->flags & TCP_FLAG_SYN))
             tcph->ack_number = clib_host_to_net_u32(
-                                 (clib_net_to_host_u32(tcph->ack_number) 
+                                 (clib_net_to_host_u32(tcph->ack_number)
                                     - conn->tcp_ack_offset + 0x100000000)
                                       % 0x100000000);
       } else
          tcph->seq_number = clib_host_to_net_u32(
-                              (clib_net_to_host_u32(tcph->seq_number) 
+                              (clib_net_to_host_u32(tcph->seq_number)
                                  + conn->tcp_ack_offset) % 0x100000000);
-   } 
+   }
 
    if (conn->sport) {
-      if (!dir) 
+      if (!dir)
          tcph->src_port = conn->sport;
-      else 
+      else
          tcph->dst_port = conn->initial_sport;
    }
 
    if (conn->dport) {
-      if (!dir) 
+      if (!dir)
          tcph->dst_port = conn->dport;
-      else 
+      else
          tcph->src_port = conn->initial_dport;
-   }  
+   }
 }
 
 
-static_always_inline 
-u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule, 
-               vlib_buffer_t *b, u8 *p, 
+static_always_inline
+u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule,
+               vlib_buffer_t *b, u8 *p,
                u32 next, u8 tcpo, mmb_tcp_options_t *tcp_options, u8 is_ip6) {
 
    if (rule->accept)
@@ -508,7 +508,7 @@ u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule,
   u32 match = rule->rewrite_match;
   u64 *key = (u64 *)rule->rewrite_key;
   u64 *mask = (u64 *)rule->rewrite_mask;
-  u64 *data64 = (u64 *)p;  
+  u64 *data64 = (u64 *)p;
 
   switch (match) {
     case 5:
@@ -549,7 +549,7 @@ u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule,
   /* tcp opts */
   if (tcpo)
     target_tcp_options(b, p, rule, tcp_options, is_ip6, conn, conn_dir);
- 
+
   /* ip4 checksum */
   if (!is_ip6) {
     ip4_header_t *iph = (ip4_header_t*)p;
@@ -563,22 +563,22 @@ u32 mmb_rewrite(mmb_conn_table_t *mct, vlib_main_t *vm, mmb_rule_t *rule,
   if (rule->l4 == IP_PROTOCOL_RESERVED
        && (ip_proto == IP_PROTOCOL_TCP || ip_proto == IP_PROTOCOL_UDP))
     compute_l4_checksum = ip_proto;
-  else 
-    compute_l4_checksum = rule->l4;   
+  else
+    compute_l4_checksum = rule->l4;
 
-  void *next_header = is_ip6 ? 
+  void *next_header = is_ip6 ?
       ip6_next_header((ip6_header_t*)p) : ip4_next_header((ip4_header_t*)p);
-  switch (compute_l4_checksum) { 
-    case IP_PROTOCOL_ICMP: 
+  switch (compute_l4_checksum) {
+    case IP_PROTOCOL_ICMP:
     case IP_PROTOCOL_ICMP6:
       icmp_checksum(vm, b, p, (icmp46_header_t*) next_header, is_ip6);
       break;
 
-    case IP_PROTOCOL_UDP: 
+    case IP_PROTOCOL_UDP:
       udp_checksum(vm, b, p, (udp_header_t*) next_header, is_ip6);
       break;
 
-    case IP_PROTOCOL_TCP: 
+    case IP_PROTOCOL_TCP:
       tcp_checksum(vm, b, p, (tcp_header_t*) next_header, is_ip6);
       break;
 
@@ -662,27 +662,27 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       u32 *rule_indexes0 = (u32 *)vnet_buffer(b0)->l2_classify.hash;
       u32 *rule_indexes1 = (u32 *)vnet_buffer(b1)->l2_classify.hash;
 
-      vec_foreach(rule_index0, rule_indexes0) { 
+      vec_foreach(rule_index0, rule_indexes0) {
          ri0 = rules+*rule_index0; // TODO: prefetch ?
          if (ri0->opts_in_targets) { // TODO: && !tcpo0 instead of re-parsing
              if (is_ip6)
                tcpo0 = mmb_parse_tcp_options(ip6_next_header((ip6_header_t*)p0), &tcp_options0);
              else
                tcpo0 = mmb_parse_tcp_options(ip4_next_header((ip4_header_t*)p0), &tcp_options0);
-         } 
-         next0 = mmb_rewrite(mm->mmb_conn_table, vm, ri0, b0, p0, 
+         }
+         next0 = mmb_rewrite(mm->mmb_conn_table, vm, ri0, b0, p0,
                              next0, tcpo0, &tcp_options0, is_ip6);
       }
 
-      vec_foreach(rule_index1, rule_indexes1) { 
+      vec_foreach(rule_index1, rule_indexes1) {
          ri1 = rules+*rule_index1;
          if (ri1->opts_in_targets) { // TODO: && !tcpo1 instead of re-parsing
              if (is_ip6)
                tcpo1 = mmb_parse_tcp_options(ip6_next_header((ip6_header_t*)p1), &tcp_options1);
              else
                tcpo1 = mmb_parse_tcp_options(ip4_next_header((ip4_header_t*)p1), &tcp_options1);
-         } 
-         next1 = mmb_rewrite(mm->mmb_conn_table, vm, ri1, b1, p1, 
+         }
+         next1 = mmb_rewrite(mm->mmb_conn_table, vm, ri1, b1, p1,
                              next1, tcpo1, &tcp_options1, is_ip6);
       }
 
@@ -738,15 +738,15 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       u32* rule_index0;
       u32 *rule_indexes0 = (u32 *)vnet_buffer(b0)->l2_classify.hash;
 
-      vec_foreach(rule_index0, rule_indexes0) { 
+      vec_foreach(rule_index0, rule_indexes0) {
          ri0 = rules+*rule_index0;
          if (ri0->opts_in_targets) { // TODO: && !tcpo0 instead of re-parsing
              if (is_ip6)
                tcpo0 = mmb_parse_tcp_options(ip6_next_header((ip6_header_t*)p0), &tcp_options0);
              else
                tcpo0 = mmb_parse_tcp_options(ip4_next_header((ip4_header_t*)p0), &tcp_options0);
-         } 
-         next0 = mmb_rewrite(mm->mmb_conn_table, vm, ri0, b0, p0, 
+         }
+         next0 = mmb_rewrite(mm->mmb_conn_table, vm, ri0, b0, p0,
                              next0, tcpo0, &tcp_options0, is_ip6);
       }
 
@@ -757,7 +757,7 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
       pkts_done++;
 
       /* node trace (if enabled) */
-      if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
+      if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                         && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
          mmb_trace_ip_packet(vm, b0, node, p0, next0, sw_if_index0, is_ip6);
       }
@@ -773,9 +773,9 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
     vlib_put_next_frame(vm, node, next_index, n_left_to_next);
   }
 
-  vlib_node_increment_counter(vm, mmb_node->index, 
+  vlib_node_increment_counter(vm, mmb_node->index,
                               MMB_ERROR_DONE, pkts_done);
-  
+
   free_tcp_options(&tcp_options0);
   free_tcp_options(&tcp_options1);
 
@@ -784,14 +784,14 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
 
 vlib_node_registration_t ip4_mmb_rewrite_node;
 static uword
-mmb_node_ip4_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
+mmb_node_ip4_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
                     vlib_frame_t *frame) {
   return mmb_node_fn(vm, node, frame, 0, &ip4_mmb_rewrite_node);
 }
 
 vlib_node_registration_t ip6_mmb_rewrite_node;
 static uword
-mmb_node_ip6_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node, 
+mmb_node_ip6_rewrite_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
                     vlib_frame_t *frame) {
   return mmb_node_fn(vm, node, frame, 1, &ip6_mmb_rewrite_node);
 }
@@ -844,7 +844,7 @@ VLIB_NODE_FUNCTION_MULTIARCH(ip6_mmb_rewrite_node, mmb_node_ip6_rewrite_fn);
 VNET_FEATURE_INIT (ip6_mmb_rewrite_feature, static) = {
   .arc_name = "ip6-unicast",
   .node_name = "ip6-mmb-rewrite",
-  .runs_before = VNET_FEATURES("ip6-lookup"), 
+  .runs_before = VNET_FEATURES("ip6-lookup"),
 };
 /* *INDENT-ON* */
 
