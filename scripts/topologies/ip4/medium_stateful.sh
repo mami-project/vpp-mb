@@ -10,13 +10,13 @@
 
 # VPP Nodes
 sudo vpp unix { cli-listen /run/vpp/cli-vpp1.sock } api-segment { prefix vpp1 } plugins { plugin mmb_plugin.so { disable } }
-sudo vpp unix { cli-listen /run/vpp/cli-vpp2.sock } api-segment { prefix vpp2 } 
-sudo vpp unix { cli-listen /run/vpp/cli-vpp3.sock } api-segment { prefix vpp3 } 
+sudo vpp unix { cli-listen /run/vpp/cli-vpp2.sock } api-segment { prefix vpp2 }
+sudo vpp unix { cli-listen /run/vpp/cli-vpp3.sock } api-segment { prefix vpp3 }
 #sudo vpp unix { cli-listen /run/vpp/cli-vpp4.sock } api-segment { prefix vpp4 } plugins { plugin mmb_plugin.so { disable } }
 sudo vpp unix { cli-listen /run/vpp/cli-vpp5.sock } api-segment { prefix vpp5 }
-sudo vpp unix { cli-listen /run/vpp/cli-vpp6.sock } api-segment { prefix vpp6 } 
-sudo vpp unix { cli-listen /run/vpp/cli-vpp7.sock } api-segment { prefix vpp7 } 
-sudo vpp unix { cli-listen /run/vpp/cli-vpp8.sock } api-segment { prefix vpp8 } 
+sudo vpp unix { cli-listen /run/vpp/cli-vpp6.sock } api-segment { prefix vpp6 }
+sudo vpp unix { cli-listen /run/vpp/cli-vpp7.sock } api-segment { prefix vpp7 }
+sudo vpp unix { cli-listen /run/vpp/cli-vpp8.sock } api-segment { prefix vpp8 }
 sleep 1
 
 # veth interface between host and vpp1
@@ -156,7 +156,7 @@ sudo vppctl -s /run/vpp/cli-vpp6.sock ip route add 10.0.0.0/24 via 30.101.0.6 me
 sudo vppctl -s /run/vpp/cli-vpp6.sock ip route add 30.111.2.0/24 via 30.101.0.6 memif5/0
 sudo vppctl -s /run/vpp/cli-vpp6.sock mmb add ip-proto udp mod ip-dscp 14
 sudo vppctl -s /run/vpp/cli-vpp6.sock mmb add ip-proto icmp mod ip-dscp 0
-sudo vppctl -s /run/vpp/cli-vpp6.sock mmb add ip-proto tcp mod ip-dscp 14 
+sudo vppctl -s /run/vpp/cli-vpp6.sock mmb add ip-proto tcp mod ip-dscp 14
 
 sudo vppctl -s /run/vpp/cli-vpp7.sock create memif socket id 5 filename /run/vpp/memif5.sock
 sudo vppctl -s /run/vpp/cli-vpp7.sock create memif socket id 6 filename /run/vpp/memif6.sock
@@ -195,11 +195,11 @@ sudo vppctl -s /run/vpp/cli-vpp8.sock ip route add 20.55.55.0/24 via 30.111.2.3 
 sudo vppctl -s /run/vpp/cli-vpp8.sock ip route add 30.101.2.0/24 via 30.111.2.3 memif6/0
 sudo vppctl -s /run/vpp/cli-vpp8.sock ip route add 30.111.2.0/24 via 30.111.2.3 memif6/0
 
-#create namespace for endpoint 
+#create namespace for endpoint
 sudo ip netns add ns0
 # connect to VPP6
 sudo ip link add name vpp8host type veth peer name vpp8
-sudo ip link set dev vpp8 up 
+sudo ip link set dev vpp8 up
 sudo ip link set dev vpp8host up netns ns0
 
 sudo ip netns exec ns0 \
