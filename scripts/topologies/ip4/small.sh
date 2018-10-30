@@ -6,7 +6,7 @@
 # server addr: 10.0.0.10
 
 # VPP Nodes
-sudo vpp unix { cli-listen /run/vpp/cli-vpp1.sock } api-segment { prefix vpp1 } 
+sudo vpp unix { cli-listen /run/vpp/cli-vpp1.sock } api-segment { prefix vpp1 }
 sleep 1
 
 # veth interface between host and vpp1
@@ -22,10 +22,10 @@ sudo vppctl -s /run/vpp/cli-vpp1.sock create host-interface name vpp1out
 sudo vppctl -s /run/vpp/cli-vpp1.sock set int state host-vpp1out up
 sudo vppctl -s /run/vpp/cli-vpp1.sock set int ip address host-vpp1out 10.100.100.2/24
 
-#create namespace for endpoint 
-sudo ip netns add ns0 
+#create namespace for endpoint
+sudo ip netns add ns0
 sudo ip link add name outvpp1 type veth peer name vpp1host
-sudo ip link set dev vpp1host up 
+sudo ip link set dev vpp1host up
 sudo ip link set dev outvpp1 netns ns0
 
 sudo ip netns exec ns0 \

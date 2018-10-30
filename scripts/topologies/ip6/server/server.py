@@ -2,8 +2,8 @@
     Python 3 webserver which supports IPv6
     original from:
         https://gist.github.com/akorobov/7903307
-    
-    Pseudo path of /ip will report client IP address back to client, 
+
+    Pseudo path of /ip will report client IP address back to client,
         otherwise, shows directory index
     Modified to work under python3 by Craig Miller 23 June 2017
     Version 0.94
@@ -19,7 +19,7 @@ listen_port = 80
 
 # signal handlder for SIGINT
 def sigint_handler(signal, frame):
-    shutdown_requested = True    
+    shutdown_requested = True
     print("\nCaught SIGINT, dying")
     os._exit(0)
 

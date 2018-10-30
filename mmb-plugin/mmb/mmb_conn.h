@@ -66,7 +66,7 @@ typedef union {
     u8 tcp_flags_valid:1;
     u8 is_quoted_packet:1; /* contains icmp quoted values */
     /* contains enough data to read ports and protocol is supported by conn table */
-    u8 l4_valid:1; 
+    u8 l4_valid:1;
     u8 is_nonfirst_fragment:1;
     u8 is_ip6:1;
     u8 flags_reserved:3;
@@ -76,7 +76,7 @@ typedef union {
 /*
  * ip4 5tuple: saddr (4) + daddr (4) + protocol (1) + sport (2) + dport (2) = 13
  * ip6 5tuple: saddr (16) + daddr (16) + protocol (1) + sport (2) + dport (2) = 37
- * would fit in bihash_40_8 
+ * would fit in bihash_40_8
  */
 typedef union {
   struct {
@@ -86,7 +86,7 @@ typedef union {
     /* This field should align with u64 value in bihash_48_8 keyvalue struct */
     mmb_packet_info_t pkt_info;
   };
-  clib_bihash_kv_48_8_t kv; 
+  clib_bihash_kv_48_8_t kv;
 } mmb_5tuple_t;
 
 typedef struct {
@@ -101,7 +101,7 @@ typedef struct {
   /* 'shuffle' state */
   u32 tcp_seq_offset;
   u32 tcp_ack_offset;
-  u16 sport; /* in network byte order */ 
+  u16 sport; /* in network byte order */
   u16 initial_sport;
   u16 dport;/* in network byte order */
   u16 initial_dport;
@@ -112,7 +112,7 @@ typedef struct {
   u8 unused1:6;/* +1 = 27 */
   u8 next; /* next node if match +1 = 28 */
   u32 unused3; /* +4 = 32 */
-  
+
   ip46_address_t saddr;
   ip46_address_t initial_saddr;
   ip46_address_t daddr;
@@ -135,7 +135,7 @@ typedef struct {
   mmb_conn_t *conn_pool;   /* connection pool */
 
   int conn_hash_is_initialized;   /* bihash for connections index lookup */
-  clib_bihash_48_8_t conn_hash; // TODO: replace with bihash_40_8 
+  clib_bihash_48_8_t conn_hash; // TODO: replace with bihash_40_8
 
   /* indicates that the connection checking is in progress */
   u32 currently_handling_connections;
@@ -147,7 +147,7 @@ typedef struct {
 mmb_conn_table_t mmb_conn_table;
 
 
-/** 
+/**
  * mmb_fill_5tuple
  *
  * extract 5tuple from packet
@@ -164,7 +164,7 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8* h0, int is_ip6, mmb_5tuple_t *pkt_5t
  *
  * @return the connection
  */
-mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, 
+mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key,
                   u32 *matches_stateful, u64 now);
 
 /**
@@ -173,7 +173,7 @@ mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key,
  * lookup connection bihash to find if 5tuple is registered
  * if it is, set value of pkt_conn_id to connection_index
  */
-int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
+int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
                   clib_bihash_kv_48_8_t *pkt_conn_id);
 
 /**
@@ -183,10 +183,10 @@ int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
  */
 void mmb_track_conn(mmb_conn_t *conn, mmb_5tuple_t *pkt_5tuple, u8 dir, u64 now);
 
-/** 
+/**
  * update_conn_pool
  *
- * update pool when rule_index is deleted 
+ * update pool when rule_index is deleted
  **/
 void update_conn_pool(mmb_conn_table_t *mct, u32 rule_index);
 
@@ -217,7 +217,7 @@ void purge_conn_forced(mmb_conn_table_t *mct);
 
 /**
  * mmb_conn_table_init
- * 
+ *
  * initialize connection table
  */
 clib_error_t *mmb_conn_table_init(vlib_main_t *vm);
@@ -231,14 +231,14 @@ void mmb_conn_hash_init();
 
 /**
  * get_conn_timeout_time
- * 
+ *
  * @return absolute ticks timeout value of conn
  */
 u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t *conn);
 
 /**
  *
- * @return timestamp of next conn table check time 
+ * @return timestamp of next conn table check time
  */
 inline u64 get_conn_table_check_time(vlib_main_t *vm, u64 last_check) {
    return last_check +

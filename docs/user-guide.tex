@@ -6,7 +6,7 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Template Element Definitions
-% Change these for each deliverable 
+% Change these for each deliverable
 %
 
 \newcommand{\deliverabletitle}{User Guide for mmb 0.3.2}
@@ -58,7 +58,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Font definitions
 %
-\renewcommand\familydefault{\sfdefault} 
+\renewcommand\familydefault{\sfdefault}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Heading style definitions
@@ -165,7 +165,7 @@
   \par\large\centerline{
   \mbox{
   \begin{tabular}{ll}
-    \textsf{\textbf{#1}} & 
+    \textsf{\textbf{#1}} &
     \fbox{
     \begin{minipage}{0.6\linewidth}
       \em\color{red} #2
@@ -201,7 +201,7 @@
       \large\textsf{
         \begin{tabular}{lll}
 	  \textbf{Author(s):}
-	  \deliverableauthorlist	
+	  \deliverableauthorlist
 	\end{tabular}}
   \end{minipage}
 }
@@ -223,7 +223,7 @@
 
 \chapter{mmb}
 
-mmb (modular middlebox) is a vpp plugin that performs various 
+mmb (modular middlebox) is a vpp plugin that performs various
 middlebox behaviors.
 
 \chapter{mmb CLI guide}
@@ -233,7 +233,7 @@ middlebox behaviors.
 
 This parameter determines the command applied on the rule list.\\
 Allowed values:
-\begin{itemize} 
+\begin{itemize}
 \item \texttt{enable} : enable mmb on a given interface
 \item \texttt{disable} : disable mmb on a given interface
 \item \texttt{add}/\texttt{add-stateless} : add a stateless rule
@@ -246,13 +246,13 @@ Allowed values:
 
 
 \section{add rules}
-%\texttt{[mod [<field>] [<value>]]|[strip [<field>]]|[drop]} 
+%\texttt{[mod [<field>] [<value>]]|[strip [<field>]]|[drop]}
 % \texttt{<field> [[<cond>] <value>] [<field> [[<cond>] <value>] ...]}
 \texttt{mmb <add-keyword> <match> [<match> ...] <target> [<target> ...]}
 \begin{itemize}
 
 \item \texttt{<add-keyword>}\\
-   \textbf{SYNTAX :} \texttt{add|add-stateless|add-stateful} 
+   \textbf{SYNTAX :} \texttt{add|add-stateless|add-stateful}
 
    The keyword determines if mmb has to keep track of connections that matches
    a given rule or not. \texttt{add}/\texttt{add-stateless} rules apply their
@@ -260,49 +260,49 @@ Allowed values:
    to apply the targets. \texttt{add-stateful} rules apply their targets at the
    connection/flow level. The \texttt{<match>} list of a stateful rule is used
    to add entries to the connection table. Once a connection is added to the table,
-   the \texttt{<target>} list is applied to all packets of the connection, even if 
+   the \texttt{<target>} list is applied to all packets of the connection, even if
    they don't match the rule. Additionally, \texttt{add-stateful} allows for
    special targets \texttt{map} and \texttt{shuffle}.
 
 \item \texttt{<match>} \\
-   \textbf{SYNTAX :} \texttt{[!]\ <field> [[<cond>] <value>]} 
+   \textbf{SYNTAX :} \texttt{[!]\ <field> [[<cond>] <value>]}
 
-   This parameter is a constraint that determines the packets on which the 
-   rule will operate. 
+   This parameter is a constraint that determines the packets on which the
+   rule will operate.
 
    If a \texttt{<match>} is composed of a \texttt{<field>} alone, the constraint
-   is that the packet should contain the field. If it is composed of a 
-   \texttt{<field>} and a \texttt{<value>}, the constraint is that the packet 
-   should contain the field and it should be set to the specified value. If it 
+   is that the packet should contain the field. If it is composed of a
+   \texttt{<field>} and a \texttt{<value>}, the constraint is that the packet
+   should contain the field and it should be set to the specified value. If it
    is composed of a \texttt{<field>}, a \texttt{<cond>} and a \texttt{<value>},
-   then the constraint is that the packet should contain the field, and the 
+   then the constraint is that the packet should contain the field, and the
    condition on the value should be true.
-   
-   The !\ operator applied on one constraint performs the logical NOT of 
-   the constraint. Multiple constraints can be inputted for the same rule, the 
-   resulting constraint is the logical AND of all inputted constraints. 
 
-   %The 
+   The !\ operator applied on one constraint performs the logical NOT of
+   the constraint. Multiple constraints can be inputted for the same rule, the
+   resulting constraint is the logical AND of all inputted constraints.
+
+   %The
    %\texttt{-r} argument performs the logical NOT of the logical AND of all
    %constraints (it reverses the matching constraint).
 
 \item \texttt{<target>}  \\
-   \textbf{SYNTAX :} \texttt{mod [...]|strip [...]|add [...]|drop [...]|map [...]|shuffle [...]} 
+   \textbf{SYNTAX :} \texttt{mod [...]|strip [...]|add [...]|drop [...]|map [...]|shuffle [...]}
 
-   This parameter determines the action(s) to apply on matched packets. 
+   This parameter determines the action(s) to apply on matched packets.
    \begin{itemize}
-   \item \texttt{mod <field> <value>} 
+   \item \texttt{mod <field> <value>}
 
-      Modify a field on a packet. 
+      Modify a field on a packet.
    %TODO: if the field is omitted, default to matching field
    % if the value is omitted, default to 0
-   \item \texttt{add <field> <value>} 
+   \item \texttt{add <field> <value>}
 
       Add a tcp-opt to the packet.
 
-   \item \texttt{strip [!]\ <field>} 
+   \item \texttt{strip [!]\ <field>}
 
-      Strip options from a packet. 
+      Strip options from a packet.
 
    If the !\ operator is placed after the strip keyword, the following option
    will be added to the whitelist (the only authorized options), if not it
@@ -311,26 +311,26 @@ Allowed values:
    The special keyword \texttt{all} can be used in a \texttt{strip} target
    to strip all options from the matched packet.
    % if the field is omitted, default to matching option
-   \item \texttt{drop [<rate>]} 
+   \item \texttt{drop [<rate>]}
 
       Drop a packet with optional probability \texttt{<rate>} given in percentage,
       with a maximal precision of 0.01\%. The default rate is 100\%.
 
    \item \texttt{map <field> <value>}
-      
+
       Perform a bidirectionnal mapping of the given \texttt{<field>} to a given value.
-      Valid fields are: \texttt{ip-saddr}, \texttt{ip-daddr}, \texttt{ip6-saddr}, 
+      Valid fields are: \texttt{ip-saddr}, \texttt{ip-daddr}, \texttt{ip6-saddr},
       \texttt{ip6-daddr}, \texttt{tcp-sport},
       \texttt{tcp-dport}, \texttt{udp-sport}, \texttt{udp-dport}, \texttt{ip-id},
       \texttt{ip6-flow-label}.
 
    \item \texttt{shuffle <field>}
-      
+
       Perform a bidirectionnal mapping of the given \texttt{<field>} to a random value.
       Valid fields are: \texttt{tcp-seq-num}, \texttt{tcp-ack-num}, \texttt{tcp-sport},
       \texttt{tcp-dport}, \texttt{udp-sport}, \texttt{udp-dport}, \texttt{ip-id},
       \texttt{ip6-flow-label}.
-      
+
    \end{itemize}
 
 \end{itemize}
@@ -338,11 +338,11 @@ Allowed values:
 \subsection{\texttt{<cond>}}
 
 A condition is applied on a \texttt{<value>} from a \texttt{<field>} to form
-a constraint. 
+a constraint.
 %Note that \texttt{>} and \texttt{<} have to be escaped if typed
 %from a bash shell.
-\\ 
-Available conditions: \texttt{==}%, \texttt{!=}, \texttt{<=}, \texttt{>=}, 
+\\
+Available conditions: \texttt{==}%, \texttt{!=}, \texttt{<=}, \texttt{>=},
 %\texttt{<}, \texttt{>}.
 
 \subsection{\texttt{<field>}}
@@ -351,33 +351,33 @@ Available fields:
    \begin{itemize}
    \item interfaces: \texttt{in}, \texttt{out}
 
-   \item IPv4 fields: \texttt{ip-ver}, \texttt{ip-ihl},  \texttt{ip-dscp}, 
-     \texttt{ip-ecn}, \texttt{ip-non-ect}\footnote{\label{note-ecn}not followed 
+   \item IPv4 fields: \texttt{ip-ver}, \texttt{ip-ihl},  \texttt{ip-dscp},
+     \texttt{ip-ecn}, \texttt{ip-non-ect}\footnote{\label{note-ecn}not followed
      by \texttt{<value>}}, \texttt{ip-ect0}\textsuperscript{\ref{note-ecn}},
-     \texttt{ip-ect1}\textsuperscript{\ref{note-ecn}}, 
-     \texttt{ip-ce}\textsuperscript{\ref{note-ecn}}, \texttt{ip-len}, 
-     \texttt{ip-id}, \texttt{ip-flags}, \texttt{ip-res}, \texttt{ip-df}, 
-     \texttt{ip-mf}, \texttt{ip-frag-offset}, \texttt{ip-ttl}, \texttt{ip-proto}, 
-     \texttt{ip-checksum}, \texttt{ip-saddr}\footnote{\label{note-prefix} the \texttt{<value>} 
-     can include a subnet mask, the \texttt{==} condition will become subnet matching}, 
+     \texttt{ip-ect1}\textsuperscript{\ref{note-ecn}},
+     \texttt{ip-ce}\textsuperscript{\ref{note-ecn}}, \texttt{ip-len},
+     \texttt{ip-id}, \texttt{ip-flags}, \texttt{ip-res}, \texttt{ip-df},
+     \texttt{ip-mf}, \texttt{ip-frag-offset}, \texttt{ip-ttl}, \texttt{ip-proto},
+     \texttt{ip-checksum}, \texttt{ip-saddr}\footnote{\label{note-prefix} the \texttt{<value>}
+     can include a subnet mask, the \texttt{==} condition will become subnet matching},
      \texttt{ip-daddr}\textsuperscript{\ref{note-prefix}}.
     %TODO(\texttt{ip-opt}).
 
-   \item IPv6 fields: \texttt{ip6-ver}, \texttt{ip6-traffic-class}, 
-      \texttt{ip6-flow-label}, \texttt{ip6-len}, \texttt{ip6-next},  
-      \texttt{ip6-hop-limit}, \texttt{ip6-saddr}\textsuperscript{\ref{note-prefix}}, 
+   \item IPv6 fields: \texttt{ip6-ver}, \texttt{ip6-traffic-class},
+      \texttt{ip6-flow-label}, \texttt{ip6-len}, \texttt{ip6-next},
+      \texttt{ip6-hop-limit}, \texttt{ip6-saddr}\textsuperscript{\ref{note-prefix}},
       \texttt{ip6-daddr}\textsuperscript{\ref{note-prefix}}, \texttt{ip6-payload}.
 
-   \item ICMPv4 fields: \texttt{icmp-type}, \texttt{icmp-code}, \texttt{icmp-checksum}, 
+   \item ICMPv4 fields: \texttt{icmp-type}, \texttt{icmp-code}, \texttt{icmp-checksum},
      \texttt{icmp-payload}.
 
-   \item User Datagram Protocol (UDP) fields: \texttt{udp-sport}, \texttt{udp-dport}, \texttt{udp-len}, 
+   \item User Datagram Protocol (UDP) fields: \texttt{udp-sport}, \texttt{udp-dport}, \texttt{udp-len},
      \texttt{udp-checksum}, \texttt{udp-payload}.
 
-   \item Transmission Control Protocol (TCP) fields: \texttt{tcp-sport}, \texttt{tcp-dport}, \texttt{tcp-seq-num}, 
-      \texttt{tcp-ack-num}, \texttt{tcp-offset}, \texttt{tcp-res}, \texttt{tcp-cwr}, 
-      \texttt{tcp-ece}, \texttt{tcp-urg}, \texttt{tcp-ack}, \texttt{tcp-push}, 
-      \texttt{tcp-res}, \texttt{tcp-syn}, \texttt{tcp-fin}, \texttt{tcp-flags}, 
+   \item Transmission Control Protocol (TCP) fields: \texttt{tcp-sport}, \texttt{tcp-dport}, \texttt{tcp-seq-num},
+      \texttt{tcp-ack-num}, \texttt{tcp-offset}, \texttt{tcp-res}, \texttt{tcp-cwr},
+      \texttt{tcp-ece}, \texttt{tcp-urg}, \texttt{tcp-ack}, \texttt{tcp-push},
+      \texttt{tcp-res}, \texttt{tcp-syn}, \texttt{tcp-fin}, \texttt{tcp-flags},
       \texttt{tcp-win}, \texttt{tcp-checksum}, \texttt{tcp-urg-ptr}, \texttt{tcp-payload}.
 
    \item TCP options:
@@ -387,7 +387,7 @@ Available fields:
 
    \item Custom TCP options: \texttt{tcp-opt [<kind>]} \\
         Replace \texttt{<kind>} with the kind of option in decimal.
-        When employed in a \texttt{<match>} without a \texttt{<kind>}, checks if the 
+        When employed in a \texttt{<match>} without a \texttt{<kind>}, checks if the
         packet contains any option.
 
    \end{itemize}
@@ -395,7 +395,7 @@ Available fields:
 \subsection{\texttt{<value>}}
 
 The value of a field is in decimal or in hexadecimal if preceeded by \texttt{x}.
-String value \texttt{ip}, \texttt{tcp}, \texttt{udp} and \texttt{icmp} 
+String value \texttt{ip}, \texttt{tcp}, \texttt{udp} and \texttt{icmp}
 can be used with fields \texttt{net-proto} or \texttt{ip-proto}.
 
 \subsection{stateful polices}
