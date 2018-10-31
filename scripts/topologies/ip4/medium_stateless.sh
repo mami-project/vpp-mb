@@ -31,7 +31,7 @@ sudo vppctl -s /run/vpp/cli-vpp1.sock set int ip address host-vpp1out 10.100.100
 
 # connect vpp instances
 sudo vppctl -s /run/vpp/cli-vpp1.sock create memif socket id 1 filename /run/vpp/memif1.sock
-sudo vppctl -s /run/vpp/cli-vpp1.sock create interface memif id 0 socket-id 1 master 
+sudo vppctl -s /run/vpp/cli-vpp1.sock create interface memif id 0 socket-id 1 master
 sudo vppctl -s /run/vpp/cli-vpp1.sock set int state memif1/0 up
 sudo vppctl -s /run/vpp/cli-vpp1.sock set int ip address memif1/0 20.100.2.10/24
 
