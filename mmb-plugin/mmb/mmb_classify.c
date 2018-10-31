@@ -640,7 +640,7 @@ VNET_FEATURE_INIT(ip6_mmb_classify_feature, static) =
 static clib_error_t *
 mmb_classify_init(vlib_main_t *vm) {
 
-  //mmb_main.feature_arc_index = vlib_node_add_next(vm, ip4_lookup_node.index, ip4_mmb_classify_node.index);
+  // TODO: move init code from mmb_init() to here ?
 
   return 0;
 }

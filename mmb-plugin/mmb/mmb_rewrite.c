@@ -848,15 +848,6 @@ VNET_FEATURE_INIT (ip6_mmb_rewrite_feature, static) = {
 };
 /* *INDENT-ON* */
 
-static clib_error_t *
-mmb_rewrite_init (vlib_main_t *vm)
-{
-  //mmb_main.feature_arc_index = vlib_node_add_next(vm, ip4_mmb_rewrite_node.index, ip4_rewrite_node.index);
-  return 0;
-}
-
-VLIB_INIT_FUNCTION(mmb_rewrite_init);
-
 /*
  * fd.io coding-style-patch-verification: ON
  *
