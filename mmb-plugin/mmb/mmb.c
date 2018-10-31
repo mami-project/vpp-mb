@@ -2349,8 +2349,9 @@ VLIB_CLI_COMMAND(sr_content_command_show_conn, static) = {
  * @brief Initialize the mmb plugin.
  */
 static clib_error_t * mmb_init(vlib_main_t *vm) {
-  mmb_main_t * mm = &mmb_main;
-  clib_error_t * error = 0;
+
+  mmb_main_t *mm = &mmb_main;
+  clib_error_t *error = 0;
   u8 *name;
 
   memset(mm, 0, sizeof(mmb_main_t));
