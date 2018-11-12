@@ -321,7 +321,6 @@ clib_error_t* mmb_enable_disable_fn(vlib_main_t * vm,
                                     unformat_input_t * input,
                                     vlib_cli_command_t * cmd,
                                     u32 *sw_if_index) {
-  unformat_input_tolower(input);
   mmb_main_t *mm = &mmb_main;
   *sw_if_index = ~0;
 
