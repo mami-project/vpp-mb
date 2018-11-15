@@ -116,6 +116,7 @@
   _(TCP_ACK_NUM, "tcp-ack-num", 4, 1)             \
   _(TCP_OFFSET, "tcp-offset", 1, 1)               \
   _(TCP_RESERVED, "tcp-reserved", 1, 1)           \
+  _(TCP_URG_PTR, "tcp-urg-ptr", 2, 1)             \
   _(TCP_FLAGS, "tcp-flags", 1, 1)                 \
   _(TCP_CWR, "tcp-cwr", 1, 1)                     \
   _(TCP_ECE, "tcp-ece", 1, 1)                     \
@@ -127,7 +128,6 @@
   _(TCP_FIN, "tcp-fin", 1, 1)                     \
   _(TCP_WINDOW, "tcp-win", 2, 1)                  \
   _(TCP_CHECKSUM, "tcp-checksum", 2, 1)           \
-  _(TCP_URG_PTR, "tcp-urg-ptr", 2, 1)             \
   _(TCP_PAYLOAD, "tcp-payload", 0, 0)             \
                                                   \
   _(TCP_OPT_MSS, "tcp-opt-mss", 2, 1)             \
