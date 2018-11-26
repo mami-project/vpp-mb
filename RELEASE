@@ -15,6 +15,7 @@ todos:
 mmb 0.x.x
    * updated vpp support to 18.10
    * fixed logic of accept keyword and next node finding
+   * bugfixes
 
 mmb 0.3.4
    * new accept target keyword for whitelist filtering
