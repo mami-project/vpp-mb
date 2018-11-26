@@ -554,7 +554,7 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8 *h0, int is_ip6, mmb_5tuple_t *pkt_5t
    u16 proto;
 
    pkt_5tuple->kv.key[4] = 0;
-   pkt_5tuple->kv.key[5] = 0; // TODO: drop when going from 40_8 to 48_8
+   pkt_5tuple->kv.key[5] = 0; // TODO: drop when going from 48_8 to 40_8 
    pkt_5tuple->kv.value = 0;
 
    if (is_ip6) {

@@ -411,7 +411,7 @@ mmb_classify_inline(vlib_main_t * vm,
 
              hash0 = vnet_buffer(b0)->l2_classify.hash;
              t0 = pool_elt_at_index(vcm->tables, table_index0);
-             e0 = vnet_classify_find_entry(t0, h0, hash0, now);
+             e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
 
              if (e0) { /* match */
                  lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
@@ -448,8 +448,8 @@ mmb_classify_inline(vlib_main_t * vm,
                   t0 = pool_elt_at_index(vcm->tables,
                                           t0->next_table_index);
 
-                hash0 = vnet_classify_hash_packet(t0, h0);
-                e0 = vnet_classify_find_entry(t0, h0, hash0, now);
+                hash0 = vnet_classify_hash_packet(t0, (u8 *) h0);
+                e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
 
                 if (e0) {
 
@@ -489,7 +489,7 @@ mmb_classify_inline(vlib_main_t * vm,
             mmb_conn_t *conn;
             mmb_conn_id_t conn_id;
 
-            mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
+            mmb_fill_5tuple(b0, (u8 *) h0, tid, &pkt_5tuple);
 
             if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index)) {
                /* found connection, update entry and add rule indexes  */
@@ -529,7 +529,7 @@ mmb_classify_inline(vlib_main_t * vm,
             next0 = MMB_CLASSIFY_NEXT_INDEX_DROP;
 
          /* pass matches & conn id to next node */
-         vnet_buffer(b0)->l2_classify.hash = (u64)matches;
+         vnet_buffer(b0)->l2_classify.hash = (u64) matches;
          vnet_buffer(b0)->unused[0] = conn_index;
          vnet_buffer(b0)->unused[1] = conn_dir;
 
@@ -558,13 +558,14 @@ mmb_classify_inline(vlib_main_t * vm,
      vlib_put_next_frame(vm, node, next_index, n_left_to_next);
   }
 
+  free_tcp_options(&tcpo0);
+
   vlib_node_increment_counter(vm, node->node_index,
                                MMB_CLASSIFY_ERROR_HIT,
                                hits);
   vlib_node_increment_counter(vm, node->node_index,
                                MMB_CLASSIFY_ERROR_DROP,
                                drop);
-
 
   return frame->n_vectors;
 }
