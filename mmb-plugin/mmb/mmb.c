@@ -1135,8 +1135,8 @@ mmb_classify_add_table(u8 *mask, u32 skip, u32 match,
   mmb_classify_main_t *mcm = mm->mmb_classify_main;
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
 
-  u32 nbuckets = max_entries+1;
-  u32 memory_size = nbuckets << 14;
+  u32 nbuckets = max_entries;
+  u32 memory_size = (nbuckets * (match+3)) << 5;//nbuckets << 14;
   u32 miss_next_index = IP_LOOKUP_NEXT_REWRITE;
   u32 current_data_flag = 0;
   int current_data_offset = 0;
