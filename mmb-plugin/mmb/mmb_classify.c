@@ -406,8 +406,6 @@ mmb_classify_inline(vlib_main_t * vm,
          accept0 = 0;
          drop0 = 0;
 
-         mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
-
          /* matching stateless rules */
          if (PREDICT_TRUE(table_index0 != ~0)) {
 
@@ -463,8 +461,6 @@ mmb_classify_inline(vlib_main_t * vm,
                            && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
                          continue;
 
-
-
                       if (rule->stateful == 0) { /* stateless */
 
                          vec_add1(matches, *rule_index);
@@ -490,8 +486,10 @@ mmb_classify_inline(vlib_main_t * vm,
 
          /* stateful matching */
          if (mct->conn_hash_is_initialized) {
-             mmb_conn_t *conn;
-             mmb_conn_id_t conn_id;
+            mmb_conn_t *conn;
+            mmb_conn_id_t conn_id;
+
+            mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
 
             if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index)) {
                /* found connection, update entry and add rule indexes  */
