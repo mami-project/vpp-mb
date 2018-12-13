@@ -221,7 +221,9 @@ void purge_conn(mmb_conn_table_t *mct, u32 *purge_indexes) {
 
       vec_free(conn->rule_indexes);
 
+      clib_spinlock_lock_if_init(&mct->conn_pool_lock);
       pool_put(mct->conn_pool, conn);
+      clib_spinlock_unlock_if_init(&mct->conn_pool_lock);
    }
 }
 
@@ -491,7 +493,9 @@ mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
    u32 *match;
 
    /* init connection state*/
+   clib_spinlock_lock_if_init(&mct->conn_pool_lock);
    pool_get(mct->conn_pool, conn);
+   clib_spinlock_unlock_if_init(&mct->conn_pool_lock);
    memset(conn, 0, sizeof(*conn));
    conn_id.conn_index = conn - mct->conn_pool;
    clib_memcpy(conn, pkt_5tuple, sizeof(pkt_5tuple->kv.key));
@@ -615,18 +619,22 @@ void mmb_conn_hash_init() {
                              MMB_CONN_TABLE_DEFAULT_HASH_MEMORY_SIZE);
       mct->conn_hash_is_initialized = 1;
    }
-
 }
 
 clib_error_t *mmb_conn_table_init(vlib_main_t *vm) {
 
    clib_error_t *error = 0;
+   vlib_thread_main_t *tm = vlib_get_thread_main();
    mmb_conn_table_t *mct = &mmb_conn_table;
    memset (mct, 0, sizeof (mmb_conn_table_t));
 
    mct->timeouts_value[MMB_TIMEOUT_TCP_TRANSIENT] = TCP_SESSION_TRANSIENT_TIMEOUT_SEC;
    mct->timeouts_value[MMB_TIMEOUT_TCP_IDLE] = TCP_SESSION_IDLE_TIMEOUT_SEC;
    mct->timeouts_value[MMB_TIMEOUT_UDP_IDLE] = UDP_SESSION_IDLE_TIMEOUT_SEC;
+   
+   if (tm->n_vlib_mains > 1)
+     clib_spinlock_init(&mct->conn_pool_lock);
+   pool_alloc(mct->conn_pool, MMB_CONN_POOL_MAX_ENTRIES);
 
    return error;
 }
