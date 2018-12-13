@@ -12,9 +12,12 @@ todos:
    * inevstigate additional slow path node for non-mask-based operations
    * verify next node when matching accept, drop and mod
 
-mmb 0.x.x
+mmb 0.4.0
    * updated vpp support to 18.10
    * fixed logic of accept keyword and next node finding
+   * option parsing slowpath
+   * single packet loop in rewrite-node
+   * thread-safe connection pool
    * bugfixes
 
 mmb 0.3.4
