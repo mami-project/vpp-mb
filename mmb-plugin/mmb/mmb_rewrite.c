@@ -586,7 +586,6 @@ mmb_node_fn(vlib_main_t *vm, vlib_node_runtime_t *node,
             vlib_node_registration_t *mmb_node) {
 
   mmb_main_t *mm = &mmb_main;
-  mmb_classify_main_t *mcm = mm->mmb_classify_main;
   mmb_rule_t *rules = mm->rules;
 
   u32 n_left_from, *from, *to_next;
