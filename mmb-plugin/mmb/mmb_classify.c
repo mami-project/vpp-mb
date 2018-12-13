@@ -228,14 +228,13 @@ mmb_classify_inline(vlib_main_t * vm,
                      vlib_node_runtime_t * node,
                      vlib_frame_t * frame,
                      mmb_classify_table_id_t tid)
-{
+{                       
   u32 n_left_from, *from, *to_next;
   mmb_classify_next_index_t next_index;
   mmb_main_t *mm = &mmb_main;
   mmb_classify_main_t *mcm = mm->mmb_classify_main;
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
   mmb_conn_table_t *mct = mm->mmb_conn_table;
-
   mmb_rule_t *rules = mm->rules;
   mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
   u32 *rule_index, accept0, drop0;
@@ -246,7 +245,8 @@ mmb_classify_inline(vlib_main_t * vm,
   u32 drop = 0;
 
   mmb_tcp_options_t tcpo0;
-  init_tcp_options(&tcpo0);
+  if (mm->opts_in_rules) /* slow path */
+     init_tcp_options(&tcpo0);
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -492,7 +492,7 @@ mmb_classify_inline(vlib_main_t * vm,
             mmb_fill_5tuple(b0, (u8 *) h0, tid, &pkt_5tuple);
 
             if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index)) {
-               /* found connection, update entry and add rule indexes  */
+               // found connection, update entry and add rule indexes  
 
                conn_id.as_u64 = pkt_conn_index.value;
                conn_index = conn_id.conn_index;
@@ -510,7 +510,7 @@ mmb_classify_inline(vlib_main_t * vm,
 
             } else if (vec_len(matches_stateful) != 0
                         && pkt_5tuple.pkt_info.l4_valid == 1) {
-               /* new valid connection matched */
+               // new valid connection matched 
 
                conn = mmb_add_conn(mct, &pkt_5tuple, matches_stateful, now_ticks);
                conn_index = pkt_5tuple.pkt_info.conn_index;
@@ -558,7 +558,8 @@ mmb_classify_inline(vlib_main_t * vm,
      vlib_put_next_frame(vm, node, next_index, n_left_to_next);
   }
 
-  free_tcp_options(&tcpo0);
+  if (mm->opts_in_rules) /* slow path */
+     free_tcp_options(&tcpo0);
 
   vlib_node_increment_counter(vm, node->node_index,
                                MMB_CLASSIFY_ERROR_HIT,
