@@ -35,6 +35,8 @@
  */
 #define MMB_CONN_TABLE_TIMEOUT_CHECK_INTERVAL_SEC 5
 
+#define MMB_CONN_POOL_MAX_ENTRIES 1000000
+
 #define MMB_MIN_SHUFFLE_PORT 49152
 #define MMB_MAX_SHUFFLE_PORT 65535
 
@@ -132,7 +134,9 @@ typedef struct {
 } mmb_conn_id_t;
 
 typedef struct {
+
   mmb_conn_t *conn_pool;   /* connection pool */
+  clib_spinlock_t conn_pool_lock;
 
   int conn_hash_is_initialized;   /* bihash for connections index lookup */
   clib_bihash_48_8_t conn_hash; // TODO: replace with bihash_40_8
