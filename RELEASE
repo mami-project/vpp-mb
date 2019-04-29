@@ -1,17 +1,38 @@
+todos:
+   * map sack blocks in shuffle targets
+   * handle ip fragmentation
+   * option to revert changes in icmp quotation (icmp visibility)
+   * support for ip6 extension headers
+   * use CSIT
+   * more tests
+   * more operators (<, >, !=)
+   * replace bihash_48_8 with bihash_40_8
+   * rewrite option parsing (?)
+   * investigate pre-built masks for options/EH matching/rewrite
+   * inevstigate additional slow path node for non-mask-based operations
+   * verify next node when matching accept, drop and mod
+
+mmb 0.4.0
+   * updated vpp support to 18.10
+   * fixed logic of accept keyword and next node finding
+   * option parsing slowpath
+   * single packet loop in rewrite-node
+   * thread-safe connection pool
+   * bugfixes
+
+mmb 0.3.4
+   * new accept target keyword for whitelist filtering
+   * dropped all api related code
+   * removing stateful map or shuffle rule now correctly unmap/unshuffle active connections
+     even when those connections also matched other stateful rules (BUGFIX)
+
+mmb 0.3.3
+   * new map target keyword that performs field mapping with user-chosen value
+
 mmb 0.3.2
 
    * added support for stateful port mapping, seqnum shuffling
    * improved CLI mmb show connections
    * new example topologies
    * updated docs/
-
-
-todos:
-   * handle ip fragmentation
-   * migrate to vpp 18.07
-   * option to revert changes in icmp quotation (icmp visibility)
-   * support for ip6 extension headers
-   * use CSIT
-   * more tests
-   * more operators
 

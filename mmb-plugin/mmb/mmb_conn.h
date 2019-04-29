@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Cisco and/or its affiliates.
+ * Copyright (c) 2018 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -12,9 +12,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * connection tables for stateful rules.
- *
- * Author: Korian Edeline
+ * @file mmb_conn.h
+ * @brief headers&public structs for connection tables for stateful rules
+ * @author Korian Edeline
  */
 
 #ifndef __included_mmb_conn_h__
@@ -28,12 +28,14 @@
 #include <vppinfra/bihash_48_8.h>
 #include <vppinfra/error.h>
 
-/* XXX: add max entries val */
+// TODO: add max entries macro
 /**
  *
  * min interval for in-node timeout checking of connections.
  */
 #define MMB_CONN_TABLE_TIMEOUT_CHECK_INTERVAL_SEC 5
+
+#define MMB_CONN_POOL_MAX_ENTRIES 1000000
 
 #define MMB_MIN_SHUFFLE_PORT 49152
 #define MMB_MAX_SHUFFLE_PORT 65535
@@ -66,7 +68,7 @@ typedef union {
     u8 tcp_flags_valid:1;
     u8 is_quoted_packet:1; /* contains icmp quoted values */
     /* contains enough data to read ports and protocol is supported by conn table */
-    u8 l4_valid:1; 
+    u8 l4_valid:1;
     u8 is_nonfirst_fragment:1;
     u8 is_ip6:1;
     u8 flags_reserved:3;
@@ -76,17 +78,17 @@ typedef union {
 /*
  * ip4 5tuple: saddr (4) + daddr (4) + protocol (1) + sport (2) + dport (2) = 13
  * ip6 5tuple: saddr (16) + daddr (16) + protocol (1) + sport (2) + dport (2) = 37
- * would fit in bihash_40_8 
+ * would fit in bihash_40_8
  */
 typedef union {
   struct {
-    ip46_address_t addr[2]; // 32
-    mmb_conn_l4_key_t l4; // 8
-    u64 unused; // 8
+    ip46_address_t addr[2]; /* 32 */
+    mmb_conn_l4_key_t l4; /* 8 */
+    u64 unused; /* 8 */
     /* This field should align with u64 value in bihash_48_8 keyvalue struct */
     mmb_packet_info_t pkt_info;
   };
-  clib_bihash_kv_48_8_t kv; 
+  clib_bihash_kv_48_8_t kv;
 } mmb_5tuple_t;
 
 typedef struct {
@@ -101,17 +103,23 @@ typedef struct {
   /* 'shuffle' state */
   u32 tcp_seq_offset;
   u32 tcp_ack_offset;
-  u16 sport; /* in network byte order */ 
+  u16 sport; /* in network byte order */
   u16 initial_sport;
   u16 dport;/* in network byte order */
   u16 initial_dport;
   u32 ip_id; /* +20 = 26 */
   u8 mapped_sack:1;
+  u8 accept:1; /* accept target(s) */
 
-  u8 unused1:7;/* +1 = 27 */
-  u8 unused2; /* +1 = 28 */
+  u8 unused1:6;/* +1 = 27 */
+  u8 next; /* next node if match +1 = 28 */
   u32 unused3; /* +4 = 32 */
-  u64 unused4[4]; /* +32 = 64 */
+
+  ip46_address_t saddr;
+  ip46_address_t initial_saddr;
+  ip46_address_t daddr;
+  ip46_address_t initial_daddr; /* +64 = 96 */
+  u64 unused4[4]; /* + 32 = 128 */
 } mmb_conn_t;
 
 typedef struct {
@@ -126,10 +134,12 @@ typedef struct {
 } mmb_conn_id_t;
 
 typedef struct {
+
   mmb_conn_t *conn_pool;   /* connection pool */
+  clib_spinlock_t conn_pool_lock;
 
   int conn_hash_is_initialized;   /* bihash for connections index lookup */
-  clib_bihash_48_8_t conn_hash; /* XXX replace with bihash_40_8 */
+  clib_bihash_48_8_t conn_hash; // TODO: replace with bihash_40_8
 
   /* indicates that the connection checking is in progress */
   u32 currently_handling_connections;
@@ -141,7 +151,7 @@ typedef struct {
 mmb_conn_table_t mmb_conn_table;
 
 
-/** 
+/**
  * mmb_fill_5tuple
  *
  * extract 5tuple from packet
@@ -154,12 +164,12 @@ void mmb_fill_5tuple(vlib_buffer_t *b0, u8* h0, int is_ip6, mmb_5tuple_t *pkt_5t
  *
  * add a connection to connection hash and pool, set timestamp&rule indices to pool
  *
- * @param matches_stateful contains indexes of all matched stateful openers
- * @param matches_suffle contains indexes of matched stateful openers that require
- *                       random seed.
+ * @param matches_stateful contains indexes of all matched stateful rules
+ *
+ * @return the connection
  */
-void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key, 
-                  u32 *matches_stateful, u32 *matches_shuffle, u64 now);
+mmb_conn_t *mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key,
+                  u32 *matches_stateful, u64 now);
 
 /**
  * mmb_find_conn
@@ -167,7 +177,7 @@ void mmb_add_conn(mmb_conn_table_t *mct, mmb_5tuple_t *conn_key,
  * lookup connection bihash to find if 5tuple is registered
  * if it is, set value of pkt_conn_id to connection_index
  */
-int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple, 
+int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
                   clib_bihash_kv_48_8_t *pkt_conn_id);
 
 /**
@@ -177,17 +187,18 @@ int mmb_find_conn(mmb_conn_table_t *mct, mmb_5tuple_t *pkt_5tuple,
  */
 void mmb_track_conn(mmb_conn_t *conn, mmb_5tuple_t *pkt_5tuple, u8 dir, u64 now);
 
-/** 
+/**
  * update_conn_pool
  *
- * update pool when rule_index is deleted 
+ * update pool when rule_index is deleted
  **/
 void update_conn_pool(mmb_conn_table_t *mct, u32 rule_index);
 
 /**
  * purge_conn_index
  *
- * remove connections that only maps to rule_index
+ * remove rule_index from connections, remove connection it contains
+ * no more rule
  */
 void purge_conn_index(mmb_conn_table_t *mct, u32 rule_index);
 
@@ -209,27 +220,29 @@ int purge_conn_expired(mmb_conn_table_t *mct, u64 now);
 void purge_conn_forced(mmb_conn_table_t *mct);
 
 /**
+ * mmb_conn_table_init
  *
- *
+ * initialize connection table
  */
 clib_error_t *mmb_conn_table_init(vlib_main_t *vm);
 
 /**
+ * mmb_conn_hash_init
  *
- *
+ * initalize connection hash table
  */
 void mmb_conn_hash_init();
 
 /**
  * get_conn_timeout_time
- * 
- * return absolute ticks timeout value of conn
+ *
+ * @return absolute ticks timeout value of conn
  */
 u64 get_conn_timeout_time(mmb_conn_table_t *mct, mmb_conn_t *conn);
 
 /**
- * return timestamp of next conn table check time 
  *
+ * @return timestamp of next conn table check time
  */
 inline u64 get_conn_table_check_time(vlib_main_t *vm, u64 last_check) {
    return last_check +
@@ -256,3 +269,11 @@ inline int get_conn_timeout_type(mmb_conn_table_t *mct, mmb_conn_t *conn) {
 }
 
 #endif
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

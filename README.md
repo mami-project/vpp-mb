@@ -1,25 +1,54 @@
-VPP Modular Middlebox
+
+VPP Modular MiddleBox plugin
 =====================
 
-## Vagrant
+# **mmb**
 
-Install **Vagrant** on host machine.
+**mmb** is a plugin that intents to implement middlebox policies that can be
+configured using generic CLI commands. It performs stateless packet matching
+based on any combination of constraints on network or transport protocol fields,
+stateful TCP and UDP flow matching, packet rewrite, packet dropping,
+bidirectionnal mapping. mmb is protocol-agnostic by allowing to match and
+rewrite fields ip4-payload, udp-payload and tcp-opt.
 
-## VirtualBox
+# HOWTO
 
-Install **VirtualBox** on host machine.
+## Run with vagrant
 
-## VPP-MB simulator
+### Prerequisites
 
-### Start the simulator
+- Install **Vagrant** and **VirtualBox** on host machine.
 
-Still on host machine, go to *vagrant* directory (`vpp-mb/vagrant/`), and run:
+### Installation
+
+Still on host machine, navigate to `vagrant/`  and run:
 
     vagrant up
     vagrant ssh
 
-*Warning*: make sure your connection is **enabled** (some external elements are required during installation)
+### Run
 
-### MMB Documentation
+On the virtual machine, navigate to `vpp-mb/scripts`. This directory contains
+scripts to create a few (VPP-only) network topologies that can be used to test
+**mmb**. For example, `topologies/ip4/small.sh` creates a 3 nodes
+(client - middlebox - server) topology.
 
-See *docs* directory.
+### CLI Commands
+
+All available commands are described in `docs/user-guide.pdf`.
+
+## Administrative
+
+### Current status
+
+Latest and future additions are described in RELEASE. Supports VPP 18.10.
+
+### Links
+
+- Github repository: https://github.com/mami-project/vpp-mb
+- Material used for RCM tutorial at SIGCOMM 2018: https://github.com/mami-project/vpp-mb/tree/rcm
+
+### Main contributors
+
+Korian Edeline - LF-ID:ekorian
+Justin Iurman

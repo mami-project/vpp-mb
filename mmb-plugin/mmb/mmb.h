@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Cisco and/or its affiliates.
+ * Copyright (c) 2018 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -13,7 +13,9 @@
  * limitations under the License.
  *
  *
- * Author: Korian Edeline
+ * @file mmb.h
+ * @brief mmb Plugin, plugin trace / CLI / internals handling headers&macros.
+ * @author Korian Edeline
  */
 
 #ifndef __included_mmb_h__
@@ -31,7 +33,7 @@
 /* Comment out to remove calls to vlib_cli_output() */
 #define MMB_DEBUG
 
-#define MMB_PLUGIN_BUILD_VER "0.3.2"
+#define MMB_PLUGIN_BUILD_VER "0.4.0"
 
 #define foreach_mmb_type \
   _(FIELD)               \
@@ -54,7 +56,9 @@
   _(MODIFY)                \
   _(ADD)                   \
   _(LB)                    \
-  _(SHUFFLE)  
+  _(MAP)                   \
+  _(SHUFFLE)               \
+  _(ACCEPT)  
 
 /* macro, CLI name, size, fixed len */
 #define foreach_mmb_field                         \
@@ -112,6 +116,7 @@
   _(TCP_ACK_NUM, "tcp-ack-num", 4, 1)             \
   _(TCP_OFFSET, "tcp-offset", 1, 1)               \
   _(TCP_RESERVED, "tcp-reserved", 1, 1)           \
+  _(TCP_URG_PTR, "tcp-urg-ptr", 2, 1)             \
   _(TCP_FLAGS, "tcp-flags", 1, 1)                 \
   _(TCP_CWR, "tcp-cwr", 1, 1)                     \
   _(TCP_ECE, "tcp-ece", 1, 1)                     \
@@ -123,7 +128,6 @@
   _(TCP_FIN, "tcp-fin", 1, 1)                     \
   _(TCP_WINDOW, "tcp-win", 2, 1)                  \
   _(TCP_CHECKSUM, "tcp-checksum", 2, 1)           \
-  _(TCP_URG_PTR, "tcp-urg-ptr", 2, 1)             \
   _(TCP_PAYLOAD, "tcp-payload", 0, 0)             \
                                                   \
   _(TCP_OPT_MSS, "tcp-opt-mss", 2, 1)             \
@@ -211,6 +215,10 @@ _(ip6,IP6)
 
 #define is_drop(rule)\
      (vec_len(rule->targets) == 1 && rule->targets[0].keyword == MMB_TARGET_DROP)
+
+#define is_accept(rule)\
+     (rule->accept == 1)
+
 #define next_if_match(rule)\
     (is_drop(rule)\
      ? MMB_CLASSIFY_NEXT_INDEX_DROP : MMB_CLASSIFY_NEXT_INDEX_MATCH)
@@ -228,7 +236,7 @@ typedef struct {
 
 typedef struct {
    u32 *rule_indexes; /*! vec of rule_index */
-   /* XXX: rule_has_opt_match flag for slow pathing */
+   // TODO: rule_has_opt_match flag for slow pathing
 } mmb_lookup_entry_t;
 
 typedef struct {
@@ -286,6 +294,7 @@ typedef struct {
   mmb_target_t           *opt_mods;
   mmb_transport_option_t *opt_adds;
   mmb_target_t           *shuffle_targets;
+  mmb_target_t           *map_targets;
 
   /* mmb_classify */
   u8 *classify_mask;
@@ -312,7 +321,10 @@ typedef struct {
   u8 lb:1;
   u8 stateful:1;
   u8 shuffle:1;
-  u8 unused:1; 
+  u8 map:1; /* 8 */
+  u8 accept:1;
+  u8 rewrite:1;
+  u8 unused:6;
 
 } mmb_rule_t;
 
@@ -328,7 +340,7 @@ typedef struct {
    u32 *sw_if_indexes;
 
    /* convenience */
-   vlib_main_t * vlib_main;
+   vlib_main_t *vlib_main;
    vnet_main_t *vnet_main;
    mmb_classify_main_t *mmb_classify_main;
    mmb_conn_table_t *mmb_conn_table;
@@ -352,7 +364,7 @@ extern const char* conditions[];
 
 /**
  * get_field_protocol
- * 
+ *
  * @return protocol related to given field
  */
 u16 get_field_protocol(u8 field);
@@ -366,7 +378,7 @@ u8 is_fixed_length(u8 field);
 
 /**
  * bytes_to_u32
- * 
+ *
  * converts byte vector to a u32
  */
 inline u32 bytes_to_u32(u8 *bytes) {
@@ -401,3 +413,11 @@ inline u64 bytes_to_u64(u8 *bytes) {
 }
 
 #endif /* __included_mmb_h__ */
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Cisco and/or its affiliates.
+ * Copyright (c) 2018 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -13,7 +13,9 @@
  * limitations under the License.
  *
  *
- * Author: Korian Edeline
+ * @file mmb_classify.c
+ * @brief mmb classify node
+ * @author Korian Edeline
  */
 
 #include <stdint.h>
@@ -52,26 +54,19 @@ static u8 *format_mmb_classify_trace(u8 * s, va_list * args)
                  t->sw_if_index, *index, t->next_index, t->offset);
   }
 
-  if (vec_len(t->rule_indexes) == 0) 
+  if (vec_len(t->rule_indexes) == 0)
      s = format(s, "\tno match: sw_if_index %d next %d\n  ",
                  t->sw_if_index, t->next_index);
- // else
- //    s = format(s, "\t\n%U", format_hex_bytes, t->packet_data, sizeof(t->packet_data));
 
- /*s = format(s, "\n5-tuple\n %016llx %016llx\n %016llx\n %016llx %016llx\n %016llx : %016llx",
-  t->packet_5tuple.kv.key[0], t->packet_5tuple.kv.key[1], 
-  t->packet_5tuple.kv.key[2], t->packet_5tuple.kv.key[3], 
-  t->packet_5tuple.kv.key[4], t->packet_5tuple.kv.key[5], t->packet_5tuple.kv.value);*/
-
-  if (t->conn_index != ~0) 
+  if (t->conn_index != ~0)
     s = format(s, "conn id: %u dir:%u\n", t->conn_index, t->conn_dir);
 
   return s;
 }
 
 #define foreach_mmb_classify_error                 \
-_(MISS, "Flow classify misses")                     \
-_(HIT, "Flow classify hits")                        \
+_(MISS, "Flow classify misses")                    \
+_(HIT, "Flow classify hits")                       \
 _(DROP, "Flow classify action drop")
 
 typedef enum {
@@ -160,11 +155,11 @@ static_always_inline u64 n_bytes_to_u64(u8 *data, u8 length) {
 }
 
 static inline int mmb_match_opt(mmb_match_t *match, mmb_tcp_options_t *options) {
-   
-  //TODO replace opt_kind=0 by opt_kind=ALL (to distinguish option 0 and this case) 
+
+  // TODO: replace opt_kind=0 by opt_kind=ALL (to distinguish option 0 and this case)
   if (match->opt_kind == 0 || match->opt_kind == MMB_FIELD_TCP_OPT_ALL) {
     /* do we have any TCP option in this packet */
-    if (!mmb_true_condition(vec_len(options->parsed) > 0, 
+    if (!mmb_true_condition(vec_len(options->parsed) > 0,
                             match->reverse))
       return 0;
   } else if (match->condition == 0) {
@@ -188,8 +183,8 @@ static inline int mmb_match_opt(mmb_match_t *match, mmb_tcp_options_t *options) 
                               match->reverse))
         return 0;
     }
-    else if (!mmb_value_compare(n_bytes_to_u64(opt_data_ptr, opt_length), 
-                                bytes_to_u64(match->value), 
+    else if (!mmb_value_compare(n_bytes_to_u64(opt_data_ptr, opt_length),
+                                bytes_to_u64(match->value),
                                 match->condition, match->reverse))
       return 0;
   }
@@ -198,11 +193,11 @@ static inline int mmb_match_opt(mmb_match_t *match, mmb_tcp_options_t *options) 
    return 1;
 }
 
-static inline int mmb_match_opts(mmb_rule_t *rule, u8 *p0, 
+static inline int mmb_match_opts(mmb_rule_t *rule, u8 *p0,
                        mmb_tcp_options_t *tcpo0, u8 *tcpo0_flag, u8 is_ip6) {
 
    mmb_match_t *opt_matches = rule->opt_matches, *match;
-   
+
    if (*tcpo0_flag == 0) { /* parse options */
       tcp_header_t *tcph;
       if (is_ip6)
@@ -233,25 +228,25 @@ mmb_classify_inline(vlib_main_t * vm,
                      vlib_node_runtime_t * node,
                      vlib_frame_t * frame,
                      mmb_classify_table_id_t tid)
-{
+{                       
   u32 n_left_from, *from, *to_next;
   mmb_classify_next_index_t next_index;
   mmb_main_t *mm = &mmb_main;
   mmb_classify_main_t *mcm = mm->mmb_classify_main;
   vnet_classify_main_t *vcm = mcm->vnet_classify_main;
   mmb_conn_table_t *mct = mm->mmb_conn_table;
-
   mmb_rule_t *rules = mm->rules;
   mmb_lookup_entry_t *lookup_pool = mm->lookup_pool, *lookup_entry;
-  u32 *rule_index; 
+  u32 *rule_index, accept0, drop0;
   f64 now = vlib_time_now(vm);
   u64 now_ticks = clib_cpu_time_now();
-   
+
   u32 hits = 0;
   u32 drop = 0;
 
   mmb_tcp_options_t tcpo0;
-  init_tcp_options(&tcpo0);
+  if (mm->opts_in_rules) /* slow path */
+     init_tcp_options(&tcpo0);
 
   from = vlib_frame_vector_args(frame);
   n_left_from = frame->n_vectors;
@@ -367,7 +362,7 @@ mmb_classify_inline(vlib_main_t * vm,
          vnet_classify_entry_t *e0;
          u64 hash0;
          u8 *h0;
-         u32 *matches, *matches_opener, *matches_shuffle;
+         u32 *matches, *matches_stateful;
          mmb_rule_t *rule;
          u32 conn_index, conn_dir;
          u8 tcpo0_flag;
@@ -404,20 +399,19 @@ mmb_classify_inline(vlib_main_t * vm,
          e0 = 0;
          t0 = 0;
          matches = 0;
-         matches_opener = 0;
-         matches_shuffle = 0;
+         matches_stateful = 0;
          tcpo0_flag = 0;
          conn_index = ~0;
          conn_dir = 0;
-
-         mmb_fill_5tuple(b0, h0, tid, &pkt_5tuple);
+         accept0 = 0;
+         drop0 = 0;
 
          /* matching stateless rules */
          if (PREDICT_TRUE(table_index0 != ~0)) {
 
              hash0 = vnet_buffer(b0)->l2_classify.hash;
              t0 = pool_elt_at_index(vcm->tables, table_index0);
-             e0 = vnet_classify_find_entry(t0, h0, hash0, now);
+             e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
 
              if (e0) { /* match */
                  lookup_entry = pool_elt_at_index(lookup_pool, e0->opaque_index);
@@ -425,38 +419,37 @@ mmb_classify_inline(vlib_main_t * vm,
                  vec_foreach(rule_index, lookup_entry->rule_indexes) {
 
                     rule = rules+*rule_index;
-                    if (rule->opts_in_matches && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
+                    if (rule->opts_in_matches
+                        && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
                        continue;
-                                           
+
                     if (rule->stateful == 0) { /* stateless */
+
                        vec_add1(matches, *rule_index);
-                       if (rule->drop_rate == 0 
-                           || rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
-                           || random_drop(mm, rule->drop_rate))
-                          next0 = e0->next_index;  
-                     } else { 
-                       if (rule->shuffle == 0) { /* stateful */
-                          vec_add1(matches_opener, *rule_index);
-                       } else { /* stateful + seed */
-                          vec_add1(matches_shuffle, *rule_index);
-                       }
+
+                       if (rule->accept == 0 && rule->drop_rate == 0)
+                          next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
+                       else if (rule->accept == 1)
+                          accept0 = 1;
+                       else if (rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
+                              || random_drop(mm, rule->drop_rate))
+                          drop0 = 1;
+
+                     } else {
+                        vec_add1(matches_stateful, *rule_index);
                      }
 
-                     rule->match_count++;  
+                     rule->match_count++;
                  }
                  hits++;
-             } 
-              
-             while (next0 != MMB_CLASSIFY_NEXT_INDEX_DROP) {
-                if (t0->next_table_index != ~0)
+             }
+
+             while (t0->next_table_index != ~0) {
                   t0 = pool_elt_at_index(vcm->tables,
                                           t0->next_table_index);
-                else { 
-                  break;
-                }
 
-                hash0 = vnet_classify_hash_packet(t0, h0);
-                e0 = vnet_classify_find_entry(t0, h0, hash0, now);
+                hash0 = vnet_classify_hash_packet(t0, (u8 *) h0);
+                e0 = vnet_classify_find_entry(t0, (u8 *) h0, hash0, now);
 
                 if (e0) {
 
@@ -464,23 +457,26 @@ mmb_classify_inline(vlib_main_t * vm,
                    vec_foreach(rule_index, lookup_entry->rule_indexes) {
 
                       rule = rules+*rule_index;
-                      if (rule->opts_in_matches && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
+                      if (rule->opts_in_matches
+                           && !mmb_match_opts(rule, h0, &tcpo0, &tcpo0_flag, tid))
                          continue;
 
                       if (rule->stateful == 0) { /* stateless */
-                          vec_add1(matches, *rule_index);
-                         if (rule->drop_rate == 0 
-                             || rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
-                             || random_drop(mm, rule->drop_rate))
-                            next0 = e0->next_index;  
-                      } else { 
-                         if (rule->shuffle == 0) { /* stateful */
-                            vec_add1(matches_opener, *rule_index);
-                         } else { /* stateful + seed */
-                            vec_add1(matches_shuffle, *rule_index);
-                         }
+
+                         vec_add1(matches, *rule_index);
+
+                         if (rule->accept == 0 && rule->drop_rate == 0)
+                            next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
+                         else if (rule->accept == 1)
+                           accept0 = 1;
+                         else if (rule->drop_rate == MMB_MAX_DROP_RATE_VALUE
+                              || random_drop(mm, rule->drop_rate))
+                           drop0 = 1;
+
+                      } else {
+                        vec_add1(matches_stateful, *rule_index);
                       }
- 
+
                       rule->match_count++;
                    }
                    hits++;
@@ -490,40 +486,50 @@ mmb_classify_inline(vlib_main_t * vm,
 
          /* stateful matching */
          if (mct->conn_hash_is_initialized) {
-             mmb_conn_t *conn;
-             mmb_conn_id_t conn_id;
+            mmb_conn_t *conn;
+            mmb_conn_id_t conn_id;
 
-            if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index)) { 
-               /* found connection, update entry and add rule indexes  */
+            mmb_fill_5tuple(b0, (u8 *) h0, tid, &pkt_5tuple);
+
+            if (mmb_find_conn(mct, &pkt_5tuple, &pkt_conn_index)) {
+               // found connection, update entry and add rule indexes  
 
                conn_id.as_u64 = pkt_conn_index.value;
-               conn = pool_elt_at_index(mct->conn_pool, conn_id.conn_index);
-               mmb_track_conn(conn, &pkt_5tuple, conn_id.dir, now_ticks);
-
-               vec_append(matches, conn->rule_indexes);
                conn_index = conn_id.conn_index;
                conn_dir   = conn_id.dir;
-               if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
-                  next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
-               
-            } else if ((vec_len(matches_opener) != 0 || vec_len(matches_shuffle) != 0)
-                        && pkt_5tuple.pkt_info.l4_valid == 1) {
-               /* new valid connection matched */
 
-               vec_append(matches_opener, matches_shuffle);
-               mmb_add_conn(mct, &pkt_5tuple, matches_opener, 
-                            matches_shuffle, now_ticks);
+               conn = pool_elt_at_index(mct->conn_pool, conn_index);
+               mmb_track_conn(conn, &pkt_5tuple, conn_dir, now_ticks);
+
+               vec_append(matches, conn->rule_indexes);
+
+               if (conn->accept == 0)
+                  next0 = conn->next;
+               else
+                  accept0 = 1;
+
+            } else if (vec_len(matches_stateful) != 0
+                        && pkt_5tuple.pkt_info.l4_valid == 1) {
+               // new valid connection matched 
+
+               conn = mmb_add_conn(mct, &pkt_5tuple, matches_stateful, now_ticks);
                conn_index = pkt_5tuple.pkt_info.conn_index;
-               
-               vec_append(matches, matches_opener);
-               
-               if (next0 == MMB_CLASSIFY_NEXT_INDEX_MISS)
-                  next0 = MMB_CLASSIFY_NEXT_INDEX_MATCH;
+
+               vec_append(matches, matches_stateful);
+
+               if (conn->accept == 0)
+                  next0 = conn->next;
+               else
+                  accept0 = 1;
             }
          }
 
-         /* pass matches & conn id to next ode */
-         vnet_buffer(b0)->l2_classify.hash = (u64)matches;
+         /* summarize stateless drop&accept targets */
+         if (drop0 == 1 && accept0 == 0)
+            next0 = MMB_CLASSIFY_NEXT_INDEX_DROP;
+
+         /* pass matches & conn id to next node */
+         vnet_buffer(b0)->l2_classify.hash = (u64) matches;
          vnet_buffer(b0)->unused[0] = conn_index;
          vnet_buffer(b0)->unused[1] = conn_dir;
 
@@ -537,13 +543,12 @@ mmb_classify_inline(vlib_main_t * vm,
               /*clib_memcpy(&t->packet_5tuple, &pkt_5tuple,
 		                    sizeof(pkt_5tuple));
               clib_memcpy(t->packet_data, h0,
-		                    sizeof(t->packet_data)); *//* offsetof */
+		                    sizeof(t->packet_data)); */ /* offsetof */
               t->conn_index = conn_index;
               t->conn_dir = conn_dir;
          }
 
-         vec_free(matches_opener);
-         vec_free(matches_shuffle);
+         vec_free(matches_stateful);
 
          /* Verify speculative enqueue, maybe switch current next frame */
          vlib_validate_buffer_enqueue_x1(vm, node, next_index, to_next,
@@ -553,13 +558,15 @@ mmb_classify_inline(vlib_main_t * vm,
      vlib_put_next_frame(vm, node, next_index, n_left_to_next);
   }
 
+  if (mm->opts_in_rules) /* slow path */
+     free_tcp_options(&tcpo0);
+
   vlib_node_increment_counter(vm, node->node_index,
-                               MMB_CLASSIFY_ERROR_HIT, 
+                               MMB_CLASSIFY_ERROR_HIT,
                                hits);
   vlib_node_increment_counter(vm, node->node_index,
                                MMB_CLASSIFY_ERROR_DROP,
                                drop);
-
 
   return frame->n_vectors;
 }
@@ -573,6 +580,7 @@ ip4_mmb_classify(vlib_main_t * vm,
 }
 
 vlib_node_registration_t ip4_mmb_classify_node;
+/* *INDENT-OFF* */
 VLIB_REGISTER_NODE(ip4_mmb_classify_node) = {
   .function = ip4_mmb_classify,
   .name = "ip4-mmb-classify",
@@ -587,8 +595,7 @@ VLIB_REGISTER_NODE(ip4_mmb_classify_node) = {
     [MMB_CLASSIFY_NEXT_INDEX_DROP] = "error-drop",
   },
 };
-
-//VLIB_NODE_FUNCTION_MULTIARCH(ip4_mmb_classify_node, ip4_mmb_classify);
+/* *INDENT-ON* */
 
 VNET_FEATURE_INIT(ip4_mmb_classify_feature, static) =
 {
@@ -606,6 +613,7 @@ ip6_mmb_classify(vlib_main_t * vm,
 }
 
 vlib_node_registration_t ip6_mmb_classify_node;
+/* *INDENT-OFF* */
 VLIB_REGISTER_NODE(ip6_mmb_classify_node) = {
   .function = ip6_mmb_classify,
   .name = "ip6-mmb-classify",
@@ -620,8 +628,7 @@ VLIB_REGISTER_NODE(ip6_mmb_classify_node) = {
     [MMB_CLASSIFY_NEXT_INDEX_DROP] = "error-drop",
   },
 };
-
-//VLIB_NODE_FUNCTION_MULTIARCH(ip6_mmb_classify_node, ip6_mmb_classify);
+/* *INDENT-ON* */
 
 VNET_FEATURE_INIT(ip6_mmb_classify_feature, static) =
 {
@@ -633,9 +640,17 @@ VNET_FEATURE_INIT(ip6_mmb_classify_feature, static) =
 static clib_error_t *
 mmb_classify_init(vlib_main_t *vm) {
 
-  //mmb_main.feature_arc_index = vlib_node_add_next(vm, ip4_lookup_node.index, ip4_mmb_classify_node.index);
+  // TODO: move init code from mmb_init() to here ?
 
   return 0;
 }
 
 VLIB_INIT_FUNCTION(mmb_classify_init);
+
+/*
+ * fd.io coding-style-patch-verification: ON
+ *
+ * Local Variables:
+ * eval: (c-set-style "gnu")
+ * End:
+ */

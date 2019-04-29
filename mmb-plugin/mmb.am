@@ -1,4 +1,4 @@
-# Copyright (c) 2016 Cisco and/or its affiliates.
+# Copyright (c) 2018 Cisco and/or its affiliates.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at:
@@ -10,8 +10,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# modfied by Korian Edeline
 
-vppapitestplugins_LTLIBRARIES += mmb_test_plugin.la
 vppplugins_LTLIBRARIES += mmb_plugin.la
 
 mmb_plugin_la_SOURCES = \
@@ -20,16 +21,6 @@ mmb_plugin_la_SOURCES = \
   mmb/mmb_classify.c    \
   mmb/mmb_rewrite.c     \
   mmb/mmb_opts.c        \
-  mmb/mmb_conn.c     \
-  mmb/mmb_plugin.api.h  
-
-API_FILES += mmb/mmb.api
-
-nobase_apiinclude_HEADERS += \
-  mmb/mmb_all_api_h.h        \
-  mmb/mmb_msg_enum.h         \
-  mmb/mmb.api.h           
-
-mmb_test_plugin_la_SOURCES = mmb/mmb_test.c mmb/mmb_plugin.api.h
+  mmb/mmb_conn.c
 
 # vi:syntax=automake
